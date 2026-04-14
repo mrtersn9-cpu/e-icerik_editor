@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap&subset=latin-ext" rel="stylesheet" />
+    <title>E-İçerik Editörü</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #root { height: 100%; min-height: 100%; }
+      body {
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top, rgba(35, 56, 118, 0.45), transparent 42%),
+          linear-gradient(180deg, #111a33 0%, #0b1020 100%);
+        color: #f8fafc;
+        font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+      }
+      #boot-status {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 38%),
+          rgba(7, 12, 26, 0.96);
+      }
+      #boot-status[data-state="ready"] {
+        display: none;
+      }
+      .boot-card {
+        width: min(680px, 100%);
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.92);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        padding: 28px;
+      }
+      .boot-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.12);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: #67e8f9;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .boot-title {
+        margin-top: 16px;
+        font-size: clamp(24px, 3vw, 32px);
+        line-height: 1.1;
+        font-weight: 800;
+      }
+      .boot-body {
+        margin-top: 12px;
+        color: #cbd5e1;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .boot-detail {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(248, 113, 113, 0.3);
+        color: #fecaca;
+        font: 12px/1.6 Consolas, "Courier New", monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .boot-actions {
+        margin-top: 18px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .boot-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(30, 41, 59, 0.9);
+        color: #e2e8f0;
+        text-decoration: none;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="boot-status" data-state="loading">
+      <div class="boot-card">
+        <div class="boot-badge">Editor Baslatiliyor</div>
+        <div class="boot-title">Arayüz yükleniyor...</div>
+        <div class="boot-body">
+          Eger burada uzun sure kalirsa uygulama tarayicida acilis hatasi veriyor olabilir.
+          Bu durumda ayrinti kutusu otomatik dolacak.
+        </div>
+        <div class="boot-actions">
+          <button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var panel = document.getElementById("boot-status");
+        if (!panel) return;
+
+        function escapeHtml(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        window.__EIC_BOOT_DONE__ = function () {
+          panel.setAttribute("data-state", "ready");
+        };
+
+        window.__EIC_BOOT_REPORT__ = function (title, details) {
+          panel.setAttribute("data-state", "error");
+          panel.innerHTML =
+            '<div class="boot-card">' +
+            '<div class="boot-badge">Açılış Hatası</div>' +
+            '<div class="boot-title">' + escapeHtml(title || "Uygulama baslarken bir hata olustu") + "</div>" +
+            '<div class="boot-body">Bu ekran siyah bos sayfa yerine hatayi gormek icin gosteriliyor. Asagidaki metni bana aynen atarsan daha hizli cozeriz.</div>' +
+            (details ? '<div class="boot-detail">' + escapeHtml(details) + "</div>" : "") +
+            '<div class="boot-actions">' +
+            '<button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>' +
+            "</div>" +
+            "</div>";
+        };
+
+        window.addEventListener("error", function (event) {
+          var message = event && event.error && event.error.stack
+            ? event.error.stack
+            : ((event && event.message) || "Bilinmeyen JavaScript hatasi");
+          window.__EIC_BOOT_REPORT__("JavaScript calisma hatasi", message);
+        });
+
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event && event.reason;
+          var message = reason && reason.stack
+            ? reason.stack
+            : (typeof reason === "string" ? reason : JSON.stringify(reason || "Bilinmeyen promise hatasi"));
+          window.__EIC_BOOT_REPORT__("Promise hatasi", message);
+        });
+      })();
+    </script>
+  </body>
+</html>

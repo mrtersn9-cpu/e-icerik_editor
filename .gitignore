@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+deploy-ftp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Claude Code settings (local)
+.claude/
+
+# Temp / backup / test files
+tmp-*.png
+tmp-*.jpg
+tmp-*.pdf
+test.pdf
+video-frames/
+yedekler/
+*.mojibake-backup
+tmp-backup-*.jsx
+
+# Database (kullanıcı verisi)
+data/*.sqlite
+
+# FTP credentials
+ftp-hosting/
