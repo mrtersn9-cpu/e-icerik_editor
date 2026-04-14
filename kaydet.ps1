@@ -1,7 +1,8 @@
 param(
     [string]$Mesaj = "",
     [switch]$Auto,
-    [switch]$NoPush
+    [switch]$NoPush,
+    [switch]$NoPrepare
 )
 
 Set-StrictMode -Version Latest
@@ -58,6 +59,27 @@ function New-AutoMessage {
     $sample = @($Files | Select-Object -First 3 | ForEach-Object { Split-Path $_ -Leaf }) -join ", "
     $suffix = if ($Files.Count -gt 3) { " +$($Files.Count - 3) dosya" } else { "" }
     return "Otomatik kayit - $sample$suffix - $timestamp"
+}
+
+function Invoke-FtpPrepareIfNeeded {
+    param(
+        [switch]$SkipPrepare
+    )
+
+    if ($SkipPrepare) {
+        Write-Host "FTP hazirlama atlandi (-NoPrepare)." -ForegroundColor Yellow
+        return
+    }
+
+    $prepareScript = Join-Path $PSScriptRoot "hazirla-ftp.ps1"
+    if (-not (Test-Path $prepareScript)) {
+        Write-Host "hazirla-ftp.ps1 bulunamadi, FTP hazirlama atlandi." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "FTP paketi otomatik hazirlaniyor..." -ForegroundColor Cyan
+    & $prepareScript
+    Write-Host ""
 }
 
 function Ensure-Changelog {
@@ -132,6 +154,9 @@ Write-Host ""
 Write-Host "Degisen dosyalar:" -ForegroundColor Cyan
 Get-ChangedStatusLines | ForEach-Object { Write-Host $_ }
 Write-Host ""
+
+Invoke-FtpPrepareIfNeeded -SkipPrepare:$NoPrepare
+$changedFiles = Get-ChangedFiles
 
 if (-not $Mesaj) {
     if ($Auto) {

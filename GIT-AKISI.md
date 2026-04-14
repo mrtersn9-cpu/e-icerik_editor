@@ -4,10 +4,12 @@ Projede iki temel script var:
 
 - `.\kaydet.ps1`
   - Degisiklikleri listeler.
+  - Varsayilan olarak `.\hazirla-ftp.ps1` calistirir.
   - Surum notunu sorar veya otomatik uretir.
   - `CHANGELOG.md` dosyasina yeni kayit ekler.
   - Commit alir.
   - `origin` remote varsa push dener.
+  - Gerekirse `-NoPrepare` ile FTP hazirlamayi kapatabilirsin.
 
 - `.\oto-kaydet.ps1`
   - Belirli araliklarla repo durumunu kontrol eder.

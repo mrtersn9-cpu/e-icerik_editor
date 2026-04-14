@@ -841,6 +841,81 @@ function getMedian(values = []) {
     : sorted[middle];
 }
 
+function clusterPdfColumnCenters(values = [], tolerance = 120) {
+  const sorted = [...values]
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!sorted.length) return [];
+
+  const clusters = [[sorted[0]]];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const value = sorted[index];
+    const current = clusters[clusters.length - 1];
+    const currentCenter = current.reduce((sum, item) => sum + item, 0) / current.length;
+    if (Math.abs(value - currentCenter) <= tolerance) {
+      current.push(value);
+    } else {
+      clusters.push([value]);
+    }
+  }
+
+  return clusters.map((cluster) => getMedian(cluster));
+}
+
+function compactPdfColumnLabel(value = "", index = 0) {
+  const text = sanitizePdfText(value);
+  if (!text) return `${index + 1}`;
+  const roman = text.match(/\b([ivxlcdm]+|\d+)\b/i)?.[1];
+  if (roman) return roman.toUpperCase();
+  if (text.length <= 14) return text;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const initials = words.slice(0, 2).map((word) => word[0]).join("");
+    if (initials.length >= 2) return initials.toUpperCase();
+  }
+  return text.slice(0, 10).trim();
+}
+
+function inferPdfTableChoiceColumns(lines = [], centers = [], width = 1920, height = 1080) {
+  if (!Array.isArray(centers) || !centers.length) return [];
+  const candidateRows = (Array.isArray(lines) ? lines : [])
+    .filter((line) => Number(line?.y || 0) < height * 0.45)
+    .filter((line) => {
+      const normalized = normalizePdfText(line?.text || "");
+      return normalized
+        && !normalized.includes("isaretleyiniz")
+        && !normalized.includes("kutucugu")
+        && !normalized.includes("kutucuklarini")
+        && !normalized.includes("tema")
+        && !/[✓✔☑]/.test(line?.text || "");
+    });
+
+  return centers.map((center, index) => {
+    let bestToken = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    candidateRows.forEach((line) => {
+      (Array.isArray(line?.tokens) ? line.tokens : []).forEach((token) => {
+        const tokenText = sanitizePdfText(token?.text || "");
+        if (!tokenText || /[✓✔☑]/.test(tokenText)) return;
+        const tokenCenter = Number(token?.x || 0) + Math.max(8, Number(token?.width || 0)) / 2;
+        const distance = Math.abs(tokenCenter - center);
+        if (distance < bestDistance && distance <= 180) {
+          bestDistance = distance;
+          bestToken = tokenText;
+        }
+      });
+    });
+
+    return {
+      key: `col_${index + 1}`,
+      label: compactPdfColumnLabel(bestToken || "", index),
+      fullLabel: sanitizePdfText(bestToken || ""),
+      center,
+    };
+  });
+}
+
 function detectPdfSelectionLayout(page = {}) {
   const width = page.width || 1365;
   const height = page.height || 768;
@@ -905,6 +980,56 @@ function detectPdfSelectionLayout(page = {}) {
         { key: "d", left: dLeft, width: columnWidth },
         { key: "y", left: yLeft, width: columnWidth },
       ],
+      answers,
+    };
+  }
+
+  const clusteredCenters = clusterPdfColumnCenters(
+    markLines
+      .filter((line) => line.centerX > width * 0.35)
+      .map((line) => line.centerX),
+    Math.max(72, width * 0.05),
+  );
+  if (clusteredCenters.length >= 2) {
+    const columnDefs = inferPdfTableChoiceColumns(lines, clusteredCenters, width, height);
+    const gapValues = clusteredCenters
+      .slice(1)
+      .map((center, index) => center - clusteredCenters[index])
+      .filter((gap) => gap > 24);
+    const medianGap = gapValues.length ? getMedian(gapValues) : width * 0.14;
+    const columnWidth = clamp(medianGap * 0.72, 84, width * 0.18);
+    const columns = columnDefs.map((column, index) => ({
+      key: column.key,
+      label: column.label || `${index + 1}`,
+      fullLabel: column.fullLabel || column.label || `${index + 1}`,
+      left: clamp(column.center - columnWidth / 2, 0, width - columnWidth),
+      width: columnWidth,
+      center: column.center,
+    }));
+
+    anchors.forEach((anchor, index) => {
+      const questionId = `pdf-q-${index + 1}`;
+      const rowTop = Math.max(0, anchor.stageY - rowHeight * 0.18);
+      const rowBottom = rowTop + rowHeight;
+      const rowMarks = markLines.filter((line) => line.centerY >= rowTop && line.centerY <= rowBottom);
+      if (!rowMarks.length) {
+        answers[questionId] = null;
+        return;
+      }
+      const match = columns.reduce((best, column) => {
+        const distance = Math.min(...rowMarks.map((line) => Math.abs(line.centerX - column.center)));
+        if (!best || distance < best.distance) return { key: column.key, distance };
+        return best;
+      }, null);
+      answers[questionId] = match?.key || null;
+    });
+
+    return {
+      mode: "table-choice",
+      anchors,
+      rowHeight,
+      columnWidth,
+      columns,
       answers,
     };
   }
@@ -2021,23 +2146,32 @@ function createPdfDraggableObject(text, x, y, width, height, index) {
   };
 }
 
-function createPdfSelectionObject(questionId, choice, x, y, width, height, index, isCorrect = null) {
+function createPdfSelectionObject(questionId, choice, x, y, width, height, index, isCorrect = null, displayLabel = null, layoutMode = "") {
   const object = createObject("button");
   // D/Y (doğru/yanlış) mode: label shows "D" or "Y"
   // single-check mode: label shows checkbox symbol
   const isBinary = choice === "d" || choice === "y";
+  const isTableChoice = layoutMode === "table-choice";
   const label = isBinary
     ? (choice === "d" ? "D" : "Y")
-    : "☐";
+    : isTableChoice
+      ? sanitizePdfText(displayLabel || choice || "")
+      : "☐";
   const bg = isBinary
     ? (choice === "d" ? "#dcfce7" : "#fef2f2")
-    : "#f8faff";
+    : isTableChoice
+      ? "#eff6ff"
+      : "#f8faff";
   const border = isBinary
     ? (choice === "d" ? "#16a34a" : "#dc2626")
-    : "#6366f1";
+    : isTableChoice
+      ? "#2563eb"
+      : "#6366f1";
   const color = isBinary
     ? (choice === "d" ? "#15803d" : "#b91c1c")
-    : "#4338ca";
+    : isTableChoice
+      ? "#1d4ed8"
+      : "#4338ca";
   return {
     ...object,
     x,
@@ -2056,7 +2190,7 @@ function createPdfSelectionObject(questionId, choice, x, y, width, height, index
       borderColor: border,
       color,
       borderRadius: isBinary ? 6 : 4,
-      fontSize: isBinary ? 14 : 22,
+      fontSize: isBinary ? 14 : isTableChoice ? 12 : 22,
       fontWeight: 700,
     },
   };
@@ -2114,7 +2248,8 @@ function buildPdfSelectionObjects(draft, page) {
     const questionId = `pdf-q-${index + 1}`;
     const top = clamp(anchor.stageY - layout.rowHeight * 0.18, 0, height - layout.rowHeight);
     const correctChoice = layout.answers[questionId] || null;
-    slots.push({ id: questionId, correctChoice });
+    const correctColumn = layout.columns.find((column) => column.key === correctChoice) || null;
+    slots.push({ id: questionId, correctChoice, correctLabel: correctColumn?.label || null });
     layout.columns.forEach((column, columnIndex) => {
       objects.push(
         createPdfSelectionObject(
@@ -2126,6 +2261,8 @@ function buildPdfSelectionObjects(draft, page) {
           layout.rowHeight,
           index * Math.max(1, layout.columns.length) + columnIndex,
           correctChoice === column.key ? true : (correctChoice ? false : null),
+          column.label || column.key,
+          layout.mode,
         ),
       );
     });
@@ -3368,7 +3505,7 @@ function getAutoAnswerSummary(activity) {
   if (Array.isArray(activity.selectionSlots) && activity.selectionSlots.length) {
     const labels = activity.selectionSlots.map((slot, index) => {
       if (!slot?.correctChoice) return `${index + 1}. soru: anahtar okunamadi`;
-      return `${index + 1}. soru: ${String(slot.correctChoice).toUpperCase()}`;
+      return `${index + 1}. soru: ${slot.correctLabel || String(slot.correctChoice).toUpperCase()}`;
     });
     return labels.length ? labels : ["Dogru secenek henuz tanimlanmadi."];
   }

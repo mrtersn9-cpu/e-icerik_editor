@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-14 11:40 - PDF tablo secimi ve otomatik FTP hazirlama
+
+- Dal: master
+- Commit hazirlandi.
+- GIT-AKISI.md
+- kaydet.ps1
+- src/EIcerikEditor.jsx
 ## 2026-04-14 11:13 - Changelog ve kayit scripti duzeltmesi
 
 - Dal: master
@@ -29,5 +36,6 @@ Bu dosya, proje icin alinan git kayitlarini ve surum notlarini tutar.
 ## 2026-04-14 - kaydet.ps1 eklendi — tek komutla GitHub'a push
 
 - Tek komutla git add / commit / push akisi eklendi.
+
 
 
