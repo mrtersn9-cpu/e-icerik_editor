@@ -100,7 +100,7 @@ function Update-Changelog {
     $entry = @"
 ## $dateLabel - $Message
 
-- Dal: `$branch`
+- Dal: $branch
 - Commit hazirlandi.
 $fileLines
 
