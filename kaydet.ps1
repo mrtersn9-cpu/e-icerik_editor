@@ -1,48 +1,179 @@
-# ─── E-İçerik Editörü — GitHub'a Kaydet ────────────────────────────────────
-# Kullanım: .\kaydet.ps1
-#           .\kaydet.ps1 "v5.2 - Timeline dark tema düzeltildi"
-
 param(
-    [string]$Mesaj = ""
+    [string]$Mesaj = "",
+    [switch]$Auto,
+    [switch]$NoPush
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-# Değişiklik var mı kontrol et
-$degisiklik = git status --porcelain
-if (-not $degisiklik) {
-    Write-Host "✓ Kaydedilecek değişiklik yok." -ForegroundColor Green
+function Get-GitOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Args
+    )
+
+    $output = & git @Args 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ($output | Out-String).Trim()
+    }
+    return ($output | Out-String).TrimEnd()
+}
+
+function Get-ChangedStatusLines {
+    $raw = Get-GitOutput -Args @("status", "--short")
+    if (-not $raw) {
+        return @()
+    }
+    return @($raw -split "`r?`n" | Where-Object { $_.Trim() })
+}
+
+function Get-ChangedFiles {
+    $lines = Get-ChangedStatusLines
+    $files = New-Object System.Collections.Generic.List[string]
+
+    foreach ($line in $lines) {
+        $pathPart = $line.Substring([Math]::Min(3, $line.Length)).Trim()
+        if (-not $pathPart) { continue }
+        if ($pathPart -match " -> ") {
+            $pathPart = ($pathPart -split " -> ")[-1].Trim()
+        }
+        $files.Add($pathPart)
+    }
+
+    return @($files)
+}
+
+function New-AutoMessage {
+    param(
+        [string[]]$Files
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    if (-not $Files -or $Files.Count -eq 0) {
+        return "Otomatik kayit - $timestamp"
+    }
+
+    $sample = @($Files | Select-Object -First 3 | ForEach-Object { Split-Path $_ -Leaf }) -join ", "
+    $suffix = if ($Files.Count -gt 3) { " +$($Files.Count - 3) dosya" } else { "" }
+    return "Otomatik kayit - $sample$suffix - $timestamp"
+}
+
+function Ensure-Changelog {
+    $path = Join-Path $PSScriptRoot "CHANGELOG.md"
+    if (-not (Test-Path $path)) {
+        @"
+# Changelog
+
+Bu dosya, proje icin alinan git kayitlarini ve surum notlarini tutar.
+
+## 2026-04-14 - Initial commit — E-Icerik Editoru v5
+
+- Projenin ilk git kaydi olusturuldu.
+
+## 2026-04-14 - kaydet.ps1 eklendi — tek komutla GitHub'a push
+
+- Tek komutla git add / commit / push akisi eklendi.
+"@ | Set-Content -Path $path -Encoding UTF8
+    }
+    return $path
+}
+
+function Update-Changelog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [string[]]$Files
+    )
+
+    $path = Ensure-Changelog
+    $existing = Get-Content $path -Raw
+    $dateLabel = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $branch = Get-GitOutput -Args @("branch", "--show-current")
+    $fileLines = if ($Files -and $Files.Count -gt 0) {
+        [string]::Join([Environment]::NewLine, ($Files | ForEach-Object { "- " + $_ }))
+    } else {
+        "- Dosya degisikligi algilanmadi."
+    }
+
+    $entry = @"
+## $dateLabel - $Message
+
+- Dal: `$branch`
+- Commit hazirlandi.
+$fileLines
+
+"@
+
+    if ($existing.StartsWith("# Changelog")) {
+        $updated = $existing -replace "(?s)^# Changelog\s*", "# Changelog`r`n`r`n$entry"
+    } else {
+        $updated = "# Changelog`r`n`r`n$entry$existing"
+    }
+
+    Set-Content -Path $path -Value $updated -Encoding UTF8
+}
+
+try {
+    $null = Get-GitOutput -Args @("rev-parse", "--is-inside-work-tree")
+} catch {
+    Write-Host "Bu klasor bir git deposu degil." -ForegroundColor Red
+    exit 1
+}
+
+$changedFiles = Get-ChangedFiles
+if (-not $changedFiles -or $changedFiles.Count -eq 0) {
+    Write-Host "Kaydedilecek degisiklik yok." -ForegroundColor Green
     exit 0
 }
 
-# Değişen dosyaları göster
 Write-Host ""
-Write-Host "── Değişen dosyalar ──────────────────────" -ForegroundColor Cyan
-git status --short
+Write-Host "Degisen dosyalar:" -ForegroundColor Cyan
+Get-ChangedStatusLines | ForEach-Object { Write-Host $_ }
 Write-Host ""
 
-# Commit mesajı al
 if (-not $Mesaj) {
-    $tarih = Get-Date -Format "yyyy-MM-dd HH:mm"
-    $Mesaj = Read-Host "Sürüm notu (boş bırakırsan otomatik): "
-    if (-not $Mesaj) {
-        $Mesaj = "Güncelleme — $tarih"
+    if ($Auto) {
+        $Mesaj = New-AutoMessage -Files $changedFiles
+    } else {
+        $Mesaj = Read-Host "Surum notu (bos birakirsan otomatik olusur)"
+        if (-not $Mesaj) {
+            $Mesaj = New-AutoMessage -Files $changedFiles
+        }
     }
 }
 
-# Tüm dosyaları ekle ve commit yap
-git add .
-git commit -m $Mesaj
+Update-Changelog -Message $Mesaj -Files $changedFiles
 
-# Push et
-Write-Host ""
-Write-Host "── GitHub'a gönderiliyor... ──────────────" -ForegroundColor Cyan
-git push origin master 2>&1
+Get-GitOutput -Args @("add", "-A") | Out-Null
+$commitOutput = Get-GitOutput -Args @("commit", "-m", $Mesaj)
 
-if ($LASTEXITCODE -eq 0) {
+Write-Host $commitOutput -ForegroundColor Green
+
+if ($NoPush) {
     Write-Host ""
-    Write-Host "✓ GitHub'a kaydedildi: $Mesaj" -ForegroundColor Green
-} else {
-    Write-Host ""
-    Write-Host "✗ Push başarısız. İnternet bağlantısını kontrol et." -ForegroundColor Red
+    Write-Host "Push atlandi (-NoPush)." -ForegroundColor Yellow
+    exit 0
 }
+
+$remotes = Get-GitOutput -Args @("remote")
+if (-not $remotes) {
+    Write-Host ""
+    Write-Host "Yerel commit alindi. Uzak repo tanimli olmadigi icin push yapilmadi." -ForegroundColor Yellow
+    exit 0
+}
+
+$branch = Get-GitOutput -Args @("branch", "--show-current")
+Write-Host ""
+Write-Host "Push gonderiliyor: origin/$branch" -ForegroundColor Cyan
+$pushOutput = & git push origin $branch 2>&1
+if ($LASTEXITCODE -eq 0) {
+    ($pushOutput | Out-String).Trim() | Write-Host -ForegroundColor Green
+    Write-Host "Git kaydi tamamlandi." -ForegroundColor Green
+    exit 0
+}
+
+Write-Host (($pushOutput | Out-String).Trim()) -ForegroundColor Yellow
+Write-Host "Commit alindi ama push tamamlanamadi. Remote veya baglanti kontrol edilmeli." -ForegroundColor Yellow
+exit 0

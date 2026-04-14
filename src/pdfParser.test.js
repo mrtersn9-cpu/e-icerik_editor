@@ -89,6 +89,15 @@ describe('PDF Parser Utility Functions', () => {
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual(['Muz', 'Kivi']);
     });
+
+    it('keeps two digit numbering together in answer keys', () => {
+      const lines = [
+        { text: 'Doğru eşleştirme' },
+        { text: '9. Şarkı 10. Tuyuğ' }
+      ];
+      const terms = extractPdfAnswerTerms(lines);
+      expect(terms).toEqual(['Şarkı', 'Tuyuğ']);
+    });
   });
 
   describe('extractPdfDragTerms', () => {
@@ -164,6 +173,38 @@ describe('PDF Parser Utility Functions', () => {
       ]);
     });
 
+    it('extracts true false rows from D/Y columns with trailing checks', () => {
+      const items = extractTrueFalseItems([
+        {
+          text: 'Yargılar D Y',
+          tokens: [
+            { text: 'Yargılar', x: 100, width: 90 },
+            { text: 'D', x: 500, width: 20 },
+            { text: 'Y', x: 620, width: 20 },
+          ],
+        },
+        {
+          text: 'İlk yargı doğrudur. ✔',
+          tokens: [
+            { text: 'İlk yargı doğrudur.', x: 100, width: 240 },
+            { text: '✔', x: 504, width: 20 },
+          ],
+        },
+        {
+          text: 'İkinci yargı yanlıştır. ✔',
+          tokens: [
+            { text: 'İkinci yargı yanlıştır.', x: 100, width: 260 },
+            { text: '✔', x: 624, width: 20 },
+          ],
+        },
+      ]);
+
+      expect(items).toEqual([
+        expect.objectContaining({ statement: 'İlk yargı doğrudur.', correctAnswer: 'D' }),
+        expect.objectContaining({ statement: 'İkinci yargı yanlıştır.', correctAnswer: 'Y' }),
+      ]);
+    });
+
     it('extracts checkbox and ordering items', () => {
       expect(extractCheckboxItems([
         { text: 'Yanındaki kutucuğu işaretleyiniz.' },
@@ -180,6 +221,17 @@ describe('PDF Parser Utility Functions', () => {
       ])).toEqual([
         expect.objectContaining({ text: 'İlk olay', correctOrder: 1 }),
         expect.objectContaining({ text: 'İkinci olay', correctOrder: 2 }),
+      ]);
+    });
+
+    it('extracts checkbox rows with trailing checks after the instruction line', () => {
+      expect(extractCheckboxItems([
+        { text: 'Bu ifadelerden doğru olanları işaretleyiniz.' },
+        { text: 'Doğru bilgi ✔', tokens: [{ text: 'Doğru bilgi', x: 20, width: 140 }, { text: '✔', x: 280, width: 20 }] },
+        { text: 'Yanlış bilgi' },
+      ])).toEqual([
+        expect.objectContaining({ text: 'Doğru bilgi', correctAnswer: true }),
+        expect.objectContaining({ text: 'Yanlış bilgi', correctAnswer: false }),
       ]);
     });
 
@@ -213,6 +265,26 @@ describe('PDF Parser Utility Functions', () => {
       }));
       expect(config.pages[0].draggableItems).toContain('Gazel');
       expect(config.pages[0].dropZones[0]).toEqual(expect.objectContaining({ correctAnswer: 'Gazel' }));
+    });
+
+    it('does not turn the answer key line into an extra drag-drop zone', () => {
+      const config = buildStoryboardConfig({
+        pages: [{
+          pageNumber: 1,
+          lines: [
+            { text: 'Boşluklara uygun kavramları sürükleyiniz.' },
+            { text: '1. İlk ifade .....' },
+            { text: '2. İkinci ifade .....' },
+            { text: 'Sürüklenebilir Ögeler' },
+            { text: 'Elma' },
+            { text: 'Armut' },
+            { text: 'Doğru eşleştirme: 1. Elma 2. Armut' },
+          ],
+        }],
+      });
+
+      expect(config.pages[0].dropZones).toHaveLength(2);
+      expect(config.pages[0].dropZones[1]).toEqual(expect.objectContaining({ correctAnswer: 'Armut' }));
     });
   });
 });

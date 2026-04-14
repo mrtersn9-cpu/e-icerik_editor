@@ -66,7 +66,11 @@ function isLikelyPdfFooter(value = "") {
 
 function isLikelyPdfHeaderRow(value = "") {
   const text = normalizePdfText(value);
-  return text.includes("tema ") || text === "tema" || text.includes("dogru siralamalar") || text.includes("suruklenebilir ogeler");
+  return text.includes("tema ")
+    || text === "tema"
+    || text.startsWith("yargilar ")
+    || text.includes("dogru siralamalar")
+    || text.includes("suruklenebilir ogeler");
 }
 
 function isLikelyPdfStatement(value = "") {
@@ -75,7 +79,7 @@ function isLikelyPdfStatement(value = "") {
   if (isLikelyPdfFooter(text) || isLikelyPdfHeaderRow(text) || isStandalonePdfNumber(text)) return false;
   const normalized = normalizePdfText(text);
   if (normalized.includes("yazilimciya not") || normalized.includes("numara yazilmayacak")) return false;
-  return text.split(/\s+/).filter(Boolean).length >= 3;
+  return text.split(/\s+/).filter(Boolean).length >= 2;
 }
 
 export function detectPdfDraftKind(lines = [], pageCount = 1, marker = null) {
@@ -101,6 +105,7 @@ export function detectPdfDraftKind(lines = [], pageCount = 1, marker = null) {
 export function extractPdfDragTerms(lines = []) {
   const startIndex = lines.findIndex((line) => normalizePdfText(line.text).includes("suruklenebilir ogeler"));
   if (startIndex === -1) return [];
+  const hasRightColumnPool = lines.slice(startIndex + 1).some((line) => Number(line?.x || 0) >= 1000);
   const terms = [];
   for (let index = startIndex + 1; index < lines.length; index += 1) {
     const rawValue = sanitizePdfText(lines[index]?.text || "");
@@ -109,6 +114,7 @@ export function extractPdfDragTerms(lines = []) {
     if (normalized.includes("dogru eslestirme")) break;
     if (normalized.includes("e-icerik") || normalized.includes("yazilimciya not") || normalized.includes("numara yazilmayacak")) continue;
     if (isStandalonePdfNumber(rawValue) || /^[.\s]+$/.test(rawValue)) continue;
+    if (hasRightColumnPool && Number(lines[index]?.x || 0) < 1000) continue;
 
     const value = stripPdfListPrefix(rawValue);
     if (!value) continue;
@@ -134,7 +140,7 @@ export function extractPdfAnswerTerms(lines = []) {
     .trim();
 
   return combined
-    .split(/\s*(?=(?:\d+|[a-zçğıöşü])\s*[.)\-])/iu)
+    .split(/\s+(?=(?:\d+|[a-zçğıöşü])\s*[.)\-])/iu)
     .map((part) => stripPdfListPrefix(part).replace(/[.;,]+$/g, "").trim())
     .filter((value) => value && !normalizePdfText(value).includes("dogru eslestirme"));
 }
@@ -217,9 +223,10 @@ export function extractTrueFalseItems(lines = []) {
   const items = [];
   const normalizedLines = Array.isArray(lines) ? lines : [];
   const headerLine = normalizedLines.find((line) => {
-    const text = normalizePdfText(line?.text || "");
-    return text.includes("yargilar") && /\bd\b/.test(text) && /\by\b/.test(text);
-  });
+    const tokens = getPdfLineTokens(line);
+    return tokens.some((token) => normalizePdfText(token.text) === "d")
+      && tokens.some((token) => normalizePdfText(token.text) === "y");
+  }) || normalizedLines.find((line) => normalizePdfText(line?.text || "") === "yargilar d y");
   const headerTokens = getPdfLineTokens(headerLine);
   const dToken = headerTokens.find((token) => normalizePdfText(token.text) === "d");
   const yToken = headerTokens.find((token) => normalizePdfText(token.text) === "y");
@@ -230,7 +237,7 @@ export function extractTrueFalseItems(lines = []) {
   normalizedLines.forEach((line) => {
     const raw = sanitizePdfText(line?.text || "");
     const normalized = normalizePdfText(raw);
-    if (!raw || normalized === "yargilar d y" || isLikelyPdfFooter(raw)) return;
+    if (!raw || normalized === "yargilar d y" || isLikelyPdfFooter(raw) || isLikelyInstructionLine(raw)) return;
 
     if (PDF_NUMBERED_ANCHOR_RE.test(raw)) {
       const statement = stripTrailingCheckMark(stripPdfListPrefix(raw));
@@ -376,14 +383,38 @@ function buildDragDropPage(page = {}) {
   const lines = Array.isArray(page.lines) ? page.lines : [];
   const draggableItems = extractPdfDragTerms(lines);
   const answers = extractPdfAnswerTerms(lines);
-  const dragStartIndex = lines.findIndex((line) => normalizePdfText(line?.text || "").includes("suruklenebilir ogeler"));
   const answerIndex = lines.findIndex((line) => normalizePdfText(line?.text || "").includes("dogru eslestirme"));
-  const contentLimit = [dragStartIndex, answerIndex].filter((value) => value >= 0).sort((a, b) => a - b)[0];
-  const promptLines = contentLimit >= 0 ? lines.slice(0, contentLimit) : lines;
-  const anchorLines = promptLines.filter((line) => {
-    const text = sanitizePdfText(line?.text || "");
-    const normalized = normalizePdfText(text);
-    return PDF_NUMBERED_ANCHOR_RE.test(text) && !isDecorativePdfHeading(text) && !normalized.includes("dogru eslestirme");
+  const anchorEntries = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line, index }) => {
+      const text = sanitizePdfText(line?.text || "");
+      const normalized = normalizePdfText(text);
+      return (answerIndex === -1 || index < answerIndex)
+        && PDF_NUMBERED_ANCHOR_RE.test(text)
+        && !isDecorativePdfHeading(text)
+        && !normalized.includes("dogru eslestirme");
+    });
+  const anchorLines = anchorEntries.map(({ line, index }, entryIndex) => {
+    const nextAnchorIndex = anchorEntries[entryIndex + 1]?.index ?? (answerIndex >= 0 ? answerIndex : lines.length);
+    const continuationText = lines
+      .slice(index + 1, nextAnchorIndex)
+      .filter((candidate) => Number(candidate?.x || 0) < 1000)
+      .map((candidate) => sanitizePdfText(candidate?.text || ""))
+      .filter((text) => {
+        const normalized = normalizePdfText(text);
+        return text
+          && !PDF_NUMBERED_ANCHOR_RE.test(text)
+          && !normalized.includes("suruklenebilir ogeler")
+          && !normalized.includes("dogru eslestirme")
+          && !isStandalonePdfNumber(text)
+          && !/^[.\s]+$/u.test(text);
+      })
+      .map((text) => stripTrailingAnswerDots(stripPdfListPrefix(text)))
+      .join(" ");
+    return {
+      ...line,
+      text: sanitizePdfText([line?.text || "", continuationText].filter(Boolean).join(" ")),
+    };
   });
   const fallbackBlanks = findDottedBlankSegments(lines);
   const sourceAnchors = anchorLines.length ? anchorLines : fallbackBlanks;

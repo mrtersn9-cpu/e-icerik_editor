@@ -40,6 +40,8 @@ tmp-backup-*.jsx
 
 # Database (kullanıcı verisi)
 data/*.sqlite
+data/pdf-output-repro*/
+data/pdf-output-test/
 
 # FTP credentials
 ftp-hosting/

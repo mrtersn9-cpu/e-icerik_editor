@@ -343,8 +343,8 @@ function splitPdfLineSegments(segments = []) {
     const currentText = currentGroup.map((item) => item.text).join(" ").trim();
     const remainingText = ordered.slice(index).map((item) => item.text).join(" ").trim();
     const shouldSplit = gap > Math.max(120, Math.min(280, (previous.height || 20) * 8))
-      && currentText.length >= 18
-      && remainingText.length >= 18;
+      && currentText.length >= 10
+      && remainingText.length >= 10;
 
     if (shouldSplit) {
       groups.push(currentGroup);

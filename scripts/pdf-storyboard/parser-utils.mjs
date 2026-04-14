@@ -27,6 +27,8 @@ export function sanitizePdfText(value = "") {
 const LIST_PREFIX_RE = /^\s*(?:(?:\(?\d+\)?|\(?[a-zçğıöşü]\)?)\s*[.)\-:]|[-•●▪])\s*/iu;
 const NUMBERED_RE = /^\s*\d+\s*[.)\-:]/;
 const CHECKBOX_RE = /^\s*[☑☐✓✔✗✘]\s*/u;
+const CHECK_MARK_RE = /[☑☐✓✔✗✘]/u;
+const TRAILING_CHECK_MARK_RE = /\s+[☑☐✓✔✗✘]\s*$/u;
 const DOTTED_RE = /\.{5,}/g;
 
 function stripListPrefix(value = "") {
@@ -35,6 +37,41 @@ function stripListPrefix(value = "") {
 
 function stripCheckboxPrefix(value = "") {
   return sanitizePdfText(value).replace(CHECKBOX_RE, "").trim();
+}
+
+function stripTrailingCheckMark(value = "") {
+  return sanitizePdfText(value).replace(TRAILING_CHECK_MARK_RE, "").trim();
+}
+
+function findCheckMarkToken(row = {}) {
+  return (Array.isArray(row?.tokens) ? row.tokens : []).find((token) => CHECK_MARK_RE.test(token?.text || "")) || null;
+}
+
+function isStandaloneNumber(value = "") {
+  return /^\s*\d+\s*$/u.test(sanitizePdfText(value));
+}
+
+function isLikelyFooter(value = "") {
+  const text = normalizePdfText(value);
+  return text === "kontrol et" || text === "cevapla" || text === "ileri";
+}
+
+function isLikelyHeaderRow(value = "") {
+  const text = normalizePdfText(value);
+  return text.includes("tema ")
+    || text === "tema"
+    || text.startsWith("yargilar ")
+    || text.includes("dogru siralamalar")
+    || text.includes("suruklenebilir ogeler");
+}
+
+function isLikelyStatement(value = "") {
+  const text = stripTrailingCheckMark(stripListPrefix(value));
+  if (!text || text.length < 8) return false;
+  if (isLikelyFooter(text) || isLikelyHeaderRow(text) || isStandaloneNumber(text)) return false;
+  const normalized = normalizePdfText(text);
+  if (normalized.includes("yazilimciya not") || normalized.includes("numara yazilmayacak")) return false;
+  return text.split(/\s+/).filter(Boolean).length >= 2;
 }
 
 function isDecorativeHeading(value = "") {
@@ -58,6 +95,40 @@ function joinRowTokens(tokens = []) {
   }
 
   return sanitizePdfText(output);
+}
+
+function splitRowTokens(tokens = []) {
+  const ordered = [...tokens].sort((a, b) => a.x - b.x);
+  if (!ordered.length) return [];
+
+  const groups = [];
+  let currentGroup = [];
+
+  ordered.forEach((token, index) => {
+    if (!currentGroup.length) {
+      currentGroup.push(token);
+      return;
+    }
+
+    const previous = currentGroup[currentGroup.length - 1];
+    const gap = token.x - (previous.x + previous.width);
+    const currentText = currentGroup.map((item) => sanitizePdfText(item.text || "")).join(" ").trim();
+    const remainingText = ordered.slice(index).map((item) => sanitizePdfText(item.text || "")).join(" ").trim();
+    const shouldSplit = gap > Math.max(120, Math.min(280, (previous.height || 20) * 8))
+      && currentText.length >= 10
+      && remainingText.length >= 10;
+
+    if (shouldSplit) {
+      groups.push(currentGroup);
+      currentGroup = [token];
+      return;
+    }
+
+    currentGroup.push(token);
+  });
+
+  if (currentGroup.length) groups.push(currentGroup);
+  return groups;
 }
 
 // PDF içeriğinden çıkan text item'larını satır kümelerine dönüştürür.
@@ -107,23 +178,25 @@ export function buildTextRows(items = [], viewport = { width: 0, height: 0 }) {
   }
 
   return rows
-    .map((row, index) => {
+    .flatMap((row, index) => {
       const tokens = row.tokens.sort((a, b) => a.x - b.x);
-      const x = Math.min(...tokens.map((token) => token.x));
-      const right = Math.max(...tokens.map((token) => token.x + token.width));
-      const height = Math.max(...tokens.map((token) => token.height));
-      return {
-        id: `row_${index + 1}`,
-        x,
-        y: row.y,
-        width: Math.max(0, right - x),
-        height,
-        tokens,
-        text: joinRowTokens(tokens),
-        isBold: tokens.some((token) => token.isBold),
-        pageWidth: Number(viewport?.width || 0),
-        pageHeight: Number(viewport?.height || 0),
-      };
+      return splitRowTokens(tokens).map((group, groupIndex) => {
+        const x = Math.min(...group.map((token) => token.x));
+        const right = Math.max(...group.map((token) => token.x + token.width));
+        const height = Math.max(...group.map((token) => token.height));
+        return {
+          id: `row_${index + 1}_${groupIndex + 1}`,
+          x,
+          y: row.y,
+          width: Math.max(0, right - x),
+          height,
+          tokens: group,
+          text: joinRowTokens(group),
+          isBold: group.some((token) => token.isBold),
+          pageWidth: Number(viewport?.width || 0),
+          pageHeight: Number(viewport?.height || 0),
+        };
+      });
     })
     .sort((left, right) => right.y - left.y);
 }
@@ -151,8 +224,8 @@ export function detectInteractionType(rowsOrLines = []) {
   const text = normalizePdfText(rows.map((row) => row.text).join(" "));
 
   if ((text.includes("yargilar") || text.includes("yargilarla")) && /\bd\b/.test(text) && /\by\b/.test(text)) return "TrueFalse";
-  if (text.includes("suruklenebilir ogeler") || text.includes("surukleyiniz") || text.includes("eslestiriniz")) return "DragDrop";
   if (text.includes("siralayiniz") || text.includes("numaralandiriniz")) return "Ordering";
+  if (text.includes("suruklenebilir ogeler") || text.includes("surukleyiniz") || text.includes("eslestiriniz")) return "DragDrop";
   if (((text.includes("kutucugu") || text.includes("kutucuklarini")) && text.includes("isaretleyiniz")) || /[☑☐]/u.test(rows.map((row) => row.text).join(" "))) return "Checkbox";
   if (text.includes("yazilimciya not") || text.includes("video slayt") || text.includes("sesli slayt")) return "MediaSlayt";
   return "Content";
@@ -194,9 +267,10 @@ export function extractInstruction(rowsOrLines = []) {
 
 function detectTrueFalseColumns(rows = []) {
   const headerRow = rows.find((row) => {
-    const normalized = normalizePdfText(row.text);
-    return normalized.includes("yargilar") && /\bd\b/.test(normalized) && /\by\b/.test(normalized);
-  }) || rows.find((row) => {
+    const tokens = Array.isArray(row?.tokens) ? row.tokens : [];
+    return tokens.some((token) => normalizePdfText(token.text) === "d")
+      && tokens.some((token) => normalizePdfText(token.text) === "y");
+  }) || rows.find((row) => normalizePdfText(row.text) === "yargilar d y") || rows.find((row) => {
     const normalized = normalizePdfText(row.text);
     return normalized.includes("dogru") && normalized.includes("yanlis");
   });
@@ -224,10 +298,10 @@ export function extractTrueFalseItems(rowsOrLines = []) {
   rows.forEach((row) => {
     const raw = sanitizePdfText(row.text);
     const normalized = normalizePdfText(raw);
-    if (!raw || normalized === "yargilar d y") return;
+    if (!raw || normalized === "yargilar d y" || isLikelyFooter(raw) || isInstructionText(raw)) return;
 
     if (NUMBERED_RE.test(raw)) {
-      const statement = stripListPrefix(raw.replace(/\b([dDyY])\b\s*$/u, ""));
+      const statement = stripTrailingCheckMark(stripListPrefix(raw.replace(/\b([dDyY])\b\s*$/u, "")));
       const answerFromLine = raw.match(/\b([dDyY])\b\s*$/u)?.[1]?.toUpperCase() || null;
 
       if (isDecorativeHeading(statement)) {
@@ -265,6 +339,20 @@ export function extractTrueFalseItems(rowsOrLines = []) {
       return;
     }
 
+    if (columns) {
+      const markToken = findCheckMarkToken(row);
+      if (markToken && isLikelyStatement(raw)) {
+        const centerX = markToken.x + (markToken.width / 2);
+        items.push({
+          id: `item_${items.length + 1}`,
+          statement: stripTrailingCheckMark(raw),
+          correctAnswer: Math.abs(centerX - columns.dCenter) <= Math.abs(centerX - columns.yCenter) ? "D" : "Y",
+        });
+        pending = items[items.length - 1];
+        return;
+      }
+    }
+
     if ((normalized === "d" || normalized === "y") && pending && !pending.correctAnswer) {
       pending.correctAnswer = normalized.toUpperCase();
     }
@@ -274,17 +362,30 @@ export function extractTrueFalseItems(rowsOrLines = []) {
 }
 
 export function extractCheckboxItems(rowsOrLines = []) {
-  return toRows(rowsOrLines)
-    .filter((row) => CHECKBOX_RE.test(row.text))
-    .map((row, index) => ({
-      id: `item_${index + 1}`,
-      text: stripCheckboxPrefix(row.text),
-      correctAnswer: !/^\s*☐/u.test(row.text),
-    }));
+  const rows = toRows(rowsOrLines);
+  const instructionIndex = rows.findIndex((row) => isInstructionText(row.text));
+  const contentRows = rows.slice(instructionIndex >= 0 ? instructionIndex + 1 : 0);
+
+  return contentRows
+    .map((row, index) => {
+      const raw = sanitizePdfText(row.text);
+      if (!raw || isLikelyFooter(raw) || isLikelyHeaderRow(raw) || isDecorativeHeading(raw)) return null;
+      const hasLeadingCheckbox = CHECKBOX_RE.test(raw);
+      const checkToken = findCheckMarkToken(row);
+      const looksLikeRow = hasLeadingCheckbox || isLikelyStatement(raw);
+      if (!looksLikeRow) return null;
+      return {
+        id: `item_${index + 1}`,
+        text: hasLeadingCheckbox ? stripCheckboxPrefix(raw) : stripTrailingCheckMark(raw),
+        correctAnswer: hasLeadingCheckbox ? !/^\s*☐/u.test(raw) : !!checkToken,
+      };
+    })
+    .filter((item) => item?.text);
 }
 
 export function extractOrderingItems(rowsOrLines = []) {
-  return toRows(rowsOrLines)
+  const rows = toRows(rowsOrLines);
+  const numberedItems = rows
     .filter((row) => NUMBERED_RE.test(row.text) && !isDecorativeHeading(row.text))
     .map((row, index) => {
       const order = Number((row.text.match(/^\s*(\d+)/) || [])[1] || index + 1);
@@ -294,12 +395,33 @@ export function extractOrderingItems(rowsOrLines = []) {
         correctOrder: order,
       };
     });
+  if (numberedItems.length) return numberedItems;
+
+  const startIndex = rows.findIndex((row) => normalizePdfText(row.text).includes("dogru siralamalar"));
+  const seen = new Set();
+
+  return rows
+    .slice(startIndex >= 0 ? startIndex + 1 : 0)
+    .map((row) => stripTrailingCheckMark(stripListPrefix(row.text)))
+    .filter((text) => isLikelyStatement(text))
+    .filter((text) => {
+      const key = normalizePdfText(text);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((text, index) => ({
+      id: `item_${index + 1}`,
+      text,
+      correctOrder: index + 1,
+    }));
 }
 
 export function extractDragDropTerms(rowsOrLines = []) {
   const rows = toRows(rowsOrLines);
   const startIndex = rows.findIndex((row) => normalizePdfText(row.text).includes("suruklenebilir ogeler"));
   if (startIndex === -1) return [];
+  const hasRightColumnPool = rows.slice(startIndex + 1).some((row) => Number(row?.x || 0) >= 1000);
 
   const terms = [];
   for (let index = startIndex + 1; index < rows.length; index += 1) {
@@ -308,17 +430,20 @@ export function extractDragDropTerms(rowsOrLines = []) {
     const normalized = normalizePdfText(raw);
     if (!raw) continue;
     if (normalized.includes("dogru eslestirme")) break;
+    if (normalized.includes("yazilimciya not") || normalized.includes("numara yazilmayacak")) continue;
+    if (isStandaloneNumber(raw) || /^[.\s]+$/u.test(raw)) continue;
+    if (hasRightColumnPool && Number(row?.x || 0) < 1000) continue;
 
     const tokenTerms = (row.tokens || [])
       .map((token) => stripListPrefix(token.text || ""))
-      .filter((value) => value && value.length <= 40 && value.split(/\s+/).length <= 3);
+      .filter((value) => value && value.length <= 40 && value.split(/\s+/).length <= 3 && !/^\d+$/.test(value) && !/\.{3,}/.test(value));
 
     if (tokenTerms.length >= 2) {
       terms.push(...tokenTerms);
       continue;
     }
 
-    if (raw.length <= 80 && !/[.!?]$/.test(raw)) terms.push(stripListPrefix(raw));
+    if (raw.length <= 80 && !/[.!?]$/.test(raw) && !/^\d+$/.test(raw) && !/\.{3,}/.test(raw)) terms.push(stripListPrefix(raw));
   }
 
   return [...new Set(terms.filter(Boolean))];
@@ -338,7 +463,7 @@ export function extractAnswerTerms(rowsOrLines = []) {
     .trim();
 
   return combined
-    .split(/\s*(?=(?:\d+|[a-zçğıöşü])\s*[.)\-])/iu)
+    .split(/\s+(?=(?:\d+|[a-zçğıöşü])\s*[.)\-])/iu)
     .map((part) => stripListPrefix(part).replace(/[.;,]+$/g, "").trim())
     .filter((value) => value && !normalizePdfText(value).includes("dogru eslestirme"));
 }
@@ -414,7 +539,32 @@ export function buildStoryboardPage(page = {}) {
   if (interactionType === "DragDrop") {
     const draggableItems = extractDragDropTerms(rows);
     const answers = extractAnswerTerms(rows);
-    const dropLines = rows.filter((row) => NUMBERED_RE.test(row.text) && !isDecorativeHeading(row.text));
+    const answerIndex = rows.findIndex((row) => normalizePdfText(row.text).includes("dogru eslestirme"));
+    const dropLineEntries = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row, index }) => (answerIndex === -1 || index < answerIndex) && NUMBERED_RE.test(row.text) && !isDecorativeHeading(row.text) && !normalizePdfText(row.text).includes("dogru eslestirme"));
+    const dropLines = dropLineEntries.map(({ row, index }, entryIndex) => {
+      const nextAnchorIndex = dropLineEntries[entryIndex + 1]?.index ?? (answerIndex >= 0 ? answerIndex : rows.length);
+      const continuationText = rows
+        .slice(index + 1, nextAnchorIndex)
+        .filter((candidate) => Number(candidate?.x || 0) < 1000)
+        .map((candidate) => sanitizePdfText(candidate?.text || ""))
+        .filter((text) => {
+          const normalized = normalizePdfText(text);
+          return text
+            && !NUMBERED_RE.test(text)
+            && !normalized.includes("suruklenebilir ogeler")
+            && !normalized.includes("dogru eslestirme")
+            && !isStandaloneNumber(text)
+            && !/^[.\s]+$/u.test(text);
+        })
+        .map((text) => stripTrailingDots(stripListPrefix(text)))
+        .join(" ");
+      return {
+        ...row,
+        text: sanitizePdfText([row.text || "", continuationText].filter(Boolean).join(" ")),
+      };
+    });
     const dottedLines = findDottedBlankSegments(rows);
     const source = dropLines.length ? dropLines : dottedLines;
 
