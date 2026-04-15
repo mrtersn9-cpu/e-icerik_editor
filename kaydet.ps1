@@ -2,12 +2,32 @@ param(
     [string]$Mesaj = "",
     [switch]$Auto,
     [switch]$NoPush,
-    [switch]$NoPrepare
+    [switch]$NoPrepare,
+    [switch]$Watch
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
+
+if ($Watch) {
+    $watchScript = Join-Path $PSScriptRoot "oto-kaydet.ps1"
+    if (-not (Test-Path $watchScript)) {
+        Write-Host "oto-kaydet.ps1 bulunamadi." -ForegroundColor Red
+        exit 1
+    }
+
+    $watchArgs = @()
+    if ($NoPush) {
+        $watchArgs += "-NoPush"
+    }
+    if ($NoPrepare) {
+        $watchArgs += "-NoPrepare"
+    }
+
+    & $watchScript @watchArgs
+    exit $LASTEXITCODE
+}
 
 function Get-GitOutput {
     param(

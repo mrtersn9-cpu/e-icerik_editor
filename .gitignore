@@ -43,5 +43,6 @@ data/*.sqlite
 data/pdf-output-repro*/
 data/pdf-output-test/
 
-# FTP credentials
-ftp-hosting/
+# FTP credentials (config.php içinde şifre var)
+ftp-hosting/api/config.php
+ftp-hosting/.htpasswd

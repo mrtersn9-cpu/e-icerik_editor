@@ -1,10 +1,92 @@
 ﻿import { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle, useDeferredValue } from "react";
 import { normalizePdfText, sanitizePdfText, detectPdfDraftKind, extractPdfDragTerms, extractPdfAnswerTerms, extractPdfQuestionAnchors, buildStoryboardConfig } from "./pdfParser";
+import { analyzeTextOffline } from "./aiService";
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "e-icerik-v4";
+const AUTH_STORAGE_KEY = "e-icerik-auth-v1";
 const API_PORT = Number(process.env.REACT_APP_API_PORT || 4001);
+const FIXED_EDITOR_USERS = [
+  { id: "kullanici1", name: "Kullanici 1", password: "1234" },
+  { id: "kullanici2", name: "Kullanici 2", password: "1234" },
+];
+const EDITOR_THEME = {
+  shellBg: "#09111f",
+  shellPanel: "#101a2f",
+  shellPanelAlt: "#16223b",
+  shellPanelElevated: "#1b2b47",
+  shellPanelSoft: "#21314f",
+  shellInset: "#0d1728",
+  shellBorder: "#22324d",
+  shellBorderStrong: "#2e4567",
+  shellBorderSoft: "rgba(173,191,219,.14)",
+  shellText: "#e6eefc",
+  shellMuted: "#91a6c6",
+  shellMutedSoft: "#627998",
+  shellAccent: "#38bdf8",
+  shellAccentStrong: "#0ea5e9",
+  shellAccentSoft: "rgba(56,189,248,.16)",
+  shellAccentSoftStrong: "rgba(56,189,248,.22)",
+  shellAccentBorder: "rgba(56,189,248,.34)",
+  shellSuccess: "#4ade80",
+  shellWarning: "#fbbf24",
+  shellDanger: "#f87171",
+  shellBadgeBg: "#133455",
+  shellBadgeBorder: "#1d5f93",
+  shellBadgeText: "#bfe7ff",
+  appCanvas: "#5f6b7d",
+  appFooter: "#0b1322",
+  appFooterText: "#7d91af",
+  lightBg: "#edf4fb",
+  lightPanel: "#ffffff",
+  lightPanelAlt: "#f7fbff",
+  lightBorder: "#d7e4f2",
+  lightBorderStrong: "#bfd4ea",
+  lightText: "#10233d",
+  lightMuted: "#5d728d",
+  shadowLg: "0 20px 44px rgba(3, 12, 25, 0.28)",
+  shadowMd: "0 12px 28px rgba(3, 12, 25, 0.18)",
+};
+
+function createShellGroupStyle({ grow = false, wrap = false, pad = "6px 10px", justify = "flex-start" } = {}) {
+  return {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: justify,
+    gap: 8,
+    flexWrap: wrap ? "wrap" : "nowrap",
+    padding: pad,
+    borderRadius: 14,
+    border: `1px solid ${EDITOR_THEME.shellBorderSoft}`,
+    background: "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)",
+    minHeight: 40,
+    flex: grow ? 1 : "0 0 auto",
+    minWidth: 0,
+  };
+}
+
+function createShellPanelStyle({ grow = false } = {}) {
+  return {
+    border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
+    borderRadius: 18,
+    background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelElevated}, ${EDITOR_THEME.shellPanel})`,
+    boxShadow: EDITOR_THEME.shadowLg,
+    minWidth: 0,
+    flex: grow ? 1 : "0 0 auto",
+  };
+}
+
+function createLightPanelStyle({ padding = 16 } = {}) {
+  return {
+    border: `1px solid ${EDITOR_THEME.lightBorder}`,
+    borderRadius: 20,
+    background: `linear-gradient(180deg, ${EDITOR_THEME.lightPanel}, ${EDITOR_THEME.lightPanelAlt})`,
+    boxShadow: EDITOR_THEME.shadowMd,
+    padding,
+  };
+}
 
 function getApiBase() {
   if (typeof window === "undefined") return `http://localhost:${API_PORT}/api`;
@@ -27,15 +109,86 @@ function getApiBase() {
   return `${origin}${basePath}/api`;
 }
 
+function getUserStorageKey(userId) {
+  return `${STORAGE_KEY}:${userId || "guest"}`;
+}
+
+function createSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createSessionLabel() {
+  if (typeof window === "undefined") return "Editor Oturumu";
+  const platform = window.navigator?.platform || "Masaustu";
+  return `${platform} / ${window.location.host || "local"}`;
+}
+
+function readStoredAuth() {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAuth(auth) {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+  } catch {}
+}
+
+function clearStoredAuth() {
+  if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {}
+}
+
+function readStoredEditorHistory(userId, fallbackState) {
+  if (typeof window === "undefined") {
+    return { past: [], present: normalizeState(fallbackState), future: [] };
+  }
+  try {
+    const raw = localStorage.getItem(getUserStorageKey(userId));
+    if (raw) {
+      return { past: [], present: normalizeState(JSON.parse(raw)), future: [] };
+    }
+  } catch {}
+  return { past: [], present: normalizeState(fallbackState), future: [] };
+}
+
 async function apiRequest(path, options = {}) {
+  const auth = readStoredAuth();
   const response = await fetch(`${getApiBase()}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(auth?.userId ? { "X-User-Id": auth.userId } : {}),
+      ...(auth?.sessionId ? { "X-Session-Id": auth.sessionId } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   });
   if (!response.ok) {
     let message = `API ${response.status}`;
-    try { const data = await response.json(); if (data?.error) message = data.error; } catch {}
-    throw new Error(message);
+    let data = null;
+    try {
+      data = await response.json();
+      if (data?.error) message = data.error;
+    } catch {}
+    const error = new Error(`[${path}] ${message}`);
+    error.status = response.status;
+    error.code = data?.code || "";
+    error.session = data?.session || null;
+    error.lock = data?.lock || null;
+    error.waitSeconds = data?.waitSeconds ?? null;
+    error.kickPending = data?.kickPending || false;
+    throw error;
   }
   return response.json();
 }
@@ -65,6 +218,13 @@ async function uploadMediaFile(file) {
   } catch {
     return fileToDataUrl(file);
   }
+}
+
+function formatBookLockMessage(lock, fallback = "") {
+  if (!lock) return fallback || "Bu kitap su anda kilitli.";
+  const owner = lock.userName || lock.userId || "Baska bir kullanici";
+  const time = lock.lockedAt ? new Date(lock.lockedAt).toLocaleString("tr-TR") : "";
+  return `${owner} bu kitapta calisiyor.${time ? ` Kilit baslangici: ${time}.` : ""}`;
 }
 
 function buildCanvasPreviewDataUrl(canvas, maxSide = 1280, quality = 0.82) {
@@ -359,7 +519,7 @@ function splitPdfLineSegments(segments = []) {
   return groups;
 }
 
-function buildPdfTextLines(items = []) {
+function buildPdfTextLines(items = [], viewport = { width: 0, height: 0 }) {
   const buckets = new Map();
   items.forEach((item) => {
     const text = sanitizePdfText(item?.str || "");
@@ -396,6 +556,8 @@ function buildPdfTextLines(items = []) {
           y: row.y,
           height: row.height,
           width: Math.max(0, maxWidth - minX),
+          pageWidth: Number(viewport?.width || 0),
+          pageHeight: Number(viewport?.height || 0),
           tokens: group.map((segment) => ({
             text: segment.text,
             x: segment.x,
@@ -406,7 +568,7 @@ function buildPdfTextLines(items = []) {
       });
     })
     .filter((line) => line.text)
-    .sort((a, b) => a.y - b.y || a.x - b.x);
+    .sort((a, b) => b.y - a.y || a.x - b.x);
 }
 
 function detectPdfMarker(lines = []) {
@@ -546,8 +708,12 @@ function inferPdfSelectionAnchors(lines = [], pageWidth = 1920, pageHeight = 108
 
 function shouldUsePdfBottomOrigin(lines = [], pageHeight = 1080) {
   if (!Array.isArray(lines) || !lines.length) return false;
-  const sample = lines.find((line) => Number.isFinite(line?.y)) || lines[0];
-  return Number(sample?.y || 0) > pageHeight * 0.5;
+  const values = lines
+    .map((line) => Number(line?.y || 0))
+    .filter((value) => Number.isFinite(value));
+  if (!values.length) return false;
+  const maxY = Math.max(...values);
+  return maxY > pageHeight * 0.5;
 }
 
 function getPdfStageRectForLines(lines = [], pageWidth = 1365, pageHeight = 768, paddingX = 18, paddingY = 14) {
@@ -681,15 +847,22 @@ function mapPdfLinesToStage(lines = [], transform = {}) {
   const scaleY = Number(transform.scaleY || 1);
   const offsetX = Number(transform.offsetX || 0);
   const offsetY = Number(transform.offsetY || 0);
+  const pageHeight = Number(lines.find((line) => Number(line?.pageHeight || 0) > 0)?.pageHeight || 0);
+  const useBottomOrigin = pageHeight > 0 ? shouldUsePdfBottomOrigin(lines, pageHeight) : false;
   return (lines || []).map((line) => ({
     ...line,
     x: offsetX + Number(line?.x || 0) * scaleX,
-    y: offsetY + Number(line?.y || 0) * scaleY,
+    y: useBottomOrigin
+      ? offsetY + Math.max(0, (pageHeight - (Number(line?.y || 0) + Math.max(1, Number(line?.height || 0))))) * scaleY
+      : offsetY + Number(line?.y || 0) * scaleY,
     width: Math.max(1, Number(line?.width || 0) * scaleX),
     height: Math.max(1, Number(line?.height || 0) * scaleY),
     tokens: (Array.isArray(line?.tokens) ? line.tokens : []).map((token) => ({
       ...token,
       x: offsetX + Number(token?.x || 0) * scaleX,
+      y: useBottomOrigin
+        ? offsetY + Math.max(0, (pageHeight - (Number(line?.y || 0) + Math.max(1, Number(token?.height || line?.height || 0))))) * scaleY
+        : offsetY + Number(line?.y || 0) * scaleY,
       width: Math.max(1, Number(token?.width || 0) * scaleX),
       height: Math.max(1, Number(token?.height || 0) * scaleY),
     })),
@@ -877,6 +1050,14 @@ function compactPdfColumnLabel(value = "", index = 0) {
   return text.slice(0, 10).trim();
 }
 
+function stripPdfAnchorListPrefix(value = "") {
+  return sanitizePdfText(value).replace(/^\s*(?:(?:\(?\d+\)?|\(?[a-zçğıöşü]\)?)\s*[.)\-:]|[-•●▪])\s*/iu, "").trim();
+}
+
+function stripTrailingCheckMark(value = "") {
+  return sanitizePdfText(value).replace(/\s+[☑☐✓✔✗✘]\s*$/u, "").trim();
+}
+
 function inferPdfTableChoiceColumns(lines = [], centers = [], width = 1920, height = 1080) {
   if (!Array.isArray(centers) || !centers.length) return [];
   const candidateRows = (Array.isArray(lines) ? lines : [])
@@ -914,6 +1095,131 @@ function inferPdfTableChoiceColumns(lines = [], centers = [], width = 1920, heig
       center,
     };
   });
+}
+
+function findPdfAnchorLineForText(lines = [], target = "", usedLineIds = new Set()) {
+  const normalizedTarget = normalizePdfText(target);
+  if (!normalizedTarget) return null;
+
+  const candidates = (Array.isArray(lines) ? lines : [])
+    .filter((line) => !usedLineIds.has(line?.id))
+    .map((line) => {
+      const cleanedText = stripTrailingCheckMark(stripPdfAnchorListPrefix(sanitizePdfText(line?.text || "")));
+      const normalizedLine = normalizePdfText(cleanedText);
+      const exact = normalizedLine === normalizedTarget;
+      const contains = normalizedLine.includes(normalizedTarget) || normalizedTarget.includes(normalizedLine);
+      return { line, exact, contains, score: Math.abs(normalizedLine.length - normalizedTarget.length) };
+    })
+    .filter((entry) => entry.exact || entry.contains)
+    .sort((a, b) => {
+      if (a.exact !== b.exact) return a.exact ? -1 : 1;
+      if (a.score !== b.score) return a.score - b.score;
+      return a.line.y - b.line.y || a.line.x - b.line.x;
+    });
+
+  return candidates[0]?.line || null;
+}
+
+function buildPdfSelectionLayoutFromStoryboard(draft = {}, page = {}) {
+  const storyboardPage = (Array.isArray(draft?.storyboardPages) ? draft.storyboardPages : [])
+    .find((entry) => Number(entry?.pageNumber || 0) === Number(page?.pageNumber || 0));
+  if (!storyboardPage) return null;
+
+  const lines = Array.isArray(page?.lines) ? page.lines : [];
+  const width = page.width || 1920;
+  const height = page.height || 1080;
+  const usedLineIds = new Set();
+
+  if (storyboardPage.interactionType === "Checkbox" && Array.isArray(storyboardPage.items) && storyboardPage.items.length) {
+    const anchors = storyboardPage.items
+      .map((item, index) => {
+        const line = findPdfAnchorLineForText(lines, item?.text || "", usedLineIds);
+        if (!line) return null;
+        usedLineIds.add(line.id);
+        return {
+          text: sanitizePdfText(item?.text || line.text || ""),
+          x: Number(line.x || 0),
+          y: Number(line.y || 0),
+          width: Number(line.width || 0),
+          height: Math.max(20, Number(line.height || 28)),
+          stageY: Number(line.y || 0),
+          order: index + 1,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.stageY - b.stageY || a.x - b.x);
+
+    if (!anchors.length) return null;
+
+    const rowHeight = estimatePdfRowHeight(anchors, height);
+    const candidateXs = (Array.isArray(page?.annotationCells) ? page.annotationCells : [])
+      .map((cell) => Number(cell?.centerX || 0))
+      .filter((value) => value > width * 0.35);
+    const columnCenter = candidateXs.length ? getMedian(candidateXs) : width * 0.79;
+    const columnWidth = clamp(width * 0.12, 78, width * 0.16);
+    const tickLeft = clamp(columnCenter - columnWidth / 2, 0, width - columnWidth);
+    const answers = Object.fromEntries(
+      storyboardPage.items.map((item, index) => [`pdf-q-${index + 1}`, item?.correctAnswer ? "tick" : null]),
+    );
+
+    return {
+      mode: "single-check",
+      anchors,
+      rowHeight,
+      columnWidth,
+      columns: [{ key: "tick", left: tickLeft, width: columnWidth }],
+      answers,
+    };
+  }
+
+  if (storyboardPage.interactionType === "TrueFalse" && Array.isArray(storyboardPage.items) && storyboardPage.items.length) {
+    const anchors = storyboardPage.items
+      .map((item, index) => {
+        const line = findPdfAnchorLineForText(lines, item?.statement || "", usedLineIds);
+        if (!line) return null;
+        usedLineIds.add(line.id);
+        return {
+          text: sanitizePdfText(item?.statement || line.text || ""),
+          x: Number(line.x || 0),
+          y: Number(line.y || 0),
+          width: Number(line.width || 0),
+          height: Math.max(20, Number(line.height || 28)),
+          stageY: Number(line.y || 0),
+          order: index + 1,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.stageY - b.stageY || a.x - b.x);
+
+    if (!anchors.length) return null;
+
+    const headerTokens = lines
+      .flatMap((line) => Array.isArray(line?.tokens) ? line.tokens.map((token) => ({ ...token, rowY: line.y })) : [])
+      .map((token) => ({ ...token, normalized: normalizePdfText(token?.text || "") }));
+    const dToken = headerTokens.find((token) => token.normalized === "d");
+    const yToken = headerTokens.find((token) => token.normalized === "y" && Number(token?.x || 0) > Number(dToken?.x || 0));
+    const rowHeight = estimatePdfRowHeight(anchors, height);
+    const columnWidth = clamp((Math.abs(Number(yToken?.x || width * 0.84) - Number(dToken?.x || width * 0.74)) || width * 0.1) * 0.82, 54, width * 0.14);
+    const dLeft = clamp((Number(dToken?.x || width * 0.74) || 0) - columnWidth * 0.45, 0, width - columnWidth);
+    const yLeft = clamp((Number(yToken?.x || width * 0.84) || 0) - columnWidth * 0.45, 0, width - columnWidth);
+    const answers = Object.fromEntries(
+      storyboardPage.items.map((item, index) => [`pdf-q-${index + 1}`, normalizePdfText(item?.correctAnswer || "") === "d" ? "d" : "y"]),
+    );
+
+    return {
+      mode: "binary",
+      anchors,
+      rowHeight,
+      columnWidth,
+      columns: [
+        { key: "d", left: dLeft, width: columnWidth },
+        { key: "y", left: yLeft, width: columnWidth },
+      ],
+      answers,
+    };
+  }
+
+  return null;
 }
 
 function detectPdfSelectionLayout(page = {}) {
@@ -1205,7 +1511,7 @@ async function analyzePdfFile(file, onProgress = () => {}) {
     onProgress(`PDF okunuyor: sayfa ${pageIndex + 1}/${pdf.numPages}`, "info");
     const page = await pdf.getPage(pageIndex + 1);
     const textContent = await page.getTextContent();
-    const rawLines = buildPdfTextLines(textContent.items || []);
+    const rawLines = buildPdfTextLines(textContent.items || [], page.getViewport({ scale: 1 }));
     const marker = detectPdfMarker(rawLines);
     onProgress(`Sayfa ${pageIndex + 1}: gorsel hazirlaniyor...`, "info");
     const asset = await renderPdfPageAsset(page, file.name, pageIndex, rawLines, onProgress);
@@ -1262,7 +1568,7 @@ async function analyzePdfFile(file, onProgress = () => {}) {
   const storyboard = buildStoryboardConfig({ document: file.name, pages });
   const storyboardPageMap = new Map((storyboard?.pages || []).map((page) => [Number(page?.pageNumber || 0), page]));
 
-  const items = groups.map((group, index) => {
+  const items = await Promise.all(groups.map(async (group, index) => {
     const allLines = group.pages.flatMap((page) => page.lines);
     const title = inferPdfDraftTitle(allLines, group.markerLabel || `PDF Etkinlik ${index + 1}`);
     const lastPage = group.pages[group.pages.length - 1] || {};
@@ -1284,11 +1590,33 @@ async function analyzePdfFile(file, onProgress = () => {}) {
     const layoutKind = group.pages.map((page) => page?.layoutHints?.kindHint).find((value) => value && value !== "unknown") || null;
     const detectedKind = layoutKind || detectPdfDraftKind(allLines, group.pages.length, group.pages[0]?.marker || null);
     const storyboardKind = mapStoryboardInteractionTypeToDraftKind(primaryInteractionType);
-    const kind = storyboardKind || detectedKind;
+    let kind = storyboardKind || detectedKind;
     const status = detectPdfDraftStatus(kind, { draggableTerms, answerTerms });
     const instruction = sanitizePdfText(storyboardPages.map((page) => page?.instruction).find(Boolean) || "");
-    const developerNote = sanitizePdfText(storyboardPages.map((page) => page?.developerNote).filter(Boolean).join(" "));
+    let developerNote = sanitizePdfText(storyboardPages.map((page) => page?.developerNote).filter(Boolean).join(" "));
     const extractedItemCount = countStoryboardExtractedItems(storyboardPages);
+    
+    // Offline AI Analysis
+    try {
+      const textSample = allLines.slice(0, 20).map(l => l.text).join(" ");
+      if (textSample.trim().length > 10) {
+        onProgress(`Etkinlik ${index + 1} için çevrimdışı yapay zeka analizi yapılıyor...`, "info");
+        const aiResult = await analyzeTextOffline(textSample, "Bu sayfanın etkinlik türünü ve içindeki soruları özetle.");
+        if (aiResult && aiResult.analysis) {
+          developerNote = [developerNote, `[AI Analizi]: ${aiResult.analysis}`].filter(Boolean).join("\n\n");
+          if (kind === "unknown" || kind === "reading") {
+            const lowerAnalysis = aiResult.analysis.toLowerCase();
+            if (lowerAnalysis.includes("sürükle bırak") || lowerAnalysis.includes("drag and drop")) kind = "drag-drop";
+            else if (lowerAnalysis.includes("çoktan seçmeli") || lowerAnalysis.includes("multiple choice")) kind = "selection";
+            else if (lowerAnalysis.includes("doğru yanlış") || lowerAnalysis.includes("true or false")) kind = "selection";
+            else if (lowerAnalysis.includes("boşluk doldurma") || lowerAnalysis.includes("fill in the blanks")) kind = "drag-drop";
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("AI Analysis error:", err);
+    }
+
     return {
       id: group.id,
       order: index + 1,
@@ -1310,7 +1638,7 @@ async function analyzePdfFile(file, onProgress = () => {}) {
       extractedItemCount,
       storyboardPages,
     };
-  });
+  }));
 
   return {
     fileName: file.name,
@@ -1401,6 +1729,19 @@ const DRAG_DROP_MODES = [
   { id: "multi-group",  label: "Coklu Gruplu",  desc: "Bir alan ayni gruptaki tum ogeleri kabul eder" },
 ];
 
+const DEFAULT_DRAG_DROP_SETTINGS = {
+  isolateScopes: true,
+  allowCrossScope: false,
+  allowMultipleItemsPerDrop: false,
+  allowMultipleTargetsPerDrag: false,
+};
+
+const DEFAULT_SELECTION_UI = {
+  controlShape: "circle",
+  controlMark: "check",
+  wrongMarkMode: "opposite",
+};
+
 const DRAGGABLE_STRONG_STYLE = {
   fontSize: 13,
   color: "#eff6ff",
@@ -1421,13 +1762,13 @@ const DROPZONE_STRONG_STYLE = {
 
 const OBJ_PRESETS = {
   text:      { w: 220, h: 60,  label: "Metin",    style: { fontSize: 16, color: "#111111", background: "transparent", borderColor: "transparent", borderStyle: "solid",  borderRadius: 4 } },
-  button:    { w: 160, h: 50,  label: "Buton",    style: { fontSize: 14, color: "#ffffff", background: "#7C4DFF",     borderColor: "#5C2DFF",     borderStyle: "solid",  borderRadius: 10 } },
+  button:    { w: 160, h: 50,  label: "Buton",    style: { fontSize: 14, color: "#ffffff", background: EDITOR_THEME.shellAccentStrong, borderColor: "#0369a1", borderStyle: "solid", borderRadius: 10 } },
   shape:     { w: 220, h: 120, label: "Sekil",    style: { fontSize: 14, color: "#ffffff", background: "#0ea5e9",     borderColor: "#0284c7",     borderStyle: "solid",  borderRadius: 20 } },
   draggable: { w: 160, h: 50,  label: "Surukle",  style: DRAGGABLE_STRONG_STYLE },
   dropzone:  { w: 180, h: 70,  label: "Birak",    style: DROPZONE_STRONG_STYLE },
   hotspot:   { w: 64,  h: 64,  label: "?",        style: { fontSize: 22, color: "#ffffff", background: "#f4433666",   borderColor: "#f44336",     borderStyle: "solid",  borderRadius: 999 } },
   image:     { w: 200, h: 150, label: "",          style: { fontSize: 0,  color: "transparent", background: "#eee",   borderColor: "#ccc",         borderStyle: "solid",  borderRadius: 6 } },
-  video:     { w: 320, h: 180, label: "Video",     style: { fontSize: 0,  color: "transparent", background: "#0f172a", borderColor: "#38bdf8",     borderStyle: "solid",  borderRadius: 10 } },
+  video:     { w: 320, h: 180, label: "Video",     style: { fontSize: 0,  color: "transparent", background: EDITOR_THEME.shellInset, borderColor: "#38bdf8", borderStyle: "solid", borderRadius: 10 } },
   audio:     { w: 320, h: 74,  label: "Ses",       style: { fontSize: 13, color: "#e0f2fe", background: "#082f49",     borderColor: "#38bdf8",     borderStyle: "solid",  borderRadius: 14 } },
 };
 
@@ -1865,12 +2206,66 @@ function createVariableItem(index = 0) {
   };
 }
 
+const AUTO_LAYER_NAME_PRESETS = ["menu", "explanation", "normal", "Correct", "Incorrect", "cevap"];
+
+function normalizeLayerNameKey(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getBaseLayerAutoName(activity = {}) {
+  const candidates = [activity.sceneName, activity.name, "Base Layer"];
+  for (const candidate of candidates) {
+    const resolved = String(candidate || "").trim();
+    if (resolved) return resolved;
+  }
+  return "Base Layer";
+}
+
+function getNextAutomaticOverlayLayerName(usedNames = new Set()) {
+  for (const presetName of AUTO_LAYER_NAME_PRESETS) {
+    if (!usedNames.has(normalizeLayerNameKey(presetName))) {
+      return presetName;
+    }
+  }
+
+  let layerNumber = 1;
+  while (usedNames.has(normalizeLayerNameKey(`Layer ${layerNumber}`))) {
+    layerNumber += 1;
+  }
+  return `Layer ${layerNumber}`;
+}
+
+function buildResolvedLayerNameMap(layers = [], activity = {}) {
+  const resolvedNames = {};
+  const usedNames = new Set();
+
+  layers.forEach((layer, index) => {
+    const layerId = layer?.id || (index === 0 ? "base" : `layer-${index + 1}`);
+    const isBase = (layer?.kind || (index === 0 ? "base" : "overlay")) === "base" || layerId === "base";
+    if (isBase) {
+      const baseName = getBaseLayerAutoName(activity);
+      resolvedNames[layerId] = baseName;
+      usedNames.add(normalizeLayerNameKey(baseName));
+      return;
+    }
+
+    const rawName = String(layer?.name || "").trim();
+    const shouldAutoName = layer?.autoName === true || (!rawName && layer?.autoName !== false);
+    const resolvedName = shouldAutoName ? getNextAutomaticOverlayLayerName(usedNames) : rawName;
+    resolvedNames[layerId] = resolvedName || getNextAutomaticOverlayLayerName(usedNames);
+    usedNames.add(normalizeLayerNameKey(resolvedNames[layerId]));
+  });
+
+  return resolvedNames;
+}
+
 function createLayer(name = "Katman", index = 0) {
   const isBase = index === 0;
   return {
     id: isBase ? "base" : uid(),
-    name: isBase ? "Ana Katman" : `${name} ${index}`,
+    name: isBase ? "" : "",
     kind: isBase ? "base" : "overlay",
+    autoName: true,
     visible: true,
   };
 }
@@ -1883,7 +2278,7 @@ function createObject(type = "text") {
     width: preset.w, height: preset.h,
     rotation: 0, label: preset.label,
     locked: false, visible: true, zIndex: 1,
-    imageData: null, mediaUrl: "", mediaName: "", group: "", layerId: "base",
+    imageData: null, mediaUrl: "", mediaName: "", group: "", scope: "", allowMultipleTargets: false, capacity: type === "dropzone" ? 1 : 0, layerId: "base",
     showPlayerControls: type === "video" || type === "audio",
     autoPlay: false,
     muted: type === "video",
@@ -1911,7 +2306,9 @@ function createActivity(name, type = "selection") {
     settings: { ...DEFAULT_ACTIVITY_SETTINGS },
     dragDropDefaults: createDragDropDefaults(),
     dragDropMode: "single",
+    dragDropSettings: { ...DEFAULT_DRAG_DROP_SETTINGS },
     dragDropMatches: {},
+    selectionUi: { ...DEFAULT_SELECTION_UI },
     introScreen: { enabled: true, title: `${name} Etkinligine Hos Geldin`, body: "Hazir oldugunda basla ve soruyu tamamla.", buttonText: "Basla" },
     buttonPackageScreen: { enabled: true, title: "Tema Paketi Tanitimi", body: "Etkinlikte kullanacagin tema paketini ve buton davranislarini once incele.", buttonText: "Menuye Gec", backButtonText: "Geri Don", items: createDefaultThemePackageItems() },
     menuScreen: { enabled: true, title: `${name} Menusu`, body: "Kurallari gozden gecir ve etkinligi baslat.", buttonText: "Etkinlige Gec" },
@@ -2221,7 +2618,11 @@ function buildPdfDragDropMasks(page = {}) {
 }
 
 function buildPdfSelectionObjects(draft, page) {
-  const layout = detectPdfSelectionLayout(page);
+  const detectedLayout = detectPdfSelectionLayout(page);
+  const storyboardLayout = buildPdfSelectionLayoutFromStoryboard(draft, page);
+  const detectedCount = detectedLayout?.anchors?.length || 0;
+  const storyboardCount = storyboardLayout?.anchors?.length || 0;
+  const layout = storyboardCount > detectedCount ? storyboardLayout : (detectedLayout || storyboardLayout);
   if (!layout) return { objects: [], slots: [], masks: [], layout: null };
 
   const objects = [];
@@ -2524,6 +2925,7 @@ function normalizeSlide(slide = {}, index = 0) {
       ...layer,
       id: layerIndex === 0 ? "base" : (layer.id || uid()),
       kind: layerIndex === 0 ? "base" : (layer.kind || "overlay"),
+      autoName: layerIndex === 0 ? true : (typeof layer.autoName === "boolean" ? layer.autoName : !String(layer.name || "").trim()),
     }))
     : fallback.layers;
   let normalizedObjects = Array.isArray(slide.objects) ? slide.objects.map(normalizeObject) : fallback.objects;
@@ -2756,11 +3158,39 @@ function normalizeActivity(activity = {}) {
     dragDropDefaults,
     dragDropMode: activity.dragDropMode || "single",
     dragDropMatches: activity.dragDropMatches || {},
+    selectionUi: { ...DEFAULT_SELECTION_UI, ...(activity.selectionUi || {}) },
     mcOptions: Array.isArray(activity.mcOptions) && activity.mcOptions.length
       ? activity.mcOptions.map(opt => ({ ...opt, id: opt.id || uid() }))
       : fallback.mcOptions,
   };
   return materializeActivity(nextActivity);
+}
+
+function getSelectionUi(activity = {}) {
+  return { ...DEFAULT_SELECTION_UI, ...(activity.selectionUi || {}) };
+}
+
+function getSelectionMarkGlyph(mark = "check") {
+  if (mark === "cross") return "✗";
+  if (mark === "dot") return "●";
+  return "✓";
+}
+
+function getSelectionOppositeMark(mark = "check") {
+  if (mark === "cross") return "check";
+  if (mark === "dot") return "cross";
+  return "cross";
+}
+
+function canObjectBeSelectionShape(obj = {}) {
+  return ["shape", "button", "text"].includes(obj.type) || !!obj.selectionQuestionId;
+}
+
+function resolveWrongSelectionGlyph(selectionUi = {}, selectedMark = "check") {
+  const mode = selectionUi.wrongMarkMode || "opposite";
+  if (mode === "none") return "";
+  if (mode === "same") return getSelectionMarkGlyph(selectedMark);
+  return getSelectionMarkGlyph(getSelectionOppositeMark(selectedMark));
 }
 
 function normalizeBook(book = {}, index = 0) {
@@ -2777,8 +3207,64 @@ function normalizeBook(book = {}, index = 0) {
     description: book.description || "",
     buttonPackageId: pkgId,
     pdfImports: Array.isArray(book.pdfImports) ? book.pdfImports : [],
+    layerPresets: Array.isArray(book.layerPresets) ? book.layerPresets.map(normalizeLayerPreset) : [],
     previewDocument,
   };
+}
+
+const BOOK_LAYER_PRESET_KEYS = [
+  "sceneName",
+  "stageWidth",
+  "stageHeight",
+  "backgroundColor",
+  "svgMarkup",
+  "svgName",
+  "layers",
+  "activeLayerId",
+  "objects",
+  "timeline",
+  "triggers",
+  "audioUrl",
+  "audioName",
+  "audioAutoPlay",
+  "audioLoop",
+];
+
+function pickBookLayerPresetPayload(activity = {}) {
+  return BOOK_LAYER_PRESET_KEYS.reduce((acc, key) => {
+    acc[key] = safeClone(activity?.[key], Array.isArray(activity?.[key]) ? [] : "");
+    return acc;
+  }, {});
+}
+
+function normalizeLayerPreset(preset = {}, index = 0) {
+  const name = String(preset.name || "").trim() || `Layer Set ${index + 1}`;
+  const payload = pickBookLayerPresetPayload(normalizeActivity({
+    name,
+    type: preset.type || "selection",
+    ...(safeClone(preset.payload, {}) || {}),
+  }));
+  return {
+    id: preset.id || uid(),
+    name,
+    createdAt: preset.createdAt || new Date().toISOString(),
+    updatedAt: preset.updatedAt || preset.createdAt || new Date().toISOString(),
+    payload,
+  };
+}
+
+function applyBookLayerPresetToActivity(activity = {}, preset = null) {
+  if (!preset?.payload) return activity;
+  const payload = safeClone(preset.payload, {});
+  return normalizeActivity({
+    ...activity,
+    ...payload,
+    id: activity.id,
+    name: activity.name,
+    type: activity.type,
+    bookId: activity.bookId,
+    notes: activity.notes,
+  });
 }
 
 function normalizePreviewTemplate(template = {}, index = 0) {
@@ -2906,20 +3392,20 @@ function Inp({ label, value, onChange, type = "text", placeholder = "", rows }) 
 function SelectInp({ label, value, onChange, options }) {
   return (
     <div>
-      {label && <label style={{ fontSize: 9, color: "#78909C", display: "block", marginBottom: 2 }}>{label}</label>}
-      <select value={value} onChange={onChange} style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid #333", background: "#0f0f20", color: "#E0E0E0", fontSize: 11, boxSizing: "border-box", outline: "none" }}>
+      {label && <label style={{ fontSize: 9, color: EDITOR_THEME.shellMuted, display: "block", marginBottom: 2 }}>{label}</label>}
+      <select value={value} onChange={onChange} style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: `1px solid ${EDITOR_THEME.shellBorder}`, background: EDITOR_THEME.shellInset, color: EDITOR_THEME.shellText, fontSize: 11, boxSizing: "border-box", outline: "none" }}>
         {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
     </div>
   );
 }
 
-function Btn({ children, onClick, color = "#7C4DFF", small = false, disabled = false, style: s = {} }) {
+function Btn({ children, onClick, color = EDITOR_THEME.shellAccentStrong, small = false, disabled = false, style: s = {} }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       padding: small ? "4px 10px" : "6px 14px", borderRadius: 6, cursor: disabled ? "default" : "pointer",
       fontSize: small ? 10 : 11, fontWeight: 600, border: `1px solid ${color}`, transition: "all .15s",
-      background: disabled ? "#1a1a30" : color + "22", color: disabled ? "#444" : color,
+      background: disabled ? EDITOR_THEME.shellInset : color + "22", color: disabled ? EDITOR_THEME.shellMutedSoft : color,
       opacity: disabled ? 0.5 : 1, flexShrink: 0, ...s,
     }}>{children}</button>
   );
@@ -2928,10 +3414,10 @@ function Btn({ children, onClick, color = "#7C4DFF", small = false, disabled = f
 function Modal({ title, onClose, width = 400, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#1a1a30", borderRadius: 14, padding: 24, width, maxWidth: "92vw", border: "1px solid #333", maxHeight: "85vh", overflowY: "auto" }}>
+      <div style={{ background: EDITOR_THEME.shellPanelAlt, borderRadius: 14, padding: 24, width, maxWidth: "92vw", border: `1px solid ${EDITOR_THEME.shellBorder}`, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 18px 48px rgba(2,8,23,.45)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "#E0E0E0" }}>{title}</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 18 }}>✕</button>
+          <span style={{ fontWeight: 700, fontSize: 14, color: EDITOR_THEME.shellText }}>{title}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: EDITOR_THEME.shellMutedSoft, cursor: "pointer", fontSize: 18 }}>✕</button>
         </div>
         {children}
       </div>
@@ -3371,12 +3857,13 @@ function runPreviewTriggers({
   return true;
 }
 
-function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectStates = {}, onRunTriggers, onSelectionChoice, selectedObjectIds = [], hintObjectIds = [], scale, includeDragDrop = false, currentTime = 0 }) {
+function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectStates = {}, onRunTriggers, onSelectionChoice, selectedObjectIds = [], hintObjectIds = [], selectionFeedbackById = {}, scale, includeDragDrop = false, currentTime = 0 }) {
   const objects = getCanvasObjects(activity, activeLayerId, hiddenObjectIds)
     .filter(obj => isObjectTimelineActive(activity, obj.id, currentTime))
     .filter(obj => obj.visible !== false)
     .filter(obj => includeDragDrop || (obj.type !== "draggable" && obj.type !== "dropzone"))
     .sort((a, b) => a.zIndex - b.zIndex);
+  const selectionUi = getSelectionUi(activity);
 
   return objects.map(obj => {
     const st = obj.style || {};
@@ -3384,9 +3871,14 @@ function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectSt
     const runtimeState = getRuntimeObjectVisualState(objectStates, hiddenObjectIds, obj.id);
     const motionStyle = getTimelineMotionStyle(activity, obj.id, currentTime);
     const isSelectionOverlay = !!obj.selectionQuestionId;
+    const selectionMark = obj.selectionMark || selectionUi.controlMark;
+    const wrongGlyph = resolveWrongSelectionGlyph(selectionUi, selectionMark);
     const overlaySelected = isSelectionOverlay && selectedObjectIds.includes(obj.id);
     const hintSelected = hintObjectIds.includes(obj.id);
     const isSelected = runtimeState.selected || overlaySelected;
+    const feedbackState = selectionFeedbackById[obj.id] || null;
+    const isCorrectFeedback = feedbackState === "correct";
+    const isWrongFeedback = feedbackState === "wrong";
     const clickable = !runtimeState.disabled && (isSelectionOverlay || (activity.triggers || []).some(trigger => (trigger.when || "onClick") === "onClick" && getTriggerSourceMatches(trigger, obj.id)));
     const hoverable = !runtimeState.disabled && (activity.triggers || []).some(trigger => (trigger.when || "onClick") === "onHover" && getTriggerSourceMatches(trigger, obj.id));
 
@@ -3414,7 +3906,7 @@ function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectSt
           background: isImage
             ? "transparent"
             : isSelectionOverlay
-              ? (isSelected ? "#e0f2fe" : (st.background || "#f8fbff"))
+              ? (isWrongFeedback ? "#fef2f2" : isCorrectFeedback ? "#ecfdf5" : isSelected ? "#e0f2fe" : (st.background || "#f8fbff"))
               : (st.background || "transparent"),
           border: `${obj.type === "hotspot" ? 2 : 1}px ${st.borderStyle || "solid"} ${st.borderColor || "transparent"}`,
           borderRadius: (st.borderRadius || 0) * scale,
@@ -3435,7 +3927,18 @@ function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectSt
           filter: runtimeState.visited ? "saturate(1.08)" : "none",
         }}
       >
-        {obj.type === "video" && obj.mediaUrl ? (
+        {isSelectionOverlay ? (
+          <span
+            style={{
+              pointerEvents: "none",
+              fontWeight: 900,
+              fontSize: Math.max(18, (st.fontSize || 13) * scale),
+              color: isWrongFeedback ? "#dc2626" : isCorrectFeedback || isSelected ? "#16a34a" : "rgba(37,99,235,.18)",
+            }}
+          >
+            {isWrongFeedback ? wrongGlyph : (isCorrectFeedback || isSelected) ? getSelectionMarkGlyph(selectionMark) : ""}
+          </span>
+        ) : obj.type === "video" && obj.mediaUrl ? (
           <video
             src={obj.mediaUrl}
             controls={obj.showPlayerControls !== false}
@@ -3467,14 +3970,10 @@ function RuntimeObjectLayer({ activity, activeLayerId, hiddenObjectIds, objectSt
           <span
             style={{
               pointerEvents: "none",
-              fontWeight: isSelectionOverlay ? 800 : undefined,
-              fontSize: isSelectionOverlay ? Math.max(18, (st.fontSize || 13) * scale) : undefined,
-              color: isSelectionOverlay
-                ? (isSelected ? "#16a34a" : "rgba(37,99,235,.18)")
-                : (st.color || "#111"),
+              color: st.color || "#111",
             }}
           >
-            {isSelectionOverlay ? "✓" : (obj.label || obj.type)}
+            {obj.label || obj.type}
           </span>
         )}
       </div>
@@ -3486,20 +3985,128 @@ function getDragDropAssignments(activity) {
   const canvasObjects = getCanvasObjects(activity);
   const drags = canvasObjects.filter(o => o.type === "draggable");
   const drops = canvasObjects.filter(o => o.type === "dropzone");
-  const freeDrops = [...drops];
-  return drags.map((drag, index) => {
-    let drop = null;
-    if (drag.group) drop = freeDrops.find(z => z.group && z.group === drag.group) || null;
-    if (!drop && drag.label) drop = freeDrops.find(z => z.label && z.label === drag.label) || null;
-    if (!drop) drop = freeDrops[index] || null;
-    if (drop) freeDrops.splice(freeDrops.indexOf(drop), 1);
-    return drop ? { drag, drop } : null;
-  }).filter(Boolean);
+  const usedDropCounts = {};
+  const pairs = [];
+
+  drags.forEach((drag, index) => {
+    const scopeFiltered = drops.filter(drop => areDragDropScopesCompatible(activity, drag, drop));
+    if (!scopeFiltered.length) return;
+
+    const sameGroup = drag.group
+      ? scopeFiltered.filter(drop => normalizePdfText(drop.group || "") === normalizePdfText(drag.group || ""))
+      : [];
+    const sameLabel = drag.label
+      ? scopeFiltered.filter(drop => normalizePdfText(drop.label || "") === normalizePdfText(drag.label || ""))
+      : [];
+    const basePool = sameGroup.length ? sameGroup : sameLabel.length ? sameLabel : scopeFiltered;
+    const reusable = isDragReusable(activity, drag);
+    const acceptedDropIds = [];
+
+    basePool.forEach((drop, candidateIndex) => {
+      const capacity = getDropCapacityLimit(activity, drop);
+      const currentCount = usedDropCounts[drop.id] || 0;
+      const canUseDrop = capacity === 0 || currentCount < capacity;
+      const isFallbackCandidate = !sameGroup.length && !sameLabel.length;
+      if (!canUseDrop) return;
+      if (!reusable && candidateIndex > 0) return;
+      if (reusable && isFallbackCandidate && candidateIndex > 0) return;
+      acceptedDropIds.push(drop.id);
+      usedDropCounts[drop.id] = currentCount + 1;
+    });
+
+    if (!acceptedDropIds.length) {
+      const fallback = scopeFiltered[index] || scopeFiltered[0];
+      if (!fallback) return;
+      const capacity = getDropCapacityLimit(activity, fallback);
+      const currentCount = usedDropCounts[fallback.id] || 0;
+      if (capacity !== 0 && currentCount >= capacity) return;
+      acceptedDropIds.push(fallback.id);
+      usedDropCounts[fallback.id] = currentCount + 1;
+    }
+
+    acceptedDropIds.forEach(dropId => {
+      const drop = drops.find(item => item.id === dropId);
+      if (drop) pairs.push({ drag, drop });
+    });
+  });
+
+  return pairs;
+}
+
+function getDragDropSettings(activity = {}) {
+  return {
+    ...DEFAULT_DRAG_DROP_SETTINGS,
+    ...(activity?.dragDropSettings || {}),
+  };
+}
+
+function normalizeDragDropMatchValue(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map(item => String(item || "").trim()).filter(Boolean))];
+  }
+  const raw = String(value || "").trim();
+  return raw ? [raw] : [];
+}
+
+function getDragDropScopeKey(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function areDragDropScopesCompatible(activity, drag, drop) {
+  const settings = getDragDropSettings(activity);
+  if (!settings.isolateScopes || settings.allowCrossScope) return true;
+  const dragScope = getDragDropScopeKey(drag?.scope);
+  const dropScope = getDragDropScopeKey(drop?.scope);
+  if (!dragScope && !dropScope) return true;
+  return !!dragScope && !!dropScope && dragScope === dropScope;
+}
+
+function isDragReusable(activity, drag = {}) {
+  const settings = getDragDropSettings(activity);
+  return !!(drag?.allowMultipleTargets || settings.allowMultipleTargetsPerDrag);
+}
+
+function getDropCapacityLimit(activity, drop = {}) {
+  const settings = getDragDropSettings(activity);
+  const explicit = Number(drop?.capacity);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.round(explicit));
+  return settings.allowMultipleItemsPerDrop ? 0 : 1;
+}
+
+function getDragDropPairKey(dragId = "", dropId = "") {
+  return `${dragId}__${dropId}`;
+}
+
+function getDragDropPairsFromMatches(matches = {}) {
+  const seen = new Set();
+  return Object.entries(matches || {}).flatMap(([dragId, raw]) => (
+    normalizeDragDropMatchValue(raw).flatMap(dropId => {
+      const pairKey = getDragDropPairKey(dragId, dropId);
+      if (seen.has(pairKey)) return [];
+      seen.add(pairKey);
+      return [{ dragId, dropId }];
+    })
+  ));
+}
+
+function buildDragDropMatchMapFromPairs(pairs = [], preferArrays = false) {
+  const grouped = {};
+  pairs.forEach(({ dragId, dropId }) => {
+    if (!dragId || !dropId) return;
+    grouped[dragId] = grouped[dragId] || [];
+    if (!grouped[dragId].includes(dropId)) grouped[dragId].push(dropId);
+  });
+  return Object.fromEntries(
+    Object.entries(grouped).map(([dragId, dropIds]) => [dragId, preferArrays || dropIds.length > 1 ? dropIds : dropIds[0]]),
+  );
 }
 
 function getAutoAnswerSummary(activity) {
   if (activity.type === "drag-drop" || activity.type === "mixed") {
-    const pairs = getDragDropAssignments(activity).map(({ drag, drop }) => `${drag.label || "Surukle"} → ${drop.label || "Birak"}`);
+    const dragById = Object.fromEntries(getCanvasObjects(activity).filter(item => item.type === "draggable").map(item => [item.id, item]));
+    const dropById = Object.fromEntries(getCanvasObjects(activity).filter(item => item.type === "dropzone").map(item => [item.id, item]));
+    const pairs = getDragDropPairsFromMatches(getCorrectDragMatches(activity))
+      .map(({ dragId, dropId }) => `${dragById[dragId]?.label || "Surukle"} → ${dropById[dropId]?.label || "Birak"}`);
     return pairs.length ? pairs : ["Dogru eslesme henuz olusmadi."];
   }
   if (Array.isArray(activity.selectionSlots) && activity.selectionSlots.length) {
@@ -3525,17 +4132,17 @@ function layoutDragPositionsForMatches(activity, matches = {}) {
   const dropById = Object.fromEntries(drops.map(dz => [dz.id, dz]));
   const grouped = {};
 
-  Object.entries(matches || {}).forEach(([dragId, dropId]) => {
+  getDragDropPairsFromMatches(matches).forEach(({ dragId, dropId }) => {
     if (!dragById[dragId] || !dropById[dropId]) return;
     grouped[dropId] = grouped[dropId] || [];
-    grouped[dropId].push(dragId);
+    grouped[dropId].push({ dragId, pairKey: getDragDropPairKey(dragId, dropId) });
   });
 
   const positioned = {};
 
-  Object.entries(grouped).forEach(([dropId, dragIds]) => {
+  Object.entries(grouped).forEach(([dropId, dragEntries]) => {
     const drop = dropById[dropId];
-    const count = dragIds.length;
+    const count = dragEntries.length;
     if (!drop || count === 0) return;
 
     const cols = count === 1 ? 1 : count === 2 ? 2 : Math.ceil(Math.sqrt(count));
@@ -3544,7 +4151,7 @@ function layoutDragPositionsForMatches(activity, matches = {}) {
     const cellHeight = drop.height / rows;
     const padding = Math.max(6, Math.min(drop.width, drop.height) * 0.05);
 
-    dragIds.forEach((dragId, index) => {
+    dragEntries.forEach(({ dragId, pairKey }, index) => {
       const drag = dragById[dragId];
       if (!drag) return;
 
@@ -3557,7 +4164,7 @@ function layoutDragPositionsForMatches(activity, matches = {}) {
       const targetX = slotX + ((cellWidth - drag.width) / 2);
       const targetY = slotY + ((cellHeight - drag.height) / 2);
 
-      positioned[dragId] = {
+      positioned[pairKey] = {
         x: Math.max(drop.x + padding, Math.min(targetX, maxX)),
         y: Math.max(drop.y + padding, Math.min(targetY, maxY)),
       };
@@ -3568,8 +4175,10 @@ function layoutDragPositionsForMatches(activity, matches = {}) {
 }
 
 function buildAutoDragMatches(activity) {
-  return Object.fromEntries(
-    getDragDropAssignments(activity).map(({ drag, drop }) => [drag.id, drop.id]),
+  const preferArrays = !!getDragDropAssignments(activity).some(({ drag }) => isDragReusable(activity, drag));
+  return buildDragDropMatchMapFromPairs(
+    getDragDropAssignments(activity).map(({ drag, drop }) => ({ dragId: drag.id, dropId: drop.id })),
+    preferArrays,
   );
 }
 
@@ -3581,10 +4190,96 @@ function getCorrectDragMatches(activity) {
   // Use explicit match table if set
   const explicit = activity.dragDropMatches || {};
   const drags = getCanvasObjects(activity).filter(o => o.type === "draggable");
-  const hasExplicit = drags.some(d => explicit[d.id]);
+  const hasExplicit = drags.some(d => normalizeDragDropMatchValue(explicit[d.id]).length);
   if (hasExplicit) return explicit;
   // Fall back to auto-assignment
   return buildAutoDragMatches(activity);
+}
+
+function createDragDropPlacement(dragId, dropId) {
+  return { id: uid(), dragId, dropId };
+}
+
+function buildDragDropPlacementsFromMatches(matches = {}) {
+  return getDragDropPairsFromMatches(matches).map(({ dragId, dropId }) => createDragDropPlacement(dragId, dropId));
+}
+
+function buildDragDropPlacementLayout(activity, placements = {}, activeLayerId = null) {
+  const canvasObjects = getCanvasObjects(activeLayerId ? { ...activity, activeLayerId } : activity);
+  const drags = canvasObjects.filter(item => item.type === "draggable");
+  const drops = canvasObjects.filter(item => item.type === "dropzone");
+  const dragById = Object.fromEntries(drags.map(item => [item.id, item]));
+  const dropById = Object.fromEntries(drops.map(item => [item.id, item]));
+  const grouped = {};
+  const frames = {};
+
+  (placements || []).forEach(entry => {
+    if (!entry?.id || !dragById[entry.dragId] || !dropById[entry.dropId]) return;
+    grouped[entry.dropId] = grouped[entry.dropId] || [];
+    grouped[entry.dropId].push(entry);
+  });
+
+  Object.entries(grouped).forEach(([dropId, entries]) => {
+    const drop = dropById[dropId];
+    if (!drop) return;
+    const count = entries.length;
+    const cols = count === 1 ? 1 : count === 2 ? 2 : Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    const cellWidth = drop.width / cols;
+    const cellHeight = drop.height / rows;
+    const padding = Math.max(6, Math.min(drop.width, drop.height) * 0.05);
+
+    entries.forEach((entry, index) => {
+      const drag = dragById[entry.dragId];
+      if (!drag) return;
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const slotX = drop.x + (col * cellWidth);
+      const slotY = drop.y + (row * cellHeight);
+      const maxX = drop.x + drop.width - drag.width - padding;
+      const maxY = drop.y + drop.height - drag.height - padding;
+      const targetX = slotX + ((cellWidth - drag.width) / 2);
+      const targetY = slotY + ((cellHeight - drag.height) / 2);
+      frames[entry.id] = {
+        x: Math.max(drop.x + padding, Math.min(targetX, maxX)),
+        y: Math.max(drop.y + padding, Math.min(targetY, maxY)),
+        width: drag.width,
+        height: drag.height,
+        drag,
+        drop,
+      };
+    });
+  });
+
+  return frames;
+}
+
+function evaluateDragDropPlacements(activity, placements = [], expectedMatches = getCorrectDragMatches(activity)) {
+  const expectedPairs = getDragDropPairsFromMatches(expectedMatches);
+  const expectedCounts = {};
+  expectedPairs.forEach(({ dragId, dropId }) => {
+    const key = getDragDropPairKey(dragId, dropId);
+    expectedCounts[key] = (expectedCounts[key] || 0) + 1;
+  });
+
+  const placementResult = {};
+  (placements || []).forEach(entry => {
+    const key = getDragDropPairKey(entry.dragId, entry.dropId);
+    if (expectedCounts[key] > 0) {
+      placementResult[entry.id] = true;
+      expectedCounts[key] -= 1;
+    } else {
+      placementResult[entry.id] = false;
+    }
+  });
+
+  const allExpectedUsed = Object.values(expectedCounts).every(count => count === 0);
+  const allPlacedCorrect = (placements || []).every(entry => placementResult[entry.id] === true);
+  return {
+    placementResult,
+    success: expectedPairs.length > 0 && allExpectedUsed && allPlacedCorrect,
+    expectedCount: expectedPairs.length,
+  };
 }
 
 function ButtonPackageShowcase({ pkgId }) {
@@ -3865,14 +4560,228 @@ function PreviewDebugOverlay({ theme, data, onClose }) {
   );
 }
 
+function ManualLayerPreview({ activity, activities, variableDefinitions = [], runtimeVariables = {}, setRuntimeVariables, previewViewport = null, developerHintMode = false, onActiveLayerChange = () => {}, onDebugDataChange = () => {} }) {
+  const [activeLayerId, setActiveLayerId] = useState(activity.activeLayerId || "base");
+  const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
+  const [objectStates, setObjectStates] = useState({});
+  const [windowWidth, setWindowWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1280));
+  const theme = getPackageTheme(activity.buttonPackageId);
+  const resolvedLayerNames = useMemo(() => buildResolvedLayerNameMap(getActivityLayers(activity), activity), [activity]);
+  const orderedLayers = useMemo(() => {
+    const layers = getActivityLayers(activity);
+    return [
+      ...layers.filter(layer => layer.kind !== "base"),
+      ...layers.filter(layer => layer.kind === "base"),
+    ];
+  }, [activity]);
+  const viewportWidth = previewViewport?.width || windowWidth;
+  const viewportHeight = previewViewport?.height || (typeof window !== "undefined" ? window.innerHeight : 860);
+  const compactLayout = viewportWidth <= 980;
+  const stageScale = useMemo(
+    () => getFitScale(
+      activity.stageWidth || 1920,
+      activity.stageHeight || 1080,
+      Math.max(320, viewportWidth - (compactLayout ? 28 : 336)),
+      Math.max(320, viewportHeight - (compactLayout ? 180 : 96)),
+    ),
+    [activity.stageHeight, activity.stageWidth, compactLayout, viewportHeight, viewportWidth],
+  );
+  const stageWidth = Math.round((activity.stageWidth || 1920) * stageScale);
+  const stageHeight = Math.round((activity.stageHeight || 1080) * stageScale);
+  const activeLayer = orderedLayers.find(layer => layer.id === activeLayerId) || orderedLayers[orderedLayers.length - 1] || null;
+  const stageSelectionObjects = useMemo(
+    () => getCanvasObjects(activity, activeLayerId, hiddenObjectIds).filter(object => object.visible !== false && !!object.selectionQuestionId),
+    [activity, activeLayerId, hiddenObjectIds],
+  );
+  const stageSelectionChoicesByQuestion = useMemo(
+    () => Object.fromEntries(
+      [...new Set(stageSelectionObjects.map(object => object.selectionQuestionId).filter(Boolean))].map(questionId => [
+        questionId,
+        stageSelectionObjects.filter(object => object.selectionQuestionId === questionId),
+      ]),
+    ),
+    [stageSelectionObjects],
+  );
+  const selectedObjectIds = useMemo(
+    () => Object.entries(objectStates || {}).filter(([, value]) => value?.selected).map(([id]) => id),
+    [objectStates],
+  );
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    setActiveLayerId(activity.activeLayerId || "base");
+    setHiddenObjectIds(new Set());
+    setObjectStates({});
+  }, [activity.activeLayerId, activity.id, activity.currentSlideId]);
+
+  useEffect(() => {
+    onActiveLayerChange(activeLayerId);
+  }, [activeLayerId, onActiveLayerChange]);
+
+  useEffect(() => {
+    onDebugDataChange({
+      activeLayerId,
+      activeLayerName: activeLayer?.name || "Ana Katman",
+      hiddenObjectIds: [...hiddenObjectIds],
+      objectStates,
+      variables: runtimeVariables,
+    });
+  }, [activeLayer, activeLayerId, hiddenObjectIds, objectStates, onDebugDataChange, runtimeVariables]);
+
+  const setLayer = useCallback((layerId) => {
+    if (!orderedLayers.some(layer => layer.id === layerId)) return;
+    setActiveLayerId(layerId);
+  }, [orderedLayers]);
+
+  const runObjectTriggers = useCallback((objectId, when = "onClick") => {
+    const nextObjectStates = {
+      ...objectStates,
+      [objectId]: {
+        ...(objectStates?.[objectId] || {}),
+        visited: when !== "onLoad" ? true : (objectStates?.[objectId]?.visited || false),
+        selected: when === "onClick" ? true : (objectStates?.[objectId]?.selected || false),
+      },
+    };
+    setObjectStates(nextObjectStates);
+    runPreviewTriggers({
+      activity,
+      activities,
+      objectId,
+      when,
+      setActiveLayerId: setLayer,
+      hiddenObjectIds,
+      setHiddenObjectIds,
+      variables: runtimeVariables,
+      setVariables: setRuntimeVariables,
+      variableDefinitions,
+      objectStates: nextObjectStates,
+      setObjectStates,
+    });
+  }, [activity, activities, hiddenObjectIds, objectStates, runtimeVariables, setRuntimeVariables, setLayer, variableDefinitions]);
+
+  useEffect(() => {
+    runPreviewTriggers({
+      activity,
+      activities,
+      objectId: "__activity__",
+      when: "onLoad",
+      setActiveLayerId: setLayer,
+      hiddenObjectIds: new Set(),
+      setHiddenObjectIds,
+      variables: runtimeVariables,
+      setVariables: setRuntimeVariables,
+      variableDefinitions,
+      objectStates: {},
+      setObjectStates,
+    });
+  }, [activity.id, activity.currentSlideId, activities, runtimeVariables, setRuntimeVariables, setLayer, variableDefinitions]);
+
+  const toggleStageSelection = useCallback((objectId) => {
+    const selectedObject = stageSelectionObjects.find(object => object.id === objectId);
+    if (!selectedObject) return;
+    const siblingIds = (stageSelectionChoicesByQuestion[selectedObject.selectionQuestionId] || []).map(object => object.id);
+    setObjectStates(prev => {
+      const next = { ...prev };
+      siblingIds.forEach((id) => {
+        const currentlySelected = !!prev?.[id]?.selected;
+        const shouldToggleOff = siblingIds.length === 1 && id === objectId && currentlySelected;
+        next[id] = { ...(next[id] || {}), selected: shouldToggleOff ? false : id === objectId, visited: true };
+      });
+      return next;
+    });
+  }, [stageSelectionChoicesByQuestion, stageSelectionObjects]);
+
+  const legacySelectionMode = activity.type === "selection" && stageSelectionObjects.length === 0;
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: compactLayout ? "column" : "row", gap: 14, minHeight: 0 }}>
+      <div style={{ width: compactLayout ? "100%" : 286, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ borderRadius: 22, border: `1px solid ${theme.border}22`, background: "rgba(15,23,42,.78)", padding: 14, color: "#e2e8f0", boxShadow: "0 18px 40px rgba(15,23,42,.2)" }}>
+          <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.7, textTransform: "uppercase", color: "#7dd3fc" }}>Slide Layers</div>
+          <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 6, lineHeight: 1.6 }}>
+            Otomatik tanıtım ve doğru/yanlış ekranları kaldırıldı. Görünen alan her zaman <strong>ana katman + seçtiğin katman</strong>.
+          </div>
+        </div>
+
+        <div style={{ flex: compactLayout ? "0 0 auto" : 1, minHeight: 0, borderRadius: 22, border: `1px solid ${theme.border}22`, background: "rgba(255,255,255,.96)", overflow: "hidden", boxShadow: "0 18px 42px rgba(15,23,42,.12)" }}>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid rgba(148,163,184,.2)", background: "linear-gradient(180deg,#f8fafc,#eef2ff)" }}>
+            <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", color: "#475569" }}>Layer Listesi</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>Articulate mantığıyla görünür katmanları test et.</div>
+          </div>
+          <div style={{ maxHeight: compactLayout ? 280 : "100%", overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {orderedLayers.map((layer, index) => {
+              const isActive = layer.id === activeLayerId;
+              const layerObjects = (activity.objects || []).filter(object => (object.layerId || "base") === layer.id);
+              const isBase = layer.kind === "base";
+              return (
+                <button
+                  key={layer.id}
+                  onClick={() => setLayer(layer.id)}
+                  style={{ display: "grid", gridTemplateColumns: "88px 1fr auto", gap: 10, alignItems: "center", padding: 8, borderRadius: 14, border: `1px solid ${isActive ? "#60a5fa" : "#dbe2ea"}`, background: isActive ? "linear-gradient(180deg,#dbeafe,#ffffff)" : "linear-gradient(180deg,#ffffff,#f8fafc)", cursor: "pointer", textAlign: "left" }}
+                >
+                  <LayerThumbnail activity={activity} layer={layer} isActive={isActive} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ padding: "2px 7px", borderRadius: 999, background: isBase ? "#e2e8f0" : "#dbeafe", color: isBase ? "#475569" : "#1d4ed8", fontSize: 9, fontWeight: 900 }}>
+                        {isBase ? "Base Layer" : "Layer"}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{resolvedLayerNames[layer.id] || (isBase ? "Base Layer" : `Layer ${index + 1}`)}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>{layerObjects.length} nesne</div>
+                  </div>
+                  <span style={{ width: 20, height: 20, borderRadius: 999, border: `1px solid ${isActive ? "#60a5fa" : "#cbd5e1"}`, background: isActive ? "#dbeafe" : "#ffffff", color: isActive ? "#2563eb" : "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900 }}>
+                    {isActive ? "●" : "○"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        {legacySelectionMode && (
+          <div style={{ padding: "12px 14px", borderRadius: 18, border: "1px solid rgba(251,191,36,.35)", background: "rgba(254,243,199,.92)", color: "#92400e", fontSize: 12, lineHeight: 1.6 }}>
+            Bu sahne eski otomatik seçim yapısını kullanıyor. Yeni sistemde seçim alanlarını doğrudan sahne nesnesi olarak kurup katman geçişlerini <strong>Etkileşim</strong> sekmesindeki <strong>Katmana Geç</strong> trigger’larıyla yöneteceğiz.
+          </div>
+        )}
+
+        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 26, background: "linear-gradient(180deg,#081120 0%,#0f172a 100%)", border: `1px solid ${theme.border}22`, padding: compactLayout ? 14 : 20, overflow: "auto" }}>
+          <div style={{ width: stageWidth, height: stageHeight, position: "relative", background: activity.backgroundColor || "#ffffff", borderRadius: 22, overflow: "hidden", margin: "0 auto", border: `1px solid ${theme.border}22`, boxShadow: "0 22px 60px rgba(15,23,42,.2)" }}>
+            {activity.svgMarkup && <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: activity.svgMarkup }} />}
+            <RuntimeObjectLayer
+              activity={activity}
+              activeLayerId={activeLayerId}
+              hiddenObjectIds={hiddenObjectIds}
+              objectStates={objectStates}
+              onRunTriggers={runObjectTriggers}
+              onSelectionChoice={toggleStageSelection}
+              selectedObjectIds={selectedObjectIds}
+              hintObjectIds={developerHintMode ? stageSelectionObjects.filter(object => object.selectionCorrect).map(object => object.id) : []}
+              scale={stageScale}
+              includeDragDrop
+              currentTime={0}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PreviewPlayer({ activity, activities, variables = [] }) {
   const [currentId, setCurrentId] = useState(activity?.id || null);
   const [runtimeVariables, setRuntimeVariables] = useState(() => buildRuntimeVariableMap(variables));
   const [debugOpen, setDebugOpen] = useState(false);
   const [developerHintMode, setDeveloperHintMode] = useState(false);
-  const [flowPhase, setFlowPhase] = useState(getInitialPreviewPhase(activity || {}));
+  const [flowPhase, setFlowPhase] = useState(activity?.activeLayerId || "base");
   const [flowDebugData, setFlowDebugData] = useState(null);
-  const [previewCommand, setPreviewCommand] = useState(null);
+  const [previewResetKey, setPreviewResetKey] = useState(0);
   const normalizedActivities = useMemo(
     () => activities.map(item => normalizeActivity(item)),
     [activities],
@@ -3922,73 +4831,25 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
     [currentActivity?.buttonPackageId],
   );
 
-  const nextSlideId = getAdjacentActivitySlideId(currentRawActivity, 1);
-  const hasNextActivity = !!currentActivity?.nextActivityId;
-  const hasNextStep = !!nextSlideId || hasNextActivity;
-  const nextStepLabel = nextSlideId ? "Sonraki Slider" : "Sonraki Soru";
-
-  const handleNextActivity = useCallback(() => {
-    if (!currentActivity?.nextActivityId) return;
-    setCurrentId(currentActivity.nextActivityId);
-  }, [currentActivity]);
-
-  const handleGoToActivity = useCallback((activityId) => {
-    if (!activityId) return;
-    setCurrentId(activityId);
-  }, []);
-
-  const handleGoToSlide = useCallback((slideValue) => {
-    if (!currentRawActivity?.id) return;
-    const target = getActivitySlideTarget(currentRawActivity, slideValue || "__next__");
-    if (!target) return;
-    setActivitySlideMap(prev => ({
-      ...prev,
-      [currentRawActivity.id]: target.id,
-    }));
-  }, [currentRawActivity]);
-
-  const handleNextStep = useCallback(() => {
-    if (nextSlideId) {
-      handleGoToSlide(nextSlideId);
-      return;
-    }
-    handleNextActivity();
-  }, [handleGoToSlide, handleNextActivity, nextSlideId]);
-
   useEffect(() => {
     setFlowDebugData(null);
+    setPreviewResetKey(value => value + 1);
   }, [currentActivity?.id, currentSlideId]);
 
   if (!currentActivity) return null;
 
-  const currentSettings = { ...DEFAULT_ACTIVITY_SETTINGS, ...(currentActivity.settings || {}) };
-  const quickPhases = [
-    { id: "intro", label: "Tanitim" },
-    ...(currentSettings.showButtonPackageIntro !== false && currentActivity.buttonPackageScreen?.enabled !== false ? [{ id: "package", label: "Tema" }] : []),
-    ...(currentSettings.showMenuScreen !== false && currentActivity.menuScreen?.enabled !== false ? [{ id: "menu", label: "Menu" }] : []),
-    { id: "play", label: "Oyun" },
-  ];
   const devicePresets = [
     { id: "desktop", label: "Masaustu", icon: "â–­", width: "100%", height: "100%", radius: 16 },
     { id: "tablet", label: "Tablet", icon: "â–¯", width: 900, height: 680, radius: 24 },
     { id: "mobile", label: "Mobil", icon: "â–®", width: 430, height: 760, radius: 36 },
   ];
   const [devicePreset, setDevicePreset] = useState("desktop");
-
-  const dispatchPreviewCommand = (action, phase = null) => {
-    setPreviewCommand({
-      token: Date.now() + Math.random(),
-      action,
-      phase,
-      activityId: currentActivity.id,
-    });
-  };
   const debugData = {
     activityName: currentActivity.name,
     activityId: currentActivity.id,
     slideId: currentSlideId,
     slideName: getActivitySlides(currentRawActivity).find(slide => slide.id === currentSlideId)?.name || currentSlideId,
-    phase: flowPhase,
+    phase: flowDebugData?.activeLayerName || flowPhase,
     variables: runtimeVariables,
     ...flowDebugData,
   };
@@ -4018,16 +4879,27 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
       }
   ), [currentDevicePreset]);
 
-  const flow = currentActivity.type === "drag-drop" || currentActivity.type === "mixed"
-    ? <PreviewDragDropFlow activity={currentActivity} activities={normalizedActivities} hasNextActivity={hasNextActivity} hasNextStep={hasNextStep} nextStepLabel={nextStepLabel} onNextActivity={handleNextActivity} onNextStep={handleNextStep} onGoToActivity={handleGoToActivity} onGoToSlide={handleGoToSlide} variableDefinitions={variables} runtimeVariables={runtimeVariables} setRuntimeVariables={setRuntimeVariables} previewCommand={previewCommand} developerHintMode={developerHintMode} onPhaseChange={setFlowPhase} onDebugDataChange={setFlowDebugData} previewViewport={previewViewport} />
-    : <PreviewSelectionFlow activity={currentActivity} activities={normalizedActivities} hasNextActivity={hasNextActivity} hasNextStep={hasNextStep} nextStepLabel={nextStepLabel} onNextActivity={handleNextActivity} onNextStep={handleNextStep} onGoToActivity={handleGoToActivity} onGoToSlide={handleGoToSlide} variableDefinitions={variables} runtimeVariables={runtimeVariables} setRuntimeVariables={setRuntimeVariables} previewCommand={previewCommand} developerHintMode={developerHintMode} onPhaseChange={setFlowPhase} onDebugDataChange={setFlowDebugData} previewViewport={previewViewport} />;
+  const flow = (
+    <ManualLayerPreview
+      key={`${currentActivity.id}-${currentSlideId}-${previewResetKey}`}
+      activity={currentActivity}
+      activities={normalizedActivities}
+      variableDefinitions={variables}
+      runtimeVariables={runtimeVariables}
+      setRuntimeVariables={setRuntimeVariables}
+      developerHintMode={developerHintMode}
+      onActiveLayerChange={setFlowPhase}
+      onDebugDataChange={setFlowDebugData}
+      previewViewport={previewViewport}
+    />
+  );
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", height: "100%", minHeight: 0, overflow: "hidden", background: "transparent" }}>
       <div style={{ width: "100%", margin: "0 auto", padding: 14, borderRadius: 22, background: "rgba(15,23,42,.78)", border: `1px solid ${currentTheme.border}33`, boxShadow: "0 20px 50px rgba(15,23,42,.28)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#7dd3fc" }}>Preview Kontrolleri</div>
-          <div style={{ fontSize: 12, color: "#cbd5e1" }}>Cihaz secin ve akisi test edin.</div>
+          <div style={{ fontSize: 12, color: "#cbd5e1" }}>Cihaz secin ve katman tabanli sahneyi test edin.</div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.2)", padding: 4, borderRadius: 12 }}>
@@ -4039,13 +4911,10 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {quickPhases.map(item => (
-            <button key={item.id} onClick={() => dispatchPreviewCommand("jump", item.id)} style={toolbarBtn(flowPhase === item.id)}>
-              {item.label}
-            </button>
-          ))}
-          <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.1)", margin: "0 4px" }} />
-          <button onClick={() => dispatchPreviewCommand("reset")} style={toolbarBtn(false)}>Bastan</button>
+          <span style={{ padding: "0 12px", minHeight: 34, borderRadius: 999, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.82)", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center" }}>
+            Aktif Katman: {flowDebugData?.activeLayerName || flowPhase || "Ana Katman"}
+          </span>
+          <button onClick={() => setPreviewResetKey(value => value + 1)} style={toolbarBtn(false)}>Sifirla</button>
           <button onClick={() => setDeveloperHintMode(value => !value)} style={toolbarBtn(developerHintMode)}>
             {developerHintMode ? "Ipucu Acik" : "Ipucu Modu"}
           </button>
@@ -4116,6 +4985,9 @@ function PreviewSelectionFlow({ activity, activities, hasNextActivity = false, h
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1280));
   const opts = activity.mcOptions || [];
   const multi = activity.mcMode === "multi";
+  const selectionUi = getSelectionUi(activity);
+  const selectedMarkGlyph = getSelectionMarkGlyph(selectionUi.controlMark);
+  const wrongMarkGlyph = resolveWrongSelectionGlyph(selectionUi, selectionUi.controlMark);
   const settings = { ...DEFAULT_ACTIVITY_SETTINGS, ...(activity.settings || {}) };
   const intro = activity.introScreen || {};
   const packageScreen = activity.buttonPackageScreen || {};
@@ -4205,6 +5077,13 @@ function PreviewSelectionFlow({ activity, activities, hasNextActivity = false, h
   const selectedLabels = usesStageSelection
     ? sel.map(id => stageSelectionObjects.find(obj => obj.id === id)?.label || id)
     : viewOptions.filter(option => sel.includes(option.id)).map(option => option.label || option.id);
+  const stageSelectionFeedbackById = useMemo(() => {
+    if (!usesStageSelection || !(checking || result !== null)) return {};
+    return Object.fromEntries(stageSelectionObjects.map(obj => {
+      if (!submittedSelection.includes(obj.id)) return [obj.id, null];
+      return [obj.id, obj.selectionCorrect ? "correct" : "wrong"];
+    }).filter(([, value]) => !!value));
+  }, [checking, result, stageSelectionObjects, submittedSelection, usesStageSelection]);
   useEffect(() => {
     onDebugDataChange?.({
       phase,
@@ -4593,7 +5472,7 @@ function PreviewSelectionFlow({ activity, activities, hasNextActivity = false, h
           <div style={{ marginBottom: 28, borderRadius: 20, overflow: "hidden", border: "1px solid #ddeaf2", boxShadow: "0 14px 32px rgba(20,58,86,.08)" }}>
             <div style={{ width: stageWidth, height: stageHeight, position: "relative", background: activity.backgroundColor || "#fff", overflow: "hidden", margin: "0 auto" }}>
               {activity.svgMarkup && <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: activity.svgMarkup }} />}
-              <RuntimeObjectLayer activity={activity} activeLayerId={activeLayerId} hiddenObjectIds={hiddenObjectIds} objectStates={objectStates} onRunTriggers={runObjectTriggers} onSelectionChoice={toggleStageSelection} selectedObjectIds={sel} hintObjectIds={developerHintMode ? stageSelectionObjects.filter(obj => obj.selectionCorrect).map(obj => obj.id) : []} scale={stageScale} currentTime={runtimePreviewTime} />
+              <RuntimeObjectLayer activity={activity} activeLayerId={activeLayerId} hiddenObjectIds={hiddenObjectIds} objectStates={objectStates} onRunTriggers={runObjectTriggers} onSelectionChoice={toggleStageSelection} selectedObjectIds={sel} hintObjectIds={developerHintMode ? stageSelectionObjects.filter(obj => obj.selectionCorrect).map(obj => obj.id) : []} selectionFeedbackById={stageSelectionFeedbackById} scale={stageScale} currentTime={runtimePreviewTime} />
             </div>
           </div>
         )}
@@ -4609,7 +5488,6 @@ function PreviewSelectionFlow({ activity, activities, hasNextActivity = false, h
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {viewOptions.map((o, idx) => {
               const selected = sel.includes(o.id);
-              const letter = String.fromCharCode(65 + idx);
               const isCorrectOpt = !!o.isCorrect;
               const showCheckedState = checking || result !== null;
               const isWrongSelected = showCheckedState && selected && !isCorrectOpt;
@@ -4623,10 +5501,15 @@ function PreviewSelectionFlow({ activity, activities, hasNextActivity = false, h
               if (isWrongSelected) { borderCol = "#f26c6c"; bgCol = "#fff4f4"; badgeBg = "rgba(242,108,108,.25)"; }
               return (
                 <button key={o.id} onClick={() => !checking && toggle(o.id)} style={{ padding: "14px 18px", borderRadius: 22, border: `2px solid ${borderCol}`, background: bgCol, color: "#123a56", textAlign: "left", cursor: checking ? "default" : "pointer", fontSize: 14, fontWeight: 700, transition: "all .2s", display: "flex", alignItems: "center", gap: 14, transform: checking && isCorrectOption ? "scale(1.02)" : "none", boxShadow: "0 10px 24px rgba(20,58,86,.06)" }}>
-                  <span style={{ width: 28, height: 28, borderRadius: "50%", background: badgeBg, border: `1.5px solid ${borderCol}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                    {showCheckedState ? (isCorrectOption ? "✓" : isWrongSelected ? "✗" : letter) : letter}
+                  <span style={{ width: 28, height: 28, borderRadius: selectionUi.controlShape === "circle" ? 999 : 8, background: badgeBg, border: `1.5px solid ${borderCol}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, flexShrink: 0 }}>
+                    {showCheckedState
+                      ? (isCorrectOption ? selectedMarkGlyph : isWrongSelected ? wrongMarkGlyph : "")
+                      : (selected ? selectedMarkGlyph : "")}
                   </span>
-                  {o.label || "Seçenek"}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span>{o.label || "Seçenek"}</span>
+                    <span style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>Secenek {idx + 1}</span>
+                  </div>
                 </button>
               );
             })}
@@ -4680,16 +5563,16 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
   const [attempts, setAttempts] = useState(0);
   const [status, setStatus] = useState(null);
   const [checking, setChecking] = useState(false);
-  const [checkResult, setCheckResult] = useState(null); // { [dragId]: boolean }
-  const [submittedMatches, setSubmittedMatches] = useState({});
+  const [checkResult, setCheckResult] = useState(null); // { [placementId]: boolean }
+  const [submittedPlacements, setSubmittedPlacements] = useState([]);
   const [guideSourcePhase, setGuideSourcePhase] = useState("intro");
   const [menuOpen, setMenuOpen] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
   const stageRef = useRef(null);
   const dragging = useRef(null);
   const activeHandlersRef = useRef(null);
-  const [positions, setPositions] = useState({});
-  const [matched, setMatched] = useState({});
+  const [placements, setPlacements] = useState([]);
+  const [dragPreview, setDragPreview] = useState(null);
   const [hoveredDropId, setHoveredDropId] = useState(null);
   const [activeLayerId, setActiveLayerId] = useState(activity.activeLayerId || "base");
   const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
@@ -4706,6 +5589,7 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
   const results = resultScreens;
   const answerScreen = activity.answerScreen || {};
   const theme = getPackageTheme(activity.buttonPackageId);
+  const dragDropSettings = getDragDropSettings(activity);
   const packageTitle = !packageScreen.title || /buton paketi/i.test(packageScreen.title) ? "Tema Paketi Tanıtımı" : packageScreen.title;
   const packageBody = !packageScreen.body || /buton.*davran/i.test(packageScreen.body) ? "Etkinlikte kullanacağın tema paketini ve buton davranışlarını önce incele." : packageScreen.body;
   const runtimePreviewTime = 0;
@@ -4714,33 +5598,35 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
   const drops = canvasObjects.filter(o => o.type === "dropzone");
   const runtimeActivity = useMemo(() => ({ ...activity, activeLayerId }), [activity, activeLayerId]);
   const correctMatches = getCorrectDragMatches(runtimeActivity);
-  const correctPositions = getCorrectDragPositions(runtimeActivity, correctMatches);
+  const correctPairs = getDragDropPairsFromMatches(correctMatches);
   const autoAnswer = getAutoAnswerSummary(runtimeActivity);
   const previousActivityIdRef = useRef(activity?.id || null);
   const dropById = useMemo(() => Object.fromEntries(drops.map(item => [item.id, item])), [drops]);
-  const getDragFrame = useCallback((dragId, shownMatched = matched, shownPositions = positions) => {
-    const drag = drags.find(item => item.id === dragId);
-    const drop = dropById[shownMatched?.[dragId]];
-    if (drop) {
-      return {
-        x: drop.x,
-        y: drop.y,
-        width: drop.width,
-        height: drop.height,
-        drop,
-        drag,
-      };
-    }
-    const pos = shownPositions?.[dragId] || (drag ? { x: drag.x, y: drag.y } : { x: 0, y: 0 });
-    return {
-      x: pos.x,
-      y: pos.y,
-      width: drag?.width || 0,
-      height: drag?.height || 0,
-      drop: null,
-      drag,
-    };
-  }, [drags, dropById, matched, positions]);
+  const placementsRef = useRef([]);
+  const placementFrames = useMemo(() => buildDragDropPlacementLayout(runtimeActivity, placements, activeLayerId), [activeLayerId, placements, runtimeActivity]);
+  const correctPlacements = useMemo(() => buildDragDropPlacementsFromMatches(correctMatches), [correctMatches]);
+  const correctPlacementFrames = useMemo(() => buildDragDropPlacementLayout(runtimeActivity, correctPlacements, activeLayerId), [activeLayerId, correctPlacements, runtimeActivity]);
+  const placementsByDrag = useMemo(() => {
+    const grouped = {};
+    placements.forEach(entry => {
+      grouped[entry.dragId] = grouped[entry.dragId] || [];
+      grouped[entry.dragId].push(entry);
+    });
+    return grouped;
+  }, [placements]);
+  const matched = useMemo(() => buildDragDropMatchMapFromPairs(placements.map(entry => ({ dragId: entry.dragId, dropId: entry.dropId })), true), [placements]);
+  const submittedMatches = useMemo(() => buildDragDropMatchMapFromPairs(submittedPlacements.map(entry => ({ dragId: entry.dragId, dropId: entry.dropId })), true), [submittedPlacements]);
+  const canDropOnZone = useCallback((drag, drop, sourcePlacements = placementsRef.current, ignorePlacementId = null) => {
+    if (!drag || !drop) return false;
+    if (!areDragDropScopesCompatible(runtimeActivity, drag, drop)) return false;
+    const activePlacements = (sourcePlacements || []).filter(entry => entry.id !== ignorePlacementId);
+    const capacity = getDropCapacityLimit(runtimeActivity, drop);
+    const currentDropCount = activePlacements.filter(entry => entry.dropId === drop.id).length;
+    if (capacity !== 0 && currentDropCount >= capacity) return false;
+    if (activePlacements.some(entry => entry.dragId === drag.id && entry.dropId === drop.id)) return false;
+    if (!isDragReusable(runtimeActivity, drag) && activePlacements.some(entry => entry.dragId === drag.id)) return false;
+    return true;
+  }, [runtimeActivity]);
 
   // Cleanup drag listeners on unmount
   useEffect(() => {
@@ -4752,6 +5638,9 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
       }
     };
   }, []);
+  useEffect(() => {
+    placementsRef.current = placements;
+  }, [placements]);
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -4771,12 +5660,12 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
     setStatus(null);
     setChecking(false);
     setCheckResult(null);
-    setSubmittedMatches({});
+    setSubmittedPlacements([]);
     setGuideSourcePhase(sameActivity ? "play" : "intro");
     setMenuOpen(false);
     setAudioMuted(false);
-    setPositions({});
-    setMatched({});
+    setPlacements([]);
+    setDragPreview(null);
     setHoveredDropId(null);
     setActiveLayerId(activity.activeLayerId || "base");
     setHiddenObjectIds(new Set());
@@ -4802,12 +5691,12 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
     setStatus(null);
     setChecking(false);
     setCheckResult(null);
-    setSubmittedMatches({});
+    setSubmittedPlacements([]);
     setGuideSourcePhase(targetPhase === "play" ? "play" : "intro");
     setMenuOpen(false);
     setAudioMuted(false);
-    setPositions({});
-    setMatched({});
+    setPlacements([]);
+    setDragPreview(null);
     setHoveredDropId(null);
     setActiveLayerId(activity.activeLayerId || "base");
     setHiddenObjectIds(new Set());
@@ -4875,43 +5764,44 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
     });
   }, [activity.id, activity.currentSlideId]);
 
-  const handleDown = useCallback((e, id) => {
+  const handleDown = useCallback((e, dragId, placementId = null) => {
     if (phase !== "play") return;
     if (status || checkResult) {
       setStatus(null);
       setCheckResult(null);
-      setSubmittedMatches({});
+      setSubmittedPlacements([]);
     }
     e.preventDefault();
     e.currentTarget?.setPointerCapture?.(e.pointerId);
+    const drag = drags.find(item => item.id === dragId);
+    if (!drag) return;
     const startPt = toStage(e.clientX, e.clientY);
-    const frame = getDragFrame(id);
-    setMatched(prev => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    // Read start pos synchronously to avoid stale closure issue
-    const origDrag = drags.find(x => x.id === id);
-    const originalPos = origDrag ? { x: origDrag.x, y: origDrag.y } : { x: frame.x, y: frame.y };
-    setPositions(prev => {
-      const cp = { x: frame.x, y: frame.y };
-      dragging.current = { id, ox: startPt.x - cp.x, oy: startPt.y - cp.y, startPos: cp, currentPos: cp, originalPos };
-      return { ...prev, [id]: cp };
-    });
+    const sourcePlacement = placementId ? placementsRef.current.find(entry => entry.id === placementId) || null : null;
+    const baseFrame = placementId && placementFrames[placementId]
+      ? placementFrames[placementId]
+      : { x: drag.x, y: drag.y, width: drag.width, height: drag.height };
+    const cp = { x: baseFrame.x, y: baseFrame.y };
+    if (placementId) {
+      setPlacements(prev => prev.filter(entry => entry.id !== placementId));
+    }
+    dragging.current = { dragId, placementId, ox: startPt.x - cp.x, oy: startPt.y - cp.y, startPos: cp, currentPos: cp, originalPlacement: sourcePlacement };
+    setDragPreview({ dragId, placementId, x: cp.x, y: cp.y, width: drag.width, height: drag.height });
 
     const onMove = (me) => {
       if (!dragging.current) return;
       const pt = toStage(me.clientX, me.clientY);
-      const { id: dragId, ox, oy } = dragging.current;
+      const { dragId: activeDragId, ox, oy, placementId: activePlacementId } = dragging.current;
       const nx = pt.x - ox, ny = pt.y - oy;
       dragging.current.currentPos = { x: nx, y: ny };
-      setPositions(prev => ({ ...prev, [dragId]: { x: nx, y: ny } }));
-      // Highlight hovered drop zone
-      const d = drags.find(x => x.id === dragId);
-      const cx = nx + (d?.width || 0) / 2, cy = ny + (d?.height || 0) / 2;
-      const hovered = drops.find(dz => cx >= dz.x && cx <= dz.x + dz.width && cy >= dz.y && cy <= dz.y + dz.height);
+      setDragPreview(prev => prev ? { ...prev, x: nx, y: ny } : prev);
+      const d = drags.find(x => x.id === activeDragId);
+      const cx = nx + (d?.width || 0) / 2;
+      const cy = ny + (d?.height || 0) / 2;
+      const visiblePlacements = placementsRef.current.filter(entry => entry.id !== activePlacementId);
+      const hovered = drops.find(dz => (
+        cx >= dz.x && cx <= dz.x + dz.width && cy >= dz.y && cy <= dz.y + dz.height
+        && canDropOnZone(d, dz, visiblePlacements, activePlacementId)
+      ));
       setHoveredDropId(hovered?.id || null);
     };
 
@@ -4920,35 +5810,39 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
       window.removeEventListener("pointerup", onUp);
       activeHandlersRef.current = null;
       if (!dragging.current) return;
-      const { id: dragId, startPos, currentPos, originalPos } = dragging.current;
+      const { dragId: activeDragId, startPos, currentPos, placementId: activePlacementId, originalPlacement } = dragging.current;
       const p = currentPos || startPos;
-      const d = drags.find(x => x.id === dragId);
+      const d = drags.find(x => x.id === activeDragId);
+      const visiblePlacements = placementsRef.current.filter(entry => entry.id !== activePlacementId);
       let matchedDz = null;
       for (const dz of drops) {
         const cx = p.x + (d?.width || 0) / 2, cy = p.y + (d?.height || 0) / 2;
-        if (cx >= dz.x && cx <= dz.x + dz.width && cy >= dz.y && cy <= dz.y + dz.height) {
+        if (cx >= dz.x && cx <= dz.x + dz.width && cy >= dz.y && cy <= dz.y + dz.height && canDropOnZone(d, dz, visiblePlacements, activePlacementId)) {
           matchedDz = dz;
           break;
         }
       }
       if (matchedDz) {
-        setMatched(prev => ({ ...prev, [dragId]: matchedDz.id }));
-        setPositions(prev => ({ ...prev, [dragId]: { x: matchedDz.x + (matchedDz.width - (d?.width || 0)) / 2, y: matchedDz.y + (matchedDz.height - (d?.height || 0)) / 2 } }));
-        runObjectTriggers(dragId, "onDrop");
+        const nextPlacement = originalPlacement
+          ? { ...originalPlacement, dropId: matchedDz.id }
+          : createDragDropPlacement(activeDragId, matchedDz.id);
+        setPlacements(prev => [...prev.filter(entry => entry.id !== activePlacementId), nextPlacement]);
+        runObjectTriggers(activeDragId, "onDrop");
         runObjectTriggers(matchedDz.id, "onDrop");
       } else {
-        // Return to original canvas position when not dropped on a valid zone
-        const returnPos = originalPos || (d ? { x: d.x, y: d.y } : startPos);
-        setPositions(prev => ({ ...prev, [dragId]: returnPos }));
+        if (originalPlacement) {
+          setPlacements(prev => [...prev, originalPlacement]);
+        }
       }
       dragging.current = null;
+      setDragPreview(null);
       setHoveredDropId(null);
     };
 
     activeHandlersRef.current = { move: onMove, up: onUp };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [phase, status, checkResult, drags, drops, toStage, runObjectTriggers, getDragFrame]);
+  }, [phase, status, checkResult, drags, drops, toStage, runObjectTriggers, placementFrames, canDropOnZone]);
   const getScreenStyle = (screenKey) => {
     const map = { intro: intro, package: packageScreen, menu: menuScreen, play: playScreen, success: results, failure: results, answer: answerScreen };
     return (map[screenKey]?.style) || {};
@@ -4963,9 +5857,7 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
   const screenGhostBtn = (screenKey) => { const s = getScreenStyle(screenKey); return { ...ghostBtn, ...(s.buttonBackground && { background: s.buttonBackground }), ...(s.buttonColor && { color: s.buttonColor }), ...(s.buttonBorderRadius != null && s.buttonBorderRadius !== 0 && { borderRadius: s.buttonBorderRadius }) }; };
   const vw = Math.round((activity.stageWidth || 1920) * scale);
   const vh = Math.round((activity.stageHeight || 1080) * scale);
-  const matchedLabels = drags
-    .filter(drag => matched[drag.id])
-    .map(drag => `${drag.label || "Surukle"} -> ${dropById[matched[drag.id]]?.label || matched[drag.id]}`);
+  const matchedLabels = placements.map(entry => `${drags.find(drag => drag.id === entry.dragId)?.label || "Surukle"} -> ${dropById[entry.dropId]?.label || entry.dropId}`);
   useEffect(() => {
     onDebugDataChange?.({
       phase,
@@ -4974,27 +5866,31 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
       timelineTime,
       timelinePlaying,
       matchLabels: matchedLabels,
+      matchedMap: matched,
       status,
       checking,
       hiddenObjectIds: [...hiddenObjectIds],
       objectStates,
-      submittedMatches,
+      submittedMatchMap: submittedMatches,
+      submittedPlacements,
     });
-  }, [activeLayerId, attempts, checking, hiddenObjectIds, matchedLabels, objectStates, onDebugDataChange, phase, status, submittedMatches, timelinePlaying, timelineTime]);
+  }, [activeLayerId, attempts, checking, hiddenObjectIds, matched, matchedLabels, objectStates, onDebugDataChange, phase, status, submittedMatches, submittedPlacements, timelinePlaying, timelineTime]);
 
   const renderStage = (forceCorrect = false, showEvaluation = true) => {
-    const shownMatched = forceCorrect ? correctMatches : matched;
-    const shownPositions = forceCorrect ? correctPositions : positions;
-    const matchedDropIds = new Set(Object.values(shownMatched));
+    const shownPlacements = forceCorrect ? correctPlacements : placements;
+    const shownPlacementFrames = forceCorrect ? correctPlacementFrames : placementFrames;
+    const matchedDropIds = new Set(shownPlacements.map(entry => entry.dropId));
+    const correctDropIds = new Set(correctPairs.map(pair => pair.dropId));
     return (
       <div ref={forceCorrect ? null : stageRef} style={{ width: vw, height: vh, position: "relative", background: activity.backgroundColor || "#fff", borderRadius: 16, overflow: "hidden", margin: "0 auto", border: `1px solid ${theme.border}18`, boxShadow: "0 16px 48px rgba(0,0,0,.28)", touchAction: "none" }}>
         {activity.svgMarkup && <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: activity.svgMarkup }} />}
         {drops.map(dz => {
           const isMatched = matchedDropIds.has(dz.id);
           const isHovered = !forceCorrect && hoveredDropId === dz.id;
-          const isCheckedCorrect = checking && Object.entries(shownMatched).some(([dragId, dropId]) => dropId === dz.id && correctMatches[dragId] === dz.id);
-          const isCheckedWrong = checking && Object.entries(shownMatched).some(([dragId, dropId]) => dropId === dz.id && correctMatches[dragId] !== dz.id);
-          const isHinted = developerHintMode && !forceCorrect && !checking && checkResult === null && Object.values(correctMatches).includes(dz.id);
+          const dropPlacements = shownPlacements.filter(entry => entry.dropId === dz.id);
+          const isCheckedCorrect = checking && dropPlacements.some(entry => checkResult?.[entry.id] === true);
+          const isCheckedWrong = checking && dropPlacements.some(entry => checkResult?.[entry.id] === false);
+          const isHinted = developerHintMode && !forceCorrect && !checking && checkResult === null && correctDropIds.has(dz.id);
           const borderColor = isCheckedCorrect ? "#14532d" : isCheckedWrong ? "#7f1d1d" : isHovered ? theme.border : (dz.style?.borderColor || "#f97316");
           const background = isCheckedCorrect ? "#166534" : isCheckedWrong ? "#991b1b" : (dz.style?.background || "#fed7aa");
           const textColor = isCheckedCorrect || isCheckedWrong ? "#ffffff" : (dz.style?.color || "#9a3412");
@@ -5005,22 +5901,31 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
           );
         })}
         {drags.map(d => {
-          const frame = getDragFrame(d.id, shownMatched, shownPositions);
-          const p = { x: frame.x, y: frame.y };
-          const m = shownMatched[d.id];
-          const isDragging = !forceCorrect && !checking && dragging.current?.id === d.id;
-          const checkOk = checkResult ? checkResult[d.id] : null;
-          const showCheckedState = showEvaluation && (checking || checkResult !== null);
-          const isCheckCorrect = showCheckedState && checkOk === true;
-          const isCheckWrong = showCheckedState && checkOk === false;
-          const isHinted = developerHintMode && !forceCorrect && !showCheckedState && !!correctMatches[d.id];
-          const bgColor = isCheckCorrect ? "#166534" : isCheckWrong ? "#991b1b" : (d.style?.background || "#1d4ed8");
-          const borderColor = isCheckCorrect ? "#14532d" : isCheckWrong ? "#7f1d1d" : (d.style?.borderColor || "#1e3a8a");
-          const textColor = isCheckCorrect || isCheckWrong ? "#ffffff" : (d.style?.color || "#eff6ff");
+          const sourcePlacements = shownPlacements.filter(entry => entry.dragId === d.id);
+          const reusable = isDragReusable(runtimeActivity, d);
+          const showSource = !forceCorrect && (reusable || sourcePlacements.length === 0);
+          const isHinted = developerHintMode && !forceCorrect && !checking && checkResult === null && correctPairs.some(pair => pair.dragId === d.id);
+          if (!showSource) return null;
           return (
-            <div key={d.id} onPointerDown={(forceCorrect || checking) ? undefined : (e) => handleDown(e, d.id)} style={{ position: "absolute", left: p.x * scale, top: p.y * scale, width: frame.width * scale, height: frame.height * scale, background: bgColor, border: `2px solid ${borderColor}`, borderRadius: ((frame.drop?.style?.borderRadius) || (d.style?.borderRadius || 10)) * scale, cursor: (forceCorrect || checking) ? "default" : isDragging ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(10, 13 * scale), color: textColor, fontWeight: 700, userSelect: "none", zIndex: isDragging ? 100 : 3, transition: isDragging ? "none" : "left .18s, top .18s, background .2s, border-color .2s", touchAction: "none", boxShadow: isCheckCorrect ? "0 8px 22px rgba(22,101,52,.38)" : isCheckWrong ? "0 8px 22px rgba(153,27,27,.34)" : isHinted ? "0 0 0 2px rgba(74,222,128,.82), 0 0 0 6px rgba(74,222,128,.16)" : isDragging ? "0 12px 32px rgba(0,0,0,.4)" : m ? "0 6px 18px rgba(15,23,42,.16)" : "none", padding: `0 ${Math.max(8, 12 * scale)}px`, gap: Math.max(6, 8 * scale) }}>
+            <div key={`source-${d.id}`} onPointerDown={checking ? undefined : (e) => handleDown(e, d.id)} style={{ position: "absolute", left: d.x * scale, top: d.y * scale, width: d.width * scale, height: d.height * scale, background: d.style?.background || "#1d4ed8", border: `2px solid ${d.style?.borderColor || "#1e3a8a"}`, borderRadius: (d.style?.borderRadius || 10) * scale, cursor: checking ? "default" : "grab", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(10, 13 * scale), color: d.style?.color || "#eff6ff", fontWeight: 700, userSelect: "none", zIndex: 3, transition: "box-shadow .18s, border-color .18s", touchAction: "none", boxShadow: isHinted ? "0 0 0 2px rgba(74,222,128,.82), 0 0 0 6px rgba(74,222,128,.16)" : "0 6px 18px rgba(15,23,42,.16)", padding: `0 ${Math.max(8, 12 * scale)}px` }}>
               <span style={{ flex: 1, minWidth: 0, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {d.label || "Sürükle"}
+              </span>
+            </div>
+          );
+        })}
+        {shownPlacements.map(entry => {
+          const frame = shownPlacementFrames[entry.id];
+          if (!frame) return null;
+          const drag = frame.drag;
+          const showCheckedState = showEvaluation && (checking || checkResult !== null);
+          const placementOk = checkResult ? checkResult[entry.id] : null;
+          const isCheckCorrect = showCheckedState && placementOk === true;
+          const isCheckWrong = showCheckedState && placementOk === false;
+          return (
+            <div key={entry.id} onPointerDown={(forceCorrect || checking) ? undefined : (e) => handleDown(e, entry.dragId, entry.id)} style={{ position: "absolute", left: frame.x * scale, top: frame.y * scale, width: frame.width * scale, height: frame.height * scale, background: isCheckCorrect ? "#166534" : isCheckWrong ? "#991b1b" : (drag.style?.background || "#1d4ed8"), border: `2px solid ${isCheckCorrect ? "#14532d" : isCheckWrong ? "#7f1d1d" : (drag.style?.borderColor || "#1e3a8a")}`, borderRadius: ((frame.drop?.style?.borderRadius) || (drag.style?.borderRadius || 10)) * scale, cursor: (forceCorrect || checking) ? "default" : "grab", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(10, 13 * scale), color: isCheckCorrect || isCheckWrong ? "#ffffff" : (drag.style?.color || "#eff6ff"), fontWeight: 700, userSelect: "none", zIndex: 4, transition: "left .18s, top .18s, background .2s, border-color .2s", touchAction: "none", boxShadow: isCheckCorrect ? "0 8px 22px rgba(22,101,52,.38)" : isCheckWrong ? "0 8px 22px rgba(153,27,27,.34)" : "0 6px 18px rgba(15,23,42,.16)", padding: `0 ${Math.max(8, 12 * scale)}px`, gap: Math.max(6, 8 * scale) }}>
+              <span style={{ flex: 1, minWidth: 0, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {drag.label || "Sürükle"}
               </span>
               {(isCheckCorrect || isCheckWrong) && (
                 <span style={{ width: Math.max(20, 24 * scale), height: Math.max(20, 24 * scale), borderRadius: "50%", background: isCheckCorrect ? "#ffffff" : "#fee2e2", color: isCheckCorrect ? "#166534" : "#991b1b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(11, 13 * scale), fontWeight: 900, flexShrink: 0 }}>
@@ -5030,6 +5935,17 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
             </div>
           );
         })}
+        {!forceCorrect && dragPreview && (() => {
+          const drag = drags.find(item => item.id === dragPreview.dragId);
+          if (!drag) return null;
+          return (
+            <div style={{ position: "absolute", left: dragPreview.x * scale, top: dragPreview.y * scale, width: dragPreview.width * scale, height: dragPreview.height * scale, background: drag.style?.background || "#1d4ed8", border: `2px solid ${drag.style?.borderColor || "#1e3a8a"}`, borderRadius: (drag.style?.borderRadius || 10) * scale, cursor: "grabbing", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.max(10, 13 * scale), color: drag.style?.color || "#eff6ff", fontWeight: 700, userSelect: "none", zIndex: 100, transition: "none", touchAction: "none", boxShadow: "0 12px 32px rgba(0,0,0,.4)", padding: `0 ${Math.max(8, 12 * scale)}px` }}>
+              <span style={{ flex: 1, minWidth: 0, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {drag.label || "Sürükle"}
+              </span>
+            </div>
+          );
+        })()}
         <RuntimeObjectLayer activity={activity} activeLayerId={activeLayerId} hiddenObjectIds={hiddenObjectIds} objectStates={objectStates} onRunTriggers={runObjectTriggers} scale={scale} currentTime={runtimePreviewTime} />
       </div>
     );
@@ -5061,9 +5977,9 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
     setStatus(null);
     setChecking(false);
     setCheckResult(null);
-    setSubmittedMatches({});
-    setPositions({});
-    setMatched({});
+    setSubmittedPlacements([]);
+    setPlacements([]);
+    setDragPreview(null);
     setHoveredDropId(null);
     setTimelineTime(0);
     setTimelinePlaying(false);
@@ -5076,16 +5992,16 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
     setStatus(null);
     setChecking(false);
     setCheckResult(null);
-    setSubmittedMatches({});
+    setSubmittedPlacements([]);
     setMenuOpen(false);
   };
 
   const revealSolution = () => {
-    setMatched(correctMatches);
-    setPositions(correctPositions);
+    setPlacements(correctPlacements);
     setStatus(null);
     setChecking(false);
-    setCheckResult(Object.fromEntries(drags.map(d => [d.id, true])));
+    setCheckResult(Object.fromEntries(correctPlacements.map(entry => [entry.id, true])));
+    setSubmittedPlacements(correctPlacements);
     setMenuOpen(false);
     setPhase("answer");
   };
@@ -5138,11 +6054,10 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
   };
 
   const evaluateMatches = () => {
-    const resultByDrag = Object.fromEntries(drags.map(d => [d.id, matched[d.id] && matched[d.id] === correctMatches[d.id]]));
-    const ok = drags.length > 0 && drags.every(d => resultByDrag[d.id]);
-    setSubmittedMatches({ ...matched });
-    setCheckResult(resultByDrag);
-    setStatus(ok ? "success" : "failure");
+    const evaluation = evaluateDragDropPlacements(runtimeActivity, placements, correctMatches);
+    setSubmittedPlacements([...placements]);
+    setCheckResult(evaluation.placementResult);
+    setStatus(evaluation.success ? "success" : "failure");
     setChecking(true);
     setMenuOpen(false);
     setTimelinePlaying(false);
@@ -5380,10 +6295,10 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
           <div style={{ fontSize: 34, fontWeight: 800, marginBottom: 12, letterSpacing: -0.6 }}>{success ? (resultScreens.successTitle || "Harika!") : (resultScreens.failureTitle || "Tekrar Deneyelim")}</div>
           <div style={{ fontSize: 15, lineHeight: 1.75, opacity: 0.78, marginBottom: 32 }}>{success ? resultScreens.successBody : resultScreens.failureBody}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
-            {!success && canRetry && <button onClick={() => { setPhase("play"); setStatus(null); setChecking(false); setCheckResult(null); setSubmittedMatches({}); setMatched({}); setPositions({}); setTimelineTime(0); }} style={screenBtn("failure")}>{resultScreens.retryText || "↺ Tekrar Dene"}</button>}
+            {!success && canRetry && <button onClick={() => { setPhase("play"); setStatus(null); setChecking(false); setCheckResult(null); setSubmittedPlacements([]); setPlacements([]); setDragPreview(null); setTimelineTime(0); }} style={screenBtn("failure")}>{resultScreens.retryText || "↺ Tekrar Dene"}</button>}
             {!success && settings.showAnswerLayer !== false && <button onClick={revealAnswer} style={screenGhostBtn("failure")}>{settings.answerButtonText || "Cevabı Gör"}</button>}
             {success && hasNextStep && <button onClick={() => onNextStep?.()} style={screenBtn("success")}>{nextStepLabel} →</button>}
-            <button onClick={() => { setPhase(getInitialPreviewPhase(activity)); setStatus(null); setChecking(false); setCheckResult(null); setSubmittedMatches({}); setMatched({}); setPositions({}); setAttempts(0); setTimelineTime(0); }} style={screenGhostBtn("success")}>{resultScreens.continueText || "Yeniden Başlat"}</button>
+            <button onClick={() => { setPhase(getInitialPreviewPhase(activity)); setStatus(null); setChecking(false); setCheckResult(null); setSubmittedPlacements([]); setPlacements([]); setDragPreview(null); setAttempts(0); setTimelineTime(0); }} style={screenGhostBtn("success")}>{resultScreens.continueText || "Yeniden Başlat"}</button>
           </div>
         </div>
       </div>
@@ -5399,13 +6314,14 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
           <div style={{ padding: "14px 16px", borderRadius: 16, background: "rgba(22,163,74,.16)", border: "1px solid rgba(74,222,128,.36)" }}>
             <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 10, color: "#86efac" }}>OGRNCININ DOGRU CEVAPLARI</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {drags.filter(d => submittedMatches[d.id] && checkResult?.[d.id] === true).length
-                ? drags.filter(d => submittedMatches[d.id] && checkResult?.[d.id] === true).map(d => {
-                  const drop = dropById[submittedMatches[d.id]];
+              {submittedPlacements.filter(entry => checkResult?.[entry.id] === true).length
+                ? submittedPlacements.filter(entry => checkResult?.[entry.id] === true).map(entry => {
+                  const drag = drags.find(item => item.id === entry.dragId);
+                  const drop = dropById[entry.dropId];
                   return (
-                    <div key={d.id} style={{ fontSize: 13, color: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div key={entry.id} style={{ fontSize: 13, color: "#f0fdf4", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: "#86efac" }}>✓</span>
-                      <span>{`${d.label || "Sürükle"} → ${drop?.label || "Bırak"}`}</span>
+                      <span>{`${drag?.label || "Sürükle"} → ${drop?.label || "Bırak"}`}</span>
                     </div>
                   );
                 })
@@ -5415,13 +6331,14 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
           <div style={{ padding: "14px 16px", borderRadius: 16, background: "rgba(185,28,28,.16)", border: "1px solid rgba(248,113,113,.36)" }}>
             <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 10, color: "#fca5a5" }}>OGRNCININ YANLIS CEVAPLARI</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {drags.filter(d => !submittedMatches[d.id] || checkResult?.[d.id] === false).length
-                ? drags.filter(d => !submittedMatches[d.id] || checkResult?.[d.id] === false).map(d => {
-                  const drop = dropById[submittedMatches[d.id]];
+              {submittedPlacements.filter(entry => checkResult?.[entry.id] === false).length
+                ? submittedPlacements.filter(entry => checkResult?.[entry.id] === false).map(entry => {
+                  const drag = drags.find(item => item.id === entry.dragId);
+                  const drop = dropById[entry.dropId];
                   return (
-                    <div key={d.id} style={{ fontSize: 13, color: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div key={entry.id} style={{ fontSize: 13, color: "#fef2f2", display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: "#fca5a5" }}>✗</span>
-                      <span>{`${d.label || "Sürükle"} → ${drop?.label || "Birakilmadi"}`}</span>
+                      <span>{`${drag?.label || "Sürükle"} → ${drop?.label || "Birakilmadi"}`}</span>
                     </div>
                   );
                 })
@@ -5466,14 +6383,7 @@ function PreviewDragDropFlow({ activity, activities, hasNextActivity = false, ha
         ) : (
           <button
             onClick={() => {
-              const resultByDrag = Object.fromEntries(drags.map(d => [d.id, matched[d.id] && matched[d.id] === correctMatches[d.id]]));
-              const ok = drags.length > 0 && drags.every(d => resultByDrag[d.id]);
-              setSubmittedMatches({ ...matched });
-              setCheckResult(resultByDrag);
-              setStatus(ok ? "success" : "failure");
-              setChecking(true);
-              setTimelinePlaying(false);
-              setTimeout(() => { setChecking(false); setAttempts(p => p + 1); }, 1600);
+              evaluateMatches();
             }}
             style={screenBtn("play")}
           >
@@ -5495,10 +6405,10 @@ function SelectionEditor({ activity, onUpdate }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "#00BCD4" }}>SORU AYARLARI</div>
       <Inp label="Soru Metni" value={activity.mcQuestion || ""} onChange={e => patch({ mcQuestion: e.target.value })} type="textarea" />
+      <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #dbeafe", background: "linear-gradient(180deg,#f8fbff,#ffffff)", color: "#475569", fontSize: 10, lineHeight: 1.7 }}>
+        Tekli/çoklu seçim ve işaret görünümü artık sağdaki <strong>Cevap</strong> sekmesinden yönetiliyor.
+      </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {[{ k: "single", l: "Tekli" }, { k: "multi", l: "Çoklu" }].map(m => (
-          <Btn key={m.k} onClick={() => patch({ mcMode: m.k })} color={activity.mcMode === m.k ? "#00BCD4" : "#555"} small>{m.l} Seçim</Btn>
-        ))}
         <Btn onClick={() => patch({ mcOptions: [...(activity.mcOptions || []), { id: uid(), label: `Seçenek ${(activity.mcOptions?.length || 0) + 1}`, isCorrect: false }] })} color="#4CAF50" small>+ Seçenek</Btn>
       </div>
       {(activity.mcOptions || []).map((o, i) => (
@@ -5519,23 +6429,50 @@ function SelectionEditor({ activity, onUpdate }) {
 
 // ─── Sürükle-Bırak Yapılandırma Paneli ───────────────────────────────────────
 
-function DragDropConfigPanel({ activity, onUpdate }) {
+function DragDropConfigPanel({ activity, onUpdate, showMatchEditor = true }) {
   const objects = activity.objects || [];
   const draggables = objects.filter(o => o.type === "draggable");
   const dropzones = objects.filter(o => o.type === "dropzone");
   const mode = activity.dragDropMode || "single";
   const matches = activity.dragDropMatches || {};
+  const dragDropSettings = getDragDropSettings(activity);
 
   const setMode = (m) => onUpdate({ ...activity, dragDropMode: m, dragDropMatches: {} });
   const setMatch = (dragId, dropId) => onUpdate({ ...activity, dragDropMatches: { ...matches, [dragId]: dropId } });
+  const setMultiMatch = (dragId, dropId, checked) => {
+    const current = normalizeDragDropMatchValue(matches[dragId]);
+    const next = checked ? [...current, dropId] : current.filter(item => item !== dropId);
+    onUpdate({ ...activity, dragDropMatches: { ...matches, [dragId]: [...new Set(next)] } });
+  };
   const patchObj = (id, p) => onUpdate({ ...activity, objects: objects.map(o => o.id === id ? { ...o, ...p } : o) });
+  const patchSettings = (patchValue) => onUpdate({ ...activity, dragDropSettings: { ...dragDropSettings, ...patchValue } });
 
   const isGroupMode = mode === "group" || mode === "multi-group";
   const resolvedMatches = getCorrectDragMatches(activity);
-  const resolvedCount = draggables.filter(d => resolvedMatches[d.id]).length;
+  const resolvedCount = draggables.filter(d => normalizeDragDropMatchValue(resolvedMatches[d.id]).length).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "#0f172a", color: "#cbd5e1" }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "#38bdf8", marginBottom: 5, letterSpacing: 0.5, textTransform: "uppercase" }}>Nereden Yonetilir</div>
+        <div style={{ fontSize: 10, lineHeight: 1.65 }}>
+          Genel drag-drop kurallari bu sekmeden, secili tek bir surukle veya birak alaninin boyut ve konumu ise sagdaki <strong>Nesne</strong> panelinden duzenlenir.
+        </div>
+      </div>
+
+      <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #dbeafe", background: "linear-gradient(180deg,#f8fbff,#ffffff)", color: "#475569" }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "#1d4ed8", marginBottom: 6, letterSpacing: 0.5, textTransform: "uppercase" }}>Nasil Kullanilir</div>
+        <div style={{ fontSize: 10, lineHeight: 1.7 }}>
+          1. Ayni soruya ait surukle ve birak alanlarina ayni <strong>Soru Grubu</strong> adini ver.
+          <br />
+          2. Birak alaninin kac oge alacagini <strong>Kapasite</strong> ile belirle.
+          <br />
+          3. Ayni oge birden fazla yere gidecekse <strong>Coklu hedef</strong> sec.
+          <br />
+          4. En alttaki <strong>Dogru Eslesme Formu</strong> bolumunden dogru cevaplari sec.
+        </div>
+      </div>
+
       {/* Mod Seçimi */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, color: "#FF9800", marginBottom: 8, letterSpacing: 1 }}>SÜRÜKLE-BIRAK MODU</div>
@@ -5551,6 +6488,31 @@ function DragDropConfigPanel({ activity, onUpdate }) {
           <span>{draggables.length} surukle</span>
           <span>{dropzones.length} birak alani</span>
           <span>{resolvedCount} dogru eslesme</span>
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#78909C", marginBottom: 8 }}>DAVRANIŞLAR</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #252540", background: "#111125", cursor: "pointer", fontSize: 10, color: "#B0BEC5" }}>
+            <input type="checkbox" checked={dragDropSettings.isolateScopes !== false} onChange={e => patchSettings({ isolateScopes: e.target.checked })} style={{ accentColor: "#38bdf8" }} />
+            Soru grubu izolasyonu
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #252540", background: "#111125", cursor: "pointer", fontSize: 10, color: "#B0BEC5" }}>
+            <input type="checkbox" checked={!!dragDropSettings.allowCrossScope} onChange={e => patchSettings({ allowCrossScope: e.target.checked })} style={{ accentColor: "#f59e0b" }} />
+            Grup disina izin ver
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #252540", background: "#111125", cursor: "pointer", fontSize: 10, color: "#B0BEC5" }}>
+            <input type="checkbox" checked={!!dragDropSettings.allowMultipleItemsPerDrop} onChange={e => patchSettings({ allowMultipleItemsPerDrop: e.target.checked })} style={{ accentColor: "#22c55e" }} />
+            Bir alan çoklu öge alsın
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #252540", background: "#111125", cursor: "pointer", fontSize: 10, color: "#B0BEC5" }}>
+            <input type="checkbox" checked={!!dragDropSettings.allowMultipleTargetsPerDrag} onChange={e => patchSettings({ allowMultipleTargetsPerDrag: e.target.checked })} style={{ accentColor: "#a855f7" }} />
+            Aynı öge çoklu hedefe gitsin
+          </label>
+        </div>
+        <div style={{ fontSize: 9, color: "#64748b", marginTop: 8, lineHeight: 1.6 }}>
+          Soru grubu alani sayesinde ayni sayfada sinirsiz sayida bagimsiz drag-drop soru blogu kurabilirsin. Ayni soru grubundaki ogeler kendi aralarinda calisir.
         </div>
       </div>
 
@@ -5580,12 +6542,54 @@ function DragDropConfigPanel({ activity, onUpdate }) {
         </div>
       )}
 
+      {(draggables.length > 0 || dropzones.length > 0) && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#78909C", marginBottom: 8 }}>SORU BLOKLARI VE KAPASİTE</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 6, marginBottom: 8 }}>
+            <div style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #dbeafe", background: "#f8fbff", fontSize: 10, color: "#475569", lineHeight: 1.6 }}>
+              <strong style={{ color: "#1d4ed8" }}>Soru Grubu:</strong> Ayni soruya ait olanlara ayni isim yaz.
+            </div>
+            <div style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#ffffff", fontSize: 10, color: "#475569", lineHeight: 1.6 }}>
+              <strong style={{ color: "#0f172a" }}>Grup:</strong> Grup modunda hangi ogenin hangi alanla eslesecegini belirler.
+            </div>
+            <div style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #dcfce7", background: "#f0fdf4", fontSize: 10, color: "#475569", lineHeight: 1.6 }}>
+              <strong style={{ color: "#15803d" }}>Kapasite:</strong> Bir birak alani kac oge alsin. <strong>1</strong> tek oge, <strong>0</strong> sinirsiz.
+            </div>
+            <div style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #f3e8ff", background: "#faf5ff", fontSize: 10, color: "#475569", lineHeight: 1.6 }}>
+              <strong style={{ color: "#7e22ce" }}>Coklu hedef:</strong> Ayni suruklenen oge birden fazla alana gidebilir.
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {draggables.map((drag, index) => (
+              <div key={drag.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 84px", gap: 6, alignItems: "center", background: "#0d0d1a", borderRadius: 8, padding: "8px 10px", border: "1px solid #252540" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: "#B0BEC5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{drag.label || `Surukle ${index + 1}`}</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, fontSize: 9, color: "#94a3b8", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!(drag.allowMultipleTargets || dragDropSettings.allowMultipleTargetsPerDrag)} onChange={e => patchObj(drag.id, { allowMultipleTargets: e.target.checked })} style={{ accentColor: "#a855f7" }} />
+                    Coklu hedef
+                  </label>
+                </div>
+                <input value={drag.scope || ""} onChange={e => patchObj(drag.id, { scope: e.target.value })} placeholder="Soru grubu" style={{ width: "100%", padding: "4px 6px", borderRadius: 5, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 10, outline: "none" }} />
+                <input value={drag.group || ""} onChange={e => patchObj(drag.id, { group: e.target.value })} placeholder="grup" style={{ width: "100%", padding: "4px 6px", borderRadius: 5, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 10, outline: "none" }} />
+              </div>
+            ))}
+            {dropzones.map((drop, index) => (
+              <div key={drop.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 84px 68px", gap: 6, alignItems: "center", background: "#0d0d1a", borderRadius: 8, padding: "8px 10px", border: "1px solid #252540" }}>
+                <div style={{ minWidth: 0, fontSize: 10, color: "#B0BEC5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{drop.label || `Birak ${index + 1}`}</div>
+                <input value={drop.scope || ""} onChange={e => patchObj(drop.id, { scope: e.target.value })} placeholder="Soru grubu" style={{ width: "100%", padding: "4px 6px", borderRadius: 5, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 10, outline: "none" }} />
+                <input value={drop.group || ""} onChange={e => patchObj(drop.id, { group: e.target.value })} placeholder="grup" style={{ width: "100%", padding: "4px 6px", borderRadius: 5, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 10, outline: "none" }} />
+                <input type="number" min={0} value={drop.capacity || 0} onChange={e => patchObj(drop.id, { capacity: Math.max(0, +e.target.value || 0) })} placeholder="kap." style={{ width: "100%", padding: "4px 6px", borderRadius: 5, border: "1px solid #334155", background: "#111827", color: "#e2e8f0", fontSize: 10, outline: "none" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Tekli / Çoklu Tekli: eşleşme tablosu */}
-      {!isGroupMode && draggables.length > 0 && dropzones.length > 0 && (
+      {showMatchEditor && !isGroupMode && draggables.length > 0 && dropzones.length > 0 && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#78909C", marginBottom: 8 }}>DOĞRU EŞLEŞMELERİ AYARLA</div>
           <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-            <Btn onClick={() => onUpdate({ ...activity, dragDropMatches: buildAutoDragMatches(activity) })} color="#4CAF50" small>Oto Doldur</Btn>
             <Btn onClick={() => onUpdate({ ...activity, dragDropMatches: {} })} color="#607D8B" small>Temizle</Btn>
           </div>
           <div style={{ background: "#0d0d1a", border: "1px solid #252540", borderRadius: 8, overflow: "hidden" }}>
@@ -5598,14 +6602,25 @@ function DragDropConfigPanel({ activity, onUpdate }) {
               <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 20px 1fr", alignItems: "center", padding: "7px 10px", borderBottom: i < draggables.length - 1 ? "1px solid #1a1a30" : "none", gap: 4 }}>
                 <div style={{ fontSize: 11, color: "#00BCD4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.label || `Sürükle ${i + 1}`}</div>
                 <div style={{ textAlign: "center", color: "#555", fontSize: 12 }}>→</div>
-                <select
-                  value={matches[d.id] || ""}
-                  onChange={e => setMatch(d.id, e.target.value)}
-                  style={{ padding: "4px 6px", borderRadius: 5, border: `1px solid ${matches[d.id] ? "#FF9800" : "#333"}`, background: "#1a1a30", color: matches[d.id] ? "#FF9800" : "#666", fontSize: 10, outline: "none", width: "100%" }}
-                >
-                  <option value="">— Seçin —</option>
-                  {dropzones.map(dz => <option key={dz.id} value={dz.id}>{dz.label || dz.id.slice(-4)}</option>)}
-                </select>
+                {(d.allowMultipleTargets || dragDropSettings.allowMultipleTargetsPerDrag) ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {dropzones.filter(drop => areDragDropScopesCompatible(activity, d, drop)).map(dz => (
+                      <label key={dz.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#B0BEC5", cursor: "pointer" }}>
+                        <input type="checkbox" checked={normalizeDragDropMatchValue(matches[d.id]).includes(dz.id)} onChange={e => setMultiMatch(d.id, dz.id, e.target.checked)} style={{ accentColor: "#a855f7" }} />
+                        <span>{dz.label || dz.id.slice(-4)}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <select
+                    value={normalizeDragDropMatchValue(matches[d.id])[0] || ""}
+                    onChange={e => setMatch(d.id, e.target.value)}
+                    style={{ padding: "4px 6px", borderRadius: 5, border: `1px solid ${normalizeDragDropMatchValue(matches[d.id]).length ? "#FF9800" : "#333"}`, background: "#1a1a30", color: normalizeDragDropMatchValue(matches[d.id]).length ? "#FF9800" : "#666", fontSize: 10, outline: "none", width: "100%" }}
+                  >
+                    <option value="">— Seçin —</option>
+                    {dropzones.filter(drop => areDragDropScopesCompatible(activity, d, drop)).map(dz => <option key={dz.id} value={dz.id}>{dz.label || dz.id.slice(-4)}</option>)}
+                  </select>
+                )}
               </div>
             ))}
           </div>
@@ -5678,95 +6693,218 @@ function MixedActivityEditor({ activity, onUpdate }) {
         <SelectionEditor activity={activity} onUpdate={onUpdate} />
       </div>
 
-      <div style={shellCard}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: "#FF9800", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>
+      <div style={{ ...shellCard, background: "linear-gradient(180deg,#fff7ed,#ffffff)", border: "1px solid #fed7aa" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#c2410c", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
           2. Surukle-Birak Kurgusu
         </div>
-        <DragDropConfigPanel activity={activity} onUpdate={onUpdate} />
+        <div style={{ fontSize: 11, color: "#7c2d12", lineHeight: 1.7 }}>
+          Drag-drop ayarlari artik ust panel yerine sagdaki <strong>Cevap</strong> sekmesinde yonetiliyor.
+          Bu sayede soru, eslesme ve cevap mantigi ayni yerde toplanir.
+        </div>
       </div>
     </div>
   );
 }
 
-function ActivityScreenFlowEditor({ activity, onUpdate, simplified = false }) {
-  const settings = activity.settings || DEFAULT_ACTIVITY_SETTINGS;
-  const intro = activity.introScreen || {};
-  const packageScreen = activity.buttonPackageScreen || {};
-  const menuScreen = activity.menuScreen || {};
-  const playScreen = activity.playScreen || {};
-  const results = activity.resultScreens || {};
-  const answerScreen = activity.answerScreen || {};
+function ActivityScreenFlowEditor({ activity, onUpdate, simplified = false, layerPresets = [], onSaveLayerPreset = () => "", onApplyLayerPreset = () => {} }) {
+  const layers = getActivityLayers(activity);
+  const resolvedLayerNames = buildResolvedLayerNameMap(layers, activity);
+  const orderedLayers = [
+    ...layers.filter(layer => layer.kind !== "base"),
+    ...layers.filter(layer => layer.kind === "base"),
+  ];
+  const [presetName, setPresetName] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState("");
   const patch = (p) => onUpdate({ ...activity, ...p });
-  const patchSettings = (p) => patch({ settings: { ...settings, ...p } });
-  const patchIntro = (p) => patch({ introScreen: { ...intro, ...p } });
-  const patchPackage = (p) => patch({ buttonPackageScreen: { ...packageScreen, ...p } });
-  const patchMenu = (p) => patch({ menuScreen: { ...menuScreen, ...p } });
-  const patchPlay = (p) => patch({ playScreen: { ...playScreen, ...p } });
-  const patchResults = (p) => patch({ resultScreens: { ...results, ...p } });
-  const patchAnswer = (p) => patch({ answerScreen: { ...answerScreen, ...p } });
+  const renameLayer = (layerId, name) => {
+    const rawName = String(name ?? "");
+    patch({
+      layers: layers.map(layer => layer.id === layerId
+        ? { ...layer, name: rawName, autoName: !rawName.trim() }
+        : layer),
+    });
+  };
+  const addLayer = () => {
+    const nextLayer = createLayer("Katman", layers.length);
+    patch({ layers: [...layers, nextLayer], activeLayerId: nextLayer.id });
+  };
+  const moveLayer = (layerId, direction = -1) => {
+    const currentIndex = layers.findIndex(layer => layer.id === layerId);
+    if (currentIndex === -1) return;
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= layers.length) return;
+    const nextLayers = [...layers];
+    [nextLayers[currentIndex], nextLayers[targetIndex]] = [nextLayers[targetIndex], nextLayers[currentIndex]];
+    patch({ layers: nextLayers });
+  };
+  const removeLayer = (layerId) => {
+    const layer = layers.find(item => item.id === layerId);
+    if (!layer || layer.kind === "base") return;
+    patch({
+      layers: layers.filter(item => item.id !== layerId),
+      activeLayerId: activity.activeLayerId === layerId ? "base" : activity.activeLayerId,
+      objects: (activity.objects || []).map(object => (object.layerId || "base") === layerId ? { ...object, layerId: "base" } : object),
+    });
+  };
+  const cloneActiveLayer = () => {
+    const sourceLayerId = activity.activeLayerId || "base";
+    const sourceLayer = layers.find(layer => layer.id === sourceLayerId) || layers[0];
+    if (!sourceLayer) return;
+    const sourceLayerName = resolvedLayerNames[sourceLayer.id] || "Layer";
+    const nextLayer = { ...createLayer("Katman", layers.length), name: `${sourceLayerName} Copy`, autoName: false };
+    const clonedObjects = (activity.objects || [])
+      .filter(object => (object.layerId || "base") === sourceLayerId)
+      .map(object => ({ ...object, id: uid(), layerId: nextLayer.id }));
+    patch({
+      layers: [...layers, nextLayer],
+      activeLayerId: nextLayer.id,
+      objects: [...(activity.objects || []), ...clonedObjects],
+    });
+  };
+  useEffect(() => {
+    setPresetName(`${activity?.name || "Yeni Etkinlik"} Layer Set`);
+  }, [activity?.id, activity?.name]);
+
+  useEffect(() => {
+    if (!layerPresets.length) {
+      setSelectedPresetId("");
+      return;
+    }
+    if (!layerPresets.some(item => item.id === selectedPresetId)) {
+      setSelectedPresetId(layerPresets[0].id);
+    }
+  }, [layerPresets, selectedPresetId]);
+
+  const selectedPreset = layerPresets.find(item => item.id === selectedPresetId) || null;
+  const handleSaveCurrentPreset = () => {
+    const finalName = String(presetName || "").trim() || `${activity?.name || "Yeni Etkinlik"} Layer Set`;
+    const savedId = onSaveLayerPreset(finalName, activity);
+    if (savedId) setSelectedPresetId(savedId);
+  };
+  const handleApplySelectedPreset = () => {
+    if (!selectedPreset) return;
+    onApplyLayerPreset(selectedPreset.id, activity?.id);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#B388FF" }}>EKRAN AKIŞI</div>
+      <div style={{ padding: "12px 14px", borderRadius: 16, border: "1px solid #bfdbfe", background: "linear-gradient(135deg,#eff6ff,#ffffff)", color: "#1d4ed8", lineHeight: 1.7 }}>
+        <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 6 }}>Manuel Layer Akışı</div>
+        <div style={{ fontSize: 11 }}>
+          Bu bölüm artık otomatik tanıtım, menü, doğru veya yanlış ekranı üretmiyor.
+          Sahne akışını tamamen layer + trigger mantığıyla kuruyoruz.
+        </div>
+      </div>
 
-      {[
-        { label: "Tanitim Ekrani", color: "#B388FF", checked: intro.enabled !== false, toggle: v => patchIntro({ enabled: v }), fields: [{ l: "Baslik", v: intro.title || "", onChange: e => patchIntro({ title: e.target.value }) }, { l: "Aciklama", v: intro.body || "", onChange: e => patchIntro({ body: e.target.value }), rows: 2 }, { l: "Buton", v: intro.buttonText || "", onChange: e => patchIntro({ buttonText: e.target.value }) }] },
-        ...(!simplified ? [{ label: "Tema Paketi Tanitimi", color: "#22d3ee", checked: settings.showButtonPackageIntro !== false && packageScreen.enabled !== false, toggle: v => { patchSettings({ showButtonPackageIntro: v }); patchPackage({ enabled: v }); }, fields: [{ l: "Baslik", v: packageScreen.title || "", onChange: e => patchPackage({ title: e.target.value }) }, { l: "Aciklama", v: packageScreen.body || "", onChange: e => patchPackage({ body: e.target.value }), rows: 2 }, { l: "Buton", v: packageScreen.buttonText || "", onChange: e => patchPackage({ buttonText: e.target.value }) }] }, { label: "Menu Katmani", color: "#f59e0b", checked: settings.showMenuScreen !== false && menuScreen.enabled !== false, toggle: v => { patchSettings({ showMenuScreen: v }); patchMenu({ enabled: v }); }, fields: [{ l: "Baslik", v: menuScreen.title || "", onChange: e => patchMenu({ title: e.target.value }) }, { l: "Aciklama", v: menuScreen.body || "", onChange: e => patchMenu({ body: e.target.value }), rows: 2 }, { l: "Buton", v: menuScreen.buttonText || "", onChange: e => patchMenu({ buttonText: e.target.value }) }] }] : []),
-        { label: simplified ? "İçerik Sahnesi" : "Oyun Katmani", color: "#60a5fa", checked: true, toggle: null, fields: [{ l: "Baslik", v: playScreen.title || "", onChange: e => patchPlay({ title: e.target.value }) }, { l: "Aciklama", v: playScreen.body || "", onChange: e => patchPlay({ body: e.target.value }), rows: 2 }] },
-      ].map(s => (
-        <div key={s.label} style={{ background: "#111125", border: "1px solid #252540", borderRadius: 8, padding: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label}</div>
-            {s.toggle && <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#78909C", cursor: "pointer" }}><input type="checkbox" checked={s.checked} onChange={e => s.toggle(e.target.checked)} style={{ accentColor: s.color }} />Aktif</label>}
+      {!simplified && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={addLayer} style={{ flex: 1, minHeight: 34, borderRadius: 10, border: "1px solid #93c5fd", background: "#ffffff", color: "#1d4ed8", fontSize: 11, fontWeight: 900, cursor: "pointer" }}>
+            + Yeni Layer
+          </button>
+          <button onClick={cloneActiveLayer} style={{ flex: 1, minHeight: 34, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", fontSize: 11, fontWeight: 900, cursor: "pointer" }}>
+            Aktifi Kopyala
+          </button>
+        </div>
+      )}
+
+      {!simplified && (
+        <div style={{ padding: 12, borderRadius: 14, border: "1px solid #cbd5e1", background: "#ffffff", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#0f172a" }}>Kitap İçi Layer Şablonu</div>
+            <div style={{ fontSize: 10, color: "#64748b", lineHeight: 1.6, marginTop: 4 }}>
+              Bu etkinliğin layer düzenini aynı kitaptaki başka etkinliklerde tekrar çağırabilirsin.
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {s.fields.map(f => <Inp key={f.l} label={f.l} value={f.v} onChange={f.onChange} type={f.rows ? "textarea" : "text"} rows={f.rows} />)}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.1fr) minmax(0,.9fr)", gap: 8 }}>
+            <input
+              value={presetName}
+              onChange={e => setPresetName(e.target.value)}
+              placeholder="Layer şablon adı"
+              style={{ minHeight: 34, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "0 10px", fontSize: 11, outline: "none" }}
+            />
+            <button
+              onClick={handleSaveCurrentPreset}
+              style={{ minHeight: 34, borderRadius: 10, border: "1px solid #93c5fd", background: "#eff6ff", color: "#1d4ed8", fontSize: 11, fontWeight: 900, cursor: "pointer" }}
+            >
+              Bu Yapıyı Kaydet
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
+            <select
+              value={selectedPresetId}
+              onChange={e => setSelectedPresetId(e.target.value)}
+              style={{ minHeight: 34, borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "0 10px", fontSize: 11, outline: "none" }}
+            >
+              {layerPresets.length === 0 && <option value="">Kayıtlı layer şablonu yok</option>}
+              {layerPresets.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleApplySelectedPreset}
+              disabled={!selectedPreset}
+              style={{ minWidth: 132, minHeight: 34, borderRadius: 10, border: "1px solid #cbd5e1", background: selectedPreset ? "#ffffff" : "#f8fafc", color: selectedPreset ? "#334155" : "#94a3b8", fontSize: 11, fontWeight: 900, cursor: selectedPreset ? "pointer" : "default" }}
+            >
+              Bu Etkinliğe Çağır
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: "#64748b" }}>
+            {layerPresets.length ? `${layerPresets.length} kayıtlı şablon hazır.` : "Henüz aynı kitap için kayıtlı bir layer şablonu yok."}
           </div>
         </div>
-      ))}
+      )}
 
-      {!simplified && <>
-        <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#B0BEC5", marginBottom: 8 }}>Sonuc Ekranlari</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <Inp label="Basari Basligi" value={results.successTitle || ""} onChange={e => patchResults({ successTitle: e.target.value })} />
-            <Inp label="Basari Metni" value={results.successBody || ""} onChange={e => patchResults({ successBody: e.target.value })} />
-            <Inp label="Basarisiz Baslik" value={results.failureTitle || ""} onChange={e => patchResults({ failureTitle: e.target.value })} />
-            <Inp label="Basarisiz Metin" value={results.failureBody || ""} onChange={e => patchResults({ failureBody: e.target.value })} />
-            <div style={{ display: "flex", gap: 6 }}>
-              <Inp label="Tekrar" value={results.retryText || ""} onChange={e => patchResults({ retryText: e.target.value })} />
-              <Inp label="Devam" value={results.continueText || ""} onChange={e => patchResults({ continueText: e.target.value })} />
-            </div>
-          </div>
-        </div>
-        <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#B0BEC5", marginBottom: 8 }}>Davranis</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 6 }}>
-              <SelectInp label="Tamamlanma" value={settings.completionMode || "required"} onChange={e => patchSettings({ completionMode: e.target.value })} options={[{ value: "required", label: "Zorunlu" }, { value: "optional", label: "Istege Bagli" }]} />
-              <Inp label="Puan" type="number" value={settings.scorePoints ?? 10} onChange={e => patchSettings({ scorePoints: +e.target.value || 0 })} />
-            </div>
-            {["shuffleOptions", "showFeedback", "allowRetry", "showAnswerLayer"].map(key => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#78909C", cursor: "pointer" }}>
-                <input type="checkbox" checked={!!settings[key]} onChange={e => patchSettings({ [key]: e.target.checked })} style={{ accentColor: "#7C4DFF" }} />
-                {key === "shuffleOptions" ? "Secenekleri karistir" : key === "showFeedback" ? "Sonuc goster" : key === "allowRetry" ? "Tekrar deneme" : "Cevap katmani"}
-              </label>
-            ))}
-            <div style={{ display: "flex", gap: 6 }}>
-              <Inp label="Maks Deneme" type="number" value={settings.maxAttempts ?? 0} onChange={e => patchSettings({ maxAttempts: Math.max(0, +e.target.value || 0) })} />
-              <Inp label="Cevap Butonu" value={settings.answerButtonText || ""} onChange={e => patchSettings({ answerButtonText: e.target.value })} />
-            </div>
-            <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 8, padding: 10, marginTop: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#B0BEC5", marginBottom: 8 }}>Cevap Ekrani</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <Inp label="Baslik" value={answerScreen.title || ""} onChange={e => patchAnswer({ title: e.target.value })} />
-                <Inp label="Aciklama" value={answerScreen.body || ""} onChange={e => patchAnswer({ body: e.target.value })} type="textarea" rows={2} />
-                <Inp label="Buton" value={answerScreen.buttonText || ""} onChange={e => patchAnswer({ buttonText: e.target.value })} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {orderedLayers.map((layer, index) => {
+          const isActive = (activity.activeLayerId || "base") === layer.id;
+          const isBase = layer.kind === "base";
+          const layerObjects = (activity.objects || []).filter(object => (object.layerId || "base") === layer.id);
+          return (
+            <div key={layer.id} style={{ background: isActive ? "linear-gradient(180deg,#dbeafe,#ffffff)" : "#ffffff", border: `1px solid ${isActive ? "#93c5fd" : "#dbe7f5"}`, borderRadius: 12, padding: 10, boxShadow: isActive ? "0 10px 20px rgba(59,130,246,.10)" : "0 6px 14px rgba(15,23,42,.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ padding: "3px 7px", borderRadius: 999, background: isBase ? "#e2e8f0" : "#dbeafe", color: isBase ? "#475569" : "#1d4ed8", fontSize: 9, fontWeight: 900 }}>
+                  {isBase ? "Base Layer" : `Layer ${index + 1}`}
+                </span>
+                <span style={{ fontSize: 10, color: "#64748b" }}>{layerObjects.length} nesne</span>
+                <span style={{ flex: 1 }} />
+                <button onClick={() => patch({ activeLayerId: layer.id })} style={{ minWidth: 68, minHeight: 28, borderRadius: 8, border: "1px solid #cbd5e1", background: "#ffffff", color: isActive ? "#1d4ed8" : "#475569", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>
+                  {isActive ? "Aktif" : "Aç"}
+                </button>
+              </div>
+
+              <Inp
+                label="Katman Adı"
+                value={layer.autoName === false ? (layer.name || "") : (resolvedLayerNames[layer.id] || "")}
+                onChange={e => renameLayer(layer.id, e.target.value)}
+                placeholder={resolvedLayerNames[layer.id] || "Layer adı"}
+                disabled={isBase}
+              />
+
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <button onClick={() => moveLayer(layer.id, -1)} disabled={layers.findIndex(item => item.id === layer.id) === 0} style={{ flex: 1, minHeight: 28, borderRadius: 8, border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", fontSize: 10, fontWeight: 800, cursor: "pointer", opacity: layers.findIndex(item => item.id === layer.id) === 0 ? 0.45 : 1 }}>
+                  Yukarı
+                </button>
+                <button onClick={() => moveLayer(layer.id, 1)} disabled={layers.findIndex(item => item.id === layer.id) === layers.length - 1} style={{ flex: 1, minHeight: 28, borderRadius: 8, border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", fontSize: 10, fontWeight: 800, cursor: "pointer", opacity: layers.findIndex(item => item.id === layer.id) === layers.length - 1 ? 0.45 : 1 }}>
+                  Aşağı
+                </button>
+                {!isBase && (
+                  <button onClick={() => removeLayer(layer.id)} style={{ minWidth: 74, minHeight: 28, borderRadius: 8, border: "1px solid #fecaca", background: "#fff1f2", color: "#dc2626", fontSize: 10, fontWeight: 900, cursor: "pointer" }}>
+                    Sil
+                  </button>
+                )}
               </div>
             </div>
-          </div>
-        </div>
-      </>}
+          );
+        })}
+      </div>
+
+      <div style={{ padding: 12, borderRadius: 14, border: "1px solid #e2e8f0", background: "#ffffff", fontSize: 11, color: "#475569", lineHeight: 1.75 }}>
+        <div><strong>Önerilen kurgu:</strong> `normal`, `aciklama`, `menu`, `dogru`, `yanlis`, `cevap` gibi katmanları ihtiyaca göre kendin oluştur.</div>
+        <div><strong>Geçişler:</strong> Sağ paneldeki <strong>Etkileşim</strong> sekmesinden nesnelere `Katmana Geç` trigger’ı ver.</div>
+        <div><strong>Düzenleme:</strong> Sahne üstünde aktif katmanı açıp doğrudan o katmanın nesnelerini yerleştir.</div>
+      </div>
     </div>
   );
 }
@@ -6742,9 +7880,9 @@ const StageCanvas = forwardRef(function StageCanvas({ activity, onUpdate, zoom =
     onUpdate({ ...a, ...p });
   }, [onUpdate]);
 
-  const patchObj = useCallback((id, p) => {
+  const patchObj = useCallback((id, p, options = {}) => {
     const a = latestRef.current;
-    onUpdate(updateActivityObject(a, id, p, { syncDragDropFamily: true }));
+    onUpdate(updateActivityObject(a, id, p, options));
   }, [onUpdate]);
 
   const addObject = useCallback((type) => {
@@ -7211,7 +8349,18 @@ const StageCanvas = forwardRef(function StageCanvas({ activity, onUpdate, zoom =
                   boxShadow: isAnswerPreview ? `0 0 0 4px ${isAnswerDragPreview ? "rgba(37,99,235,.14)" : "rgba(234,88,12,.16)"}, 0 16px 28px rgba(15,23,42,.14)` : "none",
                 }}
               >
-                {o.type === "video" && o.mediaUrl ? (
+                {o.selectionQuestionId ? (
+                  <span
+                    style={{
+                      pointerEvents: "none",
+                      fontWeight: 900,
+                      fontSize: Math.max(18, (st.fontSize || 13) * scale),
+                      color: "rgba(37,99,235,.18)",
+                    }}
+                  >
+                    {" "}
+                  </span>
+                ) : o.type === "video" && o.mediaUrl ? (
                   <video
                     src={o.mediaUrl}
                     muted
@@ -7239,12 +8388,9 @@ const StageCanvas = forwardRef(function StageCanvas({ activity, onUpdate, zoom =
                       pointerEvents: "none",
                       padding: "0 6px",
                       textAlign: "center",
-                      fontWeight: o.selectionQuestionId ? 800 : undefined,
-                      fontSize: o.selectionQuestionId ? Math.max(18, (st.fontSize || 13) * scale) : undefined,
-                      color: o.selectionQuestionId ? "rgba(37,99,235,.24)" : undefined,
                     }}
                   >
-                    {o.selectionQuestionId ? "✓" : o.label}
+                    {o.label}
                   </span>
                 )}
                 {isSel && !o.locked && HANDLE_DIRS.map(dir => {
@@ -7282,13 +8428,14 @@ function RightInspector({ activity, onUpdate, selectedIds, hideTimeline = false,
   if (!activity) return <div style={{ width: 240, flexShrink: 0, borderLeft: "1px solid #252540", background: "#111125" }} />;
   const objects = activity.objects || [];
   const layers = getActivityLayers(activity);
+  const resolvedLayerNames = useMemo(() => buildResolvedLayerNameMap(layers, activity), [activity, layers]);
   const timeline = activity.timeline || [];
   const triggers = activity.triggers || [];
   const sel = objects.find(o => o.id === activity.selectedObjectId) || null;
   const multiSel = selectedIds.size > 1;
 
   const patchAct = (p) => onUpdate({ ...activity, ...p });
-  const patchObj = (id, p) => onUpdate(updateActivityObject(activity, id, p, { syncDragDropFamily: true }));
+  const patchObj = (id, p, options = {}) => onUpdate(updateActivityObject(activity, id, p, options));
   const patchTimeline = (id, p) => patchAct({ timeline: timeline.map(item => item.id === id ? { ...item, ...p } : item) });
   const patchTrigger = (id, p) => patchAct({ triggers: triggers.map(item => item.id === id ? { ...item, ...p } : item) });
 
@@ -7296,7 +8443,7 @@ function RightInspector({ activity, onUpdate, selectedIds, hideTimeline = false,
   const card = { background: "#ffffff", border: "1px solid #d7e0eb", borderRadius: 16, padding: 12, marginBottom: 10, boxShadow: "0 12px 24px rgba(15,23,42,.06)" };
   const triggerSourceOptions = [{ value: "Secili Nesne", label: "Tiklanan / secili nesne" }, ...objects.map(obj => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` }))];
   const triggerTargetOptions = objects.map(obj => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` }));
-  const triggerLayerOptions = layers.map(layer => ({ value: layer.id, label: layer.name }));
+  const triggerLayerOptions = layers.map((layer, index) => ({ value: layer.id, label: resolvedLayerNames[layer.id] || `Layer ${index + 1}` }));
   const triggerActivityOptions = [{ value: "__next__", label: "Sonraki sahne" }, ...activities.filter(item => item.id !== activity.id).map(item => ({ value: item.id, label: item.name }))];
 
   return (
@@ -7322,7 +8469,7 @@ function RightInspector({ activity, onUpdate, selectedIds, hideTimeline = false,
               <Inp label="Y" type="number" value={Math.round(sel.height)} onChange={e => patchObj(sel.id, { height: Math.max(20, +e.target.value) })} />
             </div>
             <Inp label="Döndür °" type="number" value={sel.rotation || 0} onChange={e => patchObj(sel.id, { rotation: +e.target.value })} />
-            <SelectInp label="Layer" value={sel.layerId || "base"} onChange={e => patchObj(sel.id, { layerId: e.target.value })} options={layers.map(layer => ({ value: layer.id, label: layer.name }))} />
+            <SelectInp label="Layer" value={sel.layerId || "base"} onChange={e => patchObj(sel.id, { layerId: e.target.value })} options={layers.map((layer, index) => ({ value: layer.id, label: resolvedLayerNames[layer.id] || `Layer ${index + 1}` }))} />
             {(sel.type === "draggable" || sel.type === "dropzone") && (
               <Inp label="Grup (eşleştirme)" value={sel.group || ""} onChange={e => patchObj(sel.id, { group: e.target.value })} placeholder="A, B, ..." />
             )}
@@ -7462,11 +8609,17 @@ function RightInspector({ activity, onUpdate, selectedIds, hideTimeline = false,
 function AnswerFormPanel({ activity, onUpdate, onPreviewChange = () => {} }) {
   const patch = (patchValue) => onUpdate({ ...activity, ...patchValue });
   const options = activity.mcOptions || [];
+  const selectionUi = getSelectionUi(activity);
+  const patchCanvasObject = (id, patchValue) => patch({
+    objects: (activity.objects || []).map(item => item.id === id ? { ...item, ...patchValue } : item),
+  });
+  const selectionCanvasObjects = getCanvasObjects(activity).filter(canObjectBeSelectionShape);
   const draggables = getCanvasObjects(activity).filter(item => item.type === "draggable");
   const dropzones = getCanvasObjects(activity).filter(item => item.type === "dropzone");
   const matches = activity.dragDropMatches || {};
+  const dragDropSettings = getDragDropSettings(activity);
   const correctOptionCount = options.filter(option => option.isCorrect).length;
-  const matchedCount = draggables.filter(item => matches[item.id]).length;
+  const matchedCount = draggables.filter(item => normalizeDragDropMatchValue(matches[item.id]).length).length;
   const rowCard = {
     display: "flex",
     alignItems: "center",
@@ -7510,10 +8663,188 @@ function AnswerFormPanel({ activity, onUpdate, onPreviewChange = () => {} }) {
       },
     });
   };
+  const toggleMultiMatch = (dragId, dropId, checked) => {
+    const current = normalizeDragDropMatchValue(matches[dragId]);
+    const next = checked ? [...current, dropId] : current.filter(item => item !== dropId);
+    const uniqueNext = [...new Set(next)];
+    onPreviewChange({ dragId, dropId: uniqueNext[0] || null });
+    patch({
+      dragDropMatches: {
+        ...matches,
+        [dragId]: uniqueNext,
+      },
+    });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {(activity.type === "selection" || activity.type === "mixed") && (
+        <>
+        <div style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid rgba(203,213,225,.95)", borderRadius: 14, padding: 10, boxShadow: "0 10px 22px rgba(15,23,42,.05)" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#334155", marginBottom: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>Secim Kurgusu</div>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 10, lineHeight: 1.6 }}>
+            Tekli veya coklu secimi, secim alaninin kare mi yuvarlak mi olacagini ve icindeki isaretin tik mi carpi mi olacagini buradan belirle.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
+            <div style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #dbeafe", background: "#f8fbff" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#1d4ed8", marginBottom: 8 }}>Secim Tipi</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[{ k: "single", l: "Tekli Secim" }, { k: "multi", l: "Coklu Secim" }].map(m => (
+                  <button
+                    key={m.k}
+                    onClick={() => patch({ mcMode: m.k })}
+                    style={{ minHeight: 30, padding: "0 10px", borderRadius: 10, border: `1px solid ${activity.mcMode === m.k ? "#93c5fd" : "#cbd5e1"}`, background: activity.mcMode === m.k ? "#dbeafe" : "#ffffff", color: activity.mcMode === m.k ? "#1d4ed8" : "#475569", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {m.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #e2e8f0", background: "#ffffff" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Alan Bicimi</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[{ k: "circle", l: "Yuvarlak" }, { k: "square", l: "Kare" }].map(item => (
+                  <button
+                    key={item.k}
+                    onClick={() => patch({ selectionUi: { ...selectionUi, controlShape: item.k } })}
+                    style={{ minHeight: 30, padding: "0 10px", borderRadius: 10, border: `1px solid ${selectionUi.controlShape === item.k ? "#94a3b8" : "#cbd5e1"}`, background: selectionUi.controlShape === item.k ? "#f1f5f9" : "#ffffff", color: "#475569", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {item.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #dcfce7", background: "#f0fdf4" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#15803d", marginBottom: 8 }}>Isaret</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[{ k: "check", l: "Tik", glyph: "✓" }, { k: "cross", l: "Carpi", glyph: "✗" }, { k: "dot", l: "Buyuk Nokta", glyph: "●" }].map(item => (
+                  <button
+                    key={item.k}
+                    onClick={() => patch({ selectionUi: { ...selectionUi, controlMark: item.k } })}
+                    style={{ minHeight: 30, padding: "0 10px", borderRadius: 10, border: `1px solid ${selectionUi.controlMark === item.k ? "#86efac" : "#bbf7d0"}`, background: selectionUi.controlMark === item.k ? "#dcfce7" : "#ffffff", color: "#166534", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {item.glyph} {item.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid #fee2e2", background: "#fff7f7" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#b91c1c", marginBottom: 8 }}>Yanlis Secimde</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { k: "opposite", l: "Ters Isaret" },
+                  { k: "same", l: "Ayni Isaret" },
+                  { k: "none", l: "Bos Kalsin" },
+                ].map(item => (
+                  <button
+                    key={item.k}
+                    onClick={() => patch({ selectionUi: { ...selectionUi, wrongMarkMode: item.k } })}
+                    style={{ minHeight: 30, padding: "0 10px", borderRadius: 10, border: `1px solid ${selectionUi.wrongMarkMode === item.k ? "#fca5a5" : "#fecaca"}`, background: selectionUi.wrongMarkMode === item.k ? "#fee2e2" : "#ffffff", color: "#991b1b", fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {item.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid #e2e8f0", background: "#ffffff", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ width: 28, height: 28, borderRadius: selectionUi.controlShape === "circle" ? 999 : 8, border: "2px solid #2563eb", background: "#ffffff", color: "#1d4ed8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, flexShrink: 0 }}>
+              {" "}
+            </div>
+            <div style={{ width: 28, height: 28, borderRadius: selectionUi.controlShape === "circle" ? 999 : 8, border: "2px solid #16a34a", background: "#ecfdf5", color: "#16a34a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, flexShrink: 0 }}>
+              {getSelectionMarkGlyph(selectionUi.controlMark)}
+            </div>
+            <div style={{ width: 28, height: 28, borderRadius: selectionUi.controlShape === "circle" ? 999 : 8, border: "2px solid #dc2626", background: "#fef2f2", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, flexShrink: 0 }}>
+              {resolveWrongSelectionGlyph(selectionUi, selectionUi.controlMark)}
+            </div>
+            <div style={{ fontSize: 10, color: "#475569", lineHeight: 1.6, minWidth: 180 }}>
+              Soldan saga: bos hali, secili dogru hali, secili yanlis hali.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid rgba(203,213,225,.95)", borderRadius: 14, padding: 10, boxShadow: "0 10px 22px rgba(15,23,42,.05)" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#334155", marginBottom: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>Sahne Secim Sekilleri</div>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 10, lineHeight: 1.6 }}>
+            Articulate mantigi icin sahneye once <strong>+ Sekil</strong>, <strong>+ Buton</strong> veya <strong>+ Metin</strong> ekle. Sonra burada onu secim alanina cevir.
+            Ayni soruya ait sekillere ayni <strong>Soru Kimligi</strong> yaz.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {selectionCanvasObjects.map((item, index) => {
+              const active = !!item.selectionQuestionId;
+              const resolvedMark = item.selectionMark || selectionUi.controlMark;
+              return (
+                <div key={item.id} style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${active ? "#93c5fd" : "#dbe7f5"}`, background: active ? "#f8fbff" : "#ffffff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: item.type === "shape" ? 8 : 999, border: "2px solid #94a3b8", background: "#ffffff", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, flexShrink: 0 }}>
+                      {" "}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.label || `${item.type} ${index + 1}`}
+                      </div>
+                      <div style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>
+                        {item.type} nesnesi • kendi sekli korunur • secilince {getSelectionMarkGlyph(resolvedMark)} gorunur
+                      </div>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#334155", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={e => patchCanvasObject(item.id, e.target.checked
+                          ? {
+                              selectionQuestionId: item.selectionQuestionId || `soru-${index + 1}`,
+                              selectionChoice: item.selectionChoice || item.label || `secenek-${index + 1}`,
+                              selectionCorrect: typeof item.selectionCorrect === "boolean" ? item.selectionCorrect : false,
+                            }
+                          : {
+                              selectionQuestionId: "",
+                              selectionChoice: "",
+                              selectionCorrect: null,
+                              selectionMark: undefined,
+                            })}
+                        style={{ accentColor: "#2563eb" }}
+                      />
+                      Secim alani
+                    </label>
+                  </div>
+                  {active && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px auto", gap: 8, alignItems: "end" }}>
+                      <Inp label="Soru Kimligi" value={item.selectionQuestionId || ""} onChange={e => patchCanvasObject(item.id, { selectionQuestionId: e.target.value })} placeholder="soru-1" />
+                      <Inp label="Secenek Kodu" value={item.selectionChoice || ""} onChange={e => patchCanvasObject(item.id, { selectionChoice: e.target.value })} placeholder="A / B / D / Y" />
+                      <SelectInp
+                        label="Isaret"
+                        value={item.selectionMark || "global"}
+                        onChange={e => patchCanvasObject(item.id, { selectionMark: e.target.value === "global" ? undefined : e.target.value })}
+                        options={[
+                          { value: "global", label: `Genel (${selectionUi.controlMark === "check" ? "Tik" : selectionUi.controlMark === "cross" ? "Carpi" : "Buyuk Nokta"})` },
+                          { value: "check", label: "Tik" },
+                          { value: "cross", label: "Carpi" },
+                          { value: "dot", label: "Buyuk Nokta" },
+                        ]}
+                      />
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 34, fontSize: 10, color: "#334155", cursor: "pointer", paddingBottom: 2 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!item.selectionCorrect}
+                          onChange={e => patchCanvasObject(item.id, { selectionCorrect: e.target.checked })}
+                          style={{ accentColor: "#16a34a" }}
+                        />
+                        Dogru cevap
+                      </label>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {selectionCanvasObjects.length === 0 && (
+              <div style={{ fontSize: 10, color: "#64748b", textAlign: "center", padding: "10px 0" }}>
+                Once sahneye bir sekil, buton veya metin ekle.
+              </div>
+            )}
+          </div>
+        </div>
+
         <div style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid rgba(203,213,225,.95)", borderRadius: 14, padding: 10, boxShadow: "0 10px 22px rgba(15,23,42,.05)" }}>
           <div style={{ fontSize: 9, fontWeight: 800, color: "#334155", marginBottom: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>Dogru Secenek Formu</div>
           <div style={{ fontSize: 10, color: "#64748b", marginBottom: 8, lineHeight: 1.55 }}>
@@ -7540,7 +8871,9 @@ function AnswerFormPanel({ activity, onUpdate, onPreviewChange = () => {} }) {
                   background: option.isCorrect ? "linear-gradient(180deg,#f0fdf4,#ffffff)" : "#ffffff",
                 }}
               >
-                <div style={badge}>{index + 1}</div>
+                <div style={{ ...badge, borderRadius: selectionUi.controlShape === "circle" ? 999 : 8 }}>
+                  {option.isCorrect ? getSelectionMarkGlyph(selectionUi.controlMark) : index + 1}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {option.label || `Secenek ${index + 1}`}
@@ -7558,18 +8891,25 @@ function AnswerFormPanel({ activity, onUpdate, onPreviewChange = () => {} }) {
             {options.length === 0 && <div style={{ fontSize: 10, color: "#64748b", textAlign: "center", padding: "10px 0" }}>Henüz seçenek yok.</div>}
           </div>
         </div>
+        </>
       )}
 
       {(activity.type === "drag-drop" || activity.type === "mixed") && (
+        <>
+        <div style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid rgba(203,213,225,.95)", borderRadius: 14, padding: 10, boxShadow: "0 10px 22px rgba(15,23,42,.05)" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: "#334155", marginBottom: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>Surukle-Birak Kurgusu</div>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 10, lineHeight: 1.6 }}>
+            Soru grubu, grup, kapasite, coklu hedef ve davranis kurallarini buradan yonet. Tek tek oge boyutlari ise sagdaki <strong>Nesne</strong> sekmesinde kalir.
+          </div>
+          <DragDropConfigPanel activity={activity} onUpdate={onUpdate} showMatchEditor={false} />
+        </div>
+
         <div style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid rgba(203,213,225,.95)", borderRadius: 14, padding: 10, boxShadow: "0 10px 22px rgba(15,23,42,.05)" }}>
           <div style={{ fontSize: 9, fontWeight: 800, color: "#334155", marginBottom: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>Dogru Eslesme Formu</div>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 10, lineHeight: 1.6 }}>
+            Burasi gercek cevap alanidir. Her surukle icin dogru birak alanini burada secersin.
+          </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-            <button
-              onClick={() => patch({ dragDropMatches: buildAutoDragMatches(activity) })}
-              style={{ minHeight: 28, padding: "0 10px", borderRadius: 10, border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d", fontSize: 9, fontWeight: 800, cursor: "pointer" }}
-            >
-              Oto Doldur
-            </button>
             <button
               onClick={() => patch({ dragDropMatches: {} })}
               style={{ minHeight: 28, padding: "0 10px", borderRadius: 10, border: "1px solid #cbd5e1", background: "#ffffff", color: "#475569", fontSize: 9, fontWeight: 800, cursor: "pointer" }}
@@ -7579,49 +8919,82 @@ function AnswerFormPanel({ activity, onUpdate, onPreviewChange = () => {} }) {
             <div style={{ padding: "4px 8px", borderRadius: 999, background: "#fff7ed", color: "#c2410c", fontSize: 9, fontWeight: 700, border: "1px solid #fed7aa" }}>
               {matchedCount}/{draggables.length} eslesme
             </div>
+            <div style={{ padding: "4px 8px", borderRadius: 999, background: "#eff6ff", color: "#1d4ed8", fontSize: 9, fontWeight: 700, border: "1px solid #bfdbfe" }}>
+              {dragDropSettings.isolateScopes ? "Grup korumali" : "Serbest"}
+            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {draggables.map((drag, index) => (
               <div
                 key={drag.id}
-                onMouseEnter={() => onPreviewChange({ dragId: drag.id, dropId: matches[drag.id] || null })}
-                onClick={() => onPreviewChange({ dragId: drag.id, dropId: matches[drag.id] || null })}
-                style={{ ...rowCard, cursor: "pointer" }}
+                onMouseEnter={() => onPreviewChange({ dragId: drag.id, dropId: normalizeDragDropMatchValue(matches[drag.id])[0] || null })}
+                onClick={() => onPreviewChange({ dragId: drag.id, dropId: normalizeDragDropMatchValue(matches[drag.id])[0] || null })}
+                style={{ ...rowCard, cursor: "pointer", alignItems: "flex-start" }}
               >
                 <div style={{ ...badge, background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" }}>{index + 1}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {drag.label || `Surukle ${index + 1}`}
                   </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                    {drag.scope && <span style={{ padding: "3px 6px", borderRadius: 999, background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0", fontSize: 9, fontWeight: 700 }}>Soru Grubu: {drag.scope}</span>}
+                    {(drag.allowMultipleTargets || dragDropSettings.allowMultipleTargetsPerDrag) && <span style={{ padding: "3px 6px", borderRadius: 999, background: "#ecfdf5", color: "#15803d", border: "1px solid #86efac", fontSize: 9, fontWeight: 700 }}>Coklu hedef</span>}
+                  </div>
+                  {(drag.allowMultipleTargets || dragDropSettings.allowMultipleTargetsPerDrag) ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                      {dropzones.filter(drop => areDragDropScopesCompatible(activity, drag, drop)).map((drop, dropIndex) => {
+                        const checked = normalizeDragDropMatchValue(matches[drag.id]).includes(drop.id);
+                        return (
+                          <label key={drop.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "#334155", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => toggleMultiMatch(drag.id, drop.id, e.target.checked)}
+                              style={{ accentColor: "#0ea5e9" }}
+                            />
+                            <span>{drop.label || `Birak ${dropIndex + 1}`}</span>
+                            {drop.scope && <span style={{ fontSize: 9, color: "#64748b" }}>({drop.scope})</span>}
+                          </label>
+                        );
+                      })}
+                      {dropzones.filter(drop => areDragDropScopesCompatible(activity, drag, drop)).length === 0 && (
+                        <div style={{ fontSize: 10, color: "#94a3b8" }}>Bu surukleme icin uyumlu birak alani yok.</div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
-                <select
-                  value={matches[drag.id] || ""}
-                  onFocus={() => onPreviewChange({ dragId: drag.id, dropId: matches[drag.id] || null })}
-                  onChange={e => setMatch(drag.id, e.target.value)}
-                  style={{ width: 122, padding: "5px 8px", borderRadius: 8, border: `1px solid ${matches[drag.id] ? "#fdba74" : "#cbd5e1"}`, background: "#ffffff", color: matches[drag.id] ? "#c2410c" : "#475569", fontSize: 10, outline: "none" }}
-                >
-                  <option value="">Birak sec</option>
-                  {dropzones.map((drop, dropIndex) => (
-                    <option key={drop.id} value={drop.id}>
-                      {drop.label || `Birak ${dropIndex + 1}`}
-                    </option>
-                  ))}
-                </select>
+                {!(drag.allowMultipleTargets || dragDropSettings.allowMultipleTargetsPerDrag) && (
+                  <select
+                    value={normalizeDragDropMatchValue(matches[drag.id])[0] || ""}
+                    onFocus={() => onPreviewChange({ dragId: drag.id, dropId: normalizeDragDropMatchValue(matches[drag.id])[0] || null })}
+                    onChange={e => setMatch(drag.id, e.target.value)}
+                    style={{ width: 146, padding: "5px 8px", borderRadius: 8, border: `1px solid ${normalizeDragDropMatchValue(matches[drag.id]).length ? "#fdba74" : "#cbd5e1"}`, background: "#ffffff", color: normalizeDragDropMatchValue(matches[drag.id]).length ? "#c2410c" : "#475569", fontSize: 10, outline: "none" }}
+                  >
+                    <option value="">Birak sec</option>
+                    {dropzones.filter(drop => areDragDropScopesCompatible(activity, drag, drop)).map((drop, dropIndex) => (
+                      <option key={drop.id} value={drop.id}>
+                        {drop.label || `Birak ${dropIndex + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             ))}
             {draggables.length === 0 && <div style={{ fontSize: 10, color: "#64748b", textAlign: "center", padding: "10px 0" }}>Henüz sürüklenebilir öğe yok.</div>}
             {draggables.length > 0 && dropzones.length === 0 && <div style={{ fontSize: 10, color: "#64748b", textAlign: "center", paddingBottom: 6 }}>Önce bırakma alanı ekleyin.</div>}
           </div>
         </div>
+        </>
       )}
     </div>
   );
 }
 
-function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = false, activities = [], variables = [], onVariablesChange = () => {}, mobile = false, uiMode = "basic", onAnswerPreviewChange = () => {} }) {
-  if (!activity) return <div style={{ width: mobile ? "100%" : 240, flexShrink: 0, borderLeft: mobile ? "none" : "1px solid #1a2238", background: "#1e2740" }} />;
+function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = false, activities = [], variables = [], onVariablesChange = () => {}, mobile = false, uiMode = "advanced", onAnswerPreviewChange = () => {} }) {
+  if (!activity) return <div style={{ width: mobile ? "100%" : 240, flexShrink: 0, borderLeft: mobile ? "none" : `1px solid ${EDITOR_THEME.shellBorder}`, background: EDITOR_THEME.shellPanelAlt }} />;
   const objects = activity.objects || [];
   const layers = getActivityLayers(activity);
+  const resolvedLayerNames = useMemo(() => buildResolvedLayerNameMap(layers, activity), [activity, layers]);
   const timeline = activity.timeline || [];
   const triggers = activity.triggers || [];
   const sel = objects.find(o => o.id === activity.selectedObjectId) || null;
@@ -7630,7 +9003,7 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
   const selectionBounds = getObjectSelectionBounds(selectedObjects);
 
   const patchAct = (p) => onUpdate({ ...activity, ...p });
-  const patchObj = (id, p) => onUpdate(updateActivityObject(activity, id, p, { syncDragDropFamily: true }));
+  const patchObj = (id, p, options = {}) => onUpdate(updateActivityObject(activity, id, p, options));
   const patchTimeline = (id, p) => patchAct({ timeline: timeline.map(item => item.id === id ? { ...item, ...p } : item) });
   const patchTrigger = (id, p) => patchAct({ triggers: triggers.map(item => item.id === id ? { ...item, ...p } : item) });
   const patchTriggerConditions = (triggerId, updater) => {
@@ -7685,7 +9058,7 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
   const monoCard = { background: "#ffffff", border: "1px solid #111111", borderRadius: 0, padding: 9, marginBottom: 8, boxShadow: "none" };
   const triggerSourceOptions = [{ value: "Secili Nesne", label: "Tiklanan / secili nesne" }, { value: "__activity__", label: "Sahne / yukleme" }, ...objects.map(obj => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` }))];
   const triggerTargetOptions = objects.map(obj => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` }));
-  const triggerLayerOptions = layers.map(layer => ({ value: layer.id, label: layer.name }));
+  const triggerLayerOptions = layers.map((layer, index) => ({ value: layer.id, label: resolvedLayerNames[layer.id] || `Layer ${index + 1}` }));
   const triggerActivityOptions = [{ value: "__next__", label: "Sonraki sahne" }, ...activities.filter(item => item.id !== activity.id).map(item => ({ value: item.id, label: item.name }))];
   const triggerSlideOptions = [
     { value: "__next__", label: "Sonraki slider" },
@@ -7766,6 +9139,16 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
     { id: "interaction", label: "Etkilesim" },
   ];
   const [inspectorTab, setInspectorTab] = useState(() => (sel || multiSel ? "object" : "scene"));
+  const [editingLayerId, setEditingLayerId] = useState(null);
+
+  const saveLayerName = useCallback((layerId, value) => {
+    const nextName = String(value ?? "");
+    patchAct({
+      layers: layers.map(layer => layer.id === layerId
+        ? { ...layer, name: nextName, autoName: !nextName.trim() }
+        : layer),
+    });
+  }, [layers, patchAct]);
 
   useEffect(() => {
     if (sel || multiSel) {
@@ -7781,30 +9164,89 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
     }
   }, [hideTimeline]);
 
+  useEffect(() => {
+    if (editingLayerId && !layers.some(layer => layer.id === editingLayerId)) {
+      setEditingLayerId(null);
+    }
+  }, [editingLayerId, layers]);
+
   const showScenePanel = inspectorTab === "scene";
   const showObjectPanel = inspectorTab === "object";
   const showAnswerPanel = inspectorTab === "answer";
   const showTimelinePanel = inspectorTab === "timeline";
   const showInteractionPanel = inspectorTab === "interaction";
+  const objectCountOnActiveLayer = objects.filter(item => (item.layerId || "base") === (activity.activeLayerId || "base")).length;
+  const inspectorTone = multiSel
+    ? { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8", label: "Toplu Secim" }
+    : sel
+      ? { bg: "#ecfeff", border: "#a5f3fc", text: "#0f766e", label: "Secili Nesne" }
+      : { bg: "#f1f5f9", border: "#cbd5e1", text: "#334155", label: "Sahne Ozeti" };
+  const inspectorContextTitle = multiSel
+    ? `${selectedIds.size} oge secili`
+    : sel
+      ? (sel.label || sel.type || "Nesne")
+      : (activity.name || "Sahne duzeni");
+  const inspectorContextMeta = multiSel
+    ? `${selectedObjects.length} oge • ${Math.round(selectionBounds?.width || 0)} x ${Math.round(selectionBounds?.height || 0)} alan`
+    : sel
+      ? `${sel.type || "nesne"} • ${Math.round(sel.width || 0)} x ${Math.round(sel.height || 0)} • z${sel.zIndex || 1}`
+      : `${objects.length} nesne • ${layers.length} katman • ${timeline.length} klip`;
+  const inspectorSummaryStats = [
+    { label: "Nesne", value: sel ? 1 : (multiSel ? selectedIds.size : objects.length) },
+    { label: "Katman", value: layers.length },
+    { label: "Zaman", value: timeline.length },
+  ];
+  const summaryTile = {
+    borderRadius: 14,
+    border: `1px solid ${EDITOR_THEME.lightBorder}`,
+    background: "rgba(255,255,255,.86)",
+    padding: "8px 10px",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.92)",
+  };
+  const orderedSceneLayers = [
+    ...layers.filter(layer => layer.kind !== "base"),
+    ...layers.filter(layer => layer.kind === "base"),
+  ];
 
   return (
     <div style={{ width: "100%", height: "100%", minHeight: 0, flexShrink: 0, borderLeft: mobile ? "none" : "1px solid rgba(148,163,184,.18)", background: "linear-gradient(180deg,#fbfdff,#f3f8ff)", overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", touchAction: "pan-y", padding: 8, paddingBottom: mobile ? 18 : 8 }}>
-      <div style={{ ...card, padding: 6, marginBottom: 9 }}>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${inspectorTabs.length}, minmax(0,1fr))`, gap: 4 }}>
+      <div style={{ ...card, padding: 10, marginBottom: 9, background: "linear-gradient(180deg,#ffffff,#f6fbff)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", letterSpacing: 0.7, textTransform: "uppercase" }}>Denetim Paneli</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginTop: 4, lineHeight: 1.25 }}>{inspectorContextTitle}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 5, lineHeight: 1.5 }}>{inspectorContextMeta}</div>
+          </div>
+          <span style={{ padding: "6px 10px", borderRadius: 999, background: inspectorTone.bg, border: `1px solid ${inspectorTone.border}`, color: inspectorTone.text, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>
+            {inspectorTone.label}
+          </span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, marginBottom: 10 }}>
+          {inspectorSummaryStats.map(stat => (
+            <div key={stat.label} style={summaryTile}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>{stat.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginTop: 5 }}>{stat.value}</div>
+              <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>
+                {stat.label === "Nesne" ? `${objectCountOnActiveLayer} aktif katmanda` : stat.label === "Katman" ? "Sahne kademesi" : "Animasyon satiri"}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${inspectorTabs.length}, minmax(0,1fr))`, gap: 6 }}>
           {inspectorTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setInspectorTab(tab.id)}
               style={{
-                minHeight: 30,
-                borderRadius: 10,
-                border: `1px solid ${inspectorTab === tab.id ? "#bfdbfe" : "#dbe7f5"}`,
-                background: inspectorTab === tab.id ? "linear-gradient(180deg,#eff6ff,#ffffff)" : "#ffffff",
-                color: inspectorTab === tab.id ? "#1d4ed8" : "#475569",
+                minHeight: 36,
+                borderRadius: 12,
+                border: `1px solid ${inspectorTab === tab.id ? "#93c5fd" : "#dbe7f5"}`,
+                background: inspectorTab === tab.id ? "linear-gradient(180deg,#e8f4ff,#ffffff)" : "rgba(255,255,255,.92)",
+                color: inspectorTab === tab.id ? "#0f5d8e" : "#475569",
                 fontSize: 10,
                 fontWeight: 800,
                 cursor: "pointer",
-                boxShadow: inspectorTab === tab.id ? "0 8px 14px rgba(59,130,246,.1)" : "none",
+                boxShadow: inspectorTab === tab.id ? "0 10px 18px rgba(59,130,246,.12)" : "inset 0 1px 0 rgba(255,255,255,.9)",
               }}
             >
               {tab.label}
@@ -7964,8 +9406,27 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
               <Inp label="Y" type="number" value={Math.round(sel.height)} onChange={e => patchObj(sel.id, { height: Math.max(20, +e.target.value) })} />
             </div>
             <Inp label="Dondur °" type="number" value={sel.rotation || 0} onChange={e => patchObj(sel.id, { rotation: +e.target.value })} />
-            <SelectInp label="Layer" value={sel.layerId || "base"} onChange={e => patchObj(sel.id, { layerId: e.target.value })} options={layers.map(layer => ({ value: layer.id, label: layer.name }))} />
-            {(sel.type === "draggable" || sel.type === "dropzone") && <Inp label="Grup" value={sel.group || ""} onChange={e => patchObj(sel.id, { group: e.target.value })} placeholder="A, B, ..." />}
+            <SelectInp label="Layer" value={sel.layerId || "base"} onChange={e => patchObj(sel.id, { layerId: e.target.value })} options={layers.map((layer, index) => ({ value: layer.id, label: resolvedLayerNames[layer.id] || `Layer ${index + 1}` }))} />
+            {(sel.type === "draggable" || sel.type === "dropzone") && (
+              <>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <Inp label="Soru Grubu" value={sel.scope || ""} onChange={e => patchObj(sel.id, { scope: e.target.value })} placeholder="Soru-1, Soru-2..." />
+                  <Inp label="Grup" value={sel.group || ""} onChange={e => patchObj(sel.id, { group: e.target.value })} placeholder="A, B, ..." />
+                </div>
+                {sel.type === "draggable" && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#78909C", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!sel.allowMultipleTargets} onChange={e => patchObj(sel.id, { allowMultipleTargets: e.target.checked })} style={{ accentColor: "#a855f7" }} />
+                    Birden fazla hedefe gidebilir
+                  </label>
+                )}
+                {sel.type === "dropzone" && (
+                  <Inp label="Kapasite" type="number" value={sel.capacity || 0} onChange={e => patchObj(sel.id, { capacity: Math.max(0, +e.target.value || 0) })} placeholder="0 = sinirsiz / global" />
+                )}
+                <div style={{ padding: "7px 8px", borderRadius: 8, background: "#f8fafc", border: "1px solid #dbeafe", color: "#475569", fontSize: 10, lineHeight: 1.6 }}>
+                  Bu panelde yaptigin boyut ve konum degisikligi sadece secili ogeyi etkiler. Hepsini birlikte duzenlemek istersen coklu secim kullan.
+                </div>
+              </>
+            )}
             {sel.type === "audio" && (
               <>
                 <Inp label="Ses URL" value={sel.mediaUrl || ""} onChange={e => patchObj(sel.id, { mediaUrl: e.target.value })} placeholder="/static/uploads/ses.mp3" />
@@ -8055,15 +9516,17 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", borderBottom: "1px solid #c7d0db", background: "linear-gradient(180deg,#edf1f5,#dde4ec)" }}>
             <div>
               <div style={{ fontSize: 10, fontWeight: 900, color: "#334155", letterSpacing: 0.5 }}>SLIDE LAYERS</div>
-              <div style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>Base layer ve ek katman akisi</div>
+              <div style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>Articulate benzeri manuel katman akisi</div>
             </div>
             <button onClick={() => { const newLayer = createLayer("Katman", layers.length); patchAct({ layers: [...layers, newLayer], activeLayerId: newLayer.id }); }} style={{ minHeight: 28, padding: "0 10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#ffffff", color: "#1d4ed8", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>+ Layer</button>
           </div>
           <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-            {layers.map((layer, index) => {
+            {orderedSceneLayers.map((layer, index) => {
               const isActiveLayer = activity.activeLayerId === layer.id;
-              const visibleCount = getCanvasObjects({ ...activity, activeLayerId: layer.id }, layer.id).filter(obj => obj.visible !== false).length;
-              const layerLabel = layer.kind === "base" ? "Base Layer" : (layer.name || `Layer ${index}`);
+              const visibleCount = objects.filter(obj => (obj.layerId || "base") === layer.id && obj.visible !== false).length;
+              const resolvedLayerName = resolvedLayerNames[layer.id] || (layer.kind === "base" ? "Base Layer" : `Layer ${index + 1}`);
+              const actualIndex = layers.findIndex(item => item.id === layer.id);
+              const isEditing = editingLayerId === layer.id && layer.kind !== "base";
               return (
                 <div
                   key={layer.id}
@@ -8073,27 +9536,68 @@ function RightInspectorPhase2({ activity, onUpdate, selectedIds, hideTimeline = 
                     gridTemplateColumns: "88px 1fr auto",
                     gap: 8,
                     alignItems: "center",
-                    padding: 8,
+                    padding: 7,
                     borderRadius: 10,
                     cursor: "pointer",
-                    border: `1px solid ${isActiveLayer ? "#93c5fd" : "#d8e0ea"}`,
-                    background: isActiveLayer ? "linear-gradient(180deg,#eaf4ff,#ffffff)" : "linear-gradient(180deg,#ffffff,#f8fafc)",
-                    boxShadow: isActiveLayer ? "0 8px 16px rgba(37,99,235,.08)" : "inset 0 1px 0 rgba(255,255,255,.85)",
+                    border: `1px solid ${isActiveLayer ? "#2563eb" : "#d8e0ea"}`,
+                    background: isActiveLayer ? "linear-gradient(180deg,#2693ff,#1d4ed8)" : "linear-gradient(180deg,#ffffff,#f8fafc)",
+                    boxShadow: isActiveLayer ? "0 10px 18px rgba(37,99,235,.18)" : "inset 0 1px 0 rgba(255,255,255,.85)",
                   }}
                 >
                   <LayerThumbnail activity={activity} layer={layer} isActive={isActiveLayer} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ padding: "2px 6px", borderRadius: 999, background: layer.kind === "base" ? "#e2e8f0" : "#dbeafe", color: layer.kind === "base" ? "#475569" : "#1d4ed8", fontSize: 9, fontWeight: 800 }}>
-                        {layer.kind === "base" ? "Base" : `Layer ${index}`}
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{layerLabel}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={layer.autoName === false ? (layer.name || "") : resolvedLayerName}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => saveLayerName(layer.id, e.target.value)}
+                          onBlur={() => setEditingLayerId(null)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              saveLayerName(layer.id, e.currentTarget.value);
+                              setEditingLayerId(null);
+                            }
+                            if (e.key === "Escape") {
+                              setEditingLayerId(null);
+                            }
+                          }}
+                          style={{ flex: 1, minWidth: 0, height: 30, border: "1px solid rgba(255,255,255,.45)", borderRadius: 7, background: "#ffffff", color: "#0f172a", fontSize: 12, fontWeight: 800, padding: "0 9px", outline: "none" }}
+                        />
+                      ) : (
+                        <>
+                          <button
+                            onDoubleClick={e => {
+                              e.stopPropagation();
+                              if (layer.kind !== "base") setEditingLayerId(layer.id);
+                            }}
+                            style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", padding: 0, textAlign: "left", cursor: layer.kind === "base" ? "default" : "text" }}
+                          >
+                            <div style={{ fontSize: 12, fontWeight: 800, color: isActiveLayer ? "#ffffff" : "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {resolvedLayerName}
+                            </div>
+                          </button>
+                          {layer.kind === "base" && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isActiveLayer ? "rgba(255,255,255,.86)" : "#64748b", whiteSpace: "nowrap" }}>
+                              (Base Layer)
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
-                    <div style={{ fontSize: 9, color: "#64748b", marginTop: 4 }}>
-                      {visibleCount} obje görünür · {isActiveLayer ? "Şu an düzenleniyor" : "Geçiş için tıkla"}
+                    <div style={{ fontSize: 9, color: isActiveLayer ? "rgba(255,255,255,.82)" : "#64748b", marginTop: 4 }}>
+                      {visibleCount} obje görünür · {isActiveLayer ? "Şu an düzenleniyor" : "Katmanı açmak için tıkla"}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {layer.kind !== "base" && !isEditing && (
+                      <button onClick={e => { e.stopPropagation(); setEditingLayerId(layer.id); }} style={{ width: 20, height: 20, borderRadius: 999, border: `1px solid ${isActiveLayer ? "rgba(255,255,255,.35)" : "#d1d5db"}`, background: isActiveLayer ? "rgba(255,255,255,.14)" : "#ffffff", color: isActiveLayer ? "#ffffff" : "#64748b", cursor: "pointer", fontSize: 10, lineHeight: 1 }}>
+                        ✎
+                      </button>
+                    )}
+                    <button onClick={e => { e.stopPropagation(); if (actualIndex > 0) { const nextLayers = [...layers]; [nextLayers[actualIndex - 1], nextLayers[actualIndex]] = [nextLayers[actualIndex], nextLayers[actualIndex - 1]]; patchAct({ layers: nextLayers }); } }} style={{ width: 18, height: 18, borderRadius: 999, border: "1px solid #d1d5db", background: "#ffffff", color: "#64748b", cursor: "pointer", fontSize: 10, lineHeight: 1 }}>↑</button>
+                    <button onClick={e => { e.stopPropagation(); if (actualIndex < layers.length - 1) { const nextLayers = [...layers]; [nextLayers[actualIndex + 1], nextLayers[actualIndex]] = [nextLayers[actualIndex], nextLayers[actualIndex + 1]]; patchAct({ layers: nextLayers }); } }} style={{ width: 18, height: 18, borderRadius: 999, border: "1px solid #d1d5db", background: "#ffffff", color: "#64748b", cursor: "pointer", fontSize: 10, lineHeight: 1 }}>↓</button>
                     <span title="Katman durumu" style={{ width: 18, height: 18, borderRadius: 999, border: "1px solid #d1d5db", background: "#ffffff", color: visibleCount > 0 ? "#2563eb" : "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>◐</span>
                     <span title={isActiveLayer ? "Aktif katman" : "Pasif katman"} style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${isActiveLayer ? "#93c5fd" : "#d1d5db"}`, background: isActiveLayer ? "#dbeafe" : "#ffffff", color: isActiveLayer ? "#1d4ed8" : "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{isActiveLayer ? "●" : "○"}</span>
                     {layer.kind !== "base" && <button onClick={e => { e.stopPropagation(); patchAct({ layers: layers.filter(item => item.id !== layer.id), activeLayerId: activity.activeLayerId === layer.id ? "base" : activity.activeLayerId, objects: objects.map(obj => obj.layerId === layer.id ? { ...obj, layerId: "base" } : obj) }); }} style={{ border: "none", background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 13, lineHeight: 1 }}>×</button>}
@@ -8308,7 +9812,7 @@ function TimelineDock({
 }) {
   if (!activity) {
     return (
-      <div style={{ height, borderTop: "1px solid #131b2e", background: "#161e30", display: "flex", alignItems: "center", justifyContent: "center", color: "#2d3a4f", fontSize: 12 }}>
+      <div style={{ height, borderTop: `1px solid ${EDITOR_THEME.shellBorder}`, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelAlt}, ${EDITOR_THEME.shellBg})`, display: "flex", alignItems: "center", justifyContent: "center", color: EDITOR_THEME.shellMutedSoft, fontSize: 12 }}>
         Timeline burada görünecek.
       </div>
     );
@@ -8342,31 +9846,39 @@ function TimelineDock({
   const activeObject = activeTimelineItem ? (objects.find(entry => entry.id === activeTimelineItem.objectId) || null) : null;
   const activeLabel = activeObject?.label || activeObject?.type || activeTimelineItem?.name || "Klip";
   const activeKeyframes = Array.isArray(activeTimelineItem?.keyframes) ? activeTimelineItem.keyframes : [];
+  const currentSeconds = Number(currentTime || 0).toFixed(1);
+  const timelineCard = {
+    borderRadius: 12,
+    border: `1px solid ${EDITOR_THEME.shellBorderSoft}`,
+    background: "rgba(255,255,255,.035)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)",
+  };
   const toolbarButton = {
-    minHeight: 28,
-    padding: "0 10px",
-    borderRadius: 5,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(255,255,255,.07)",
-    color: "#94a3b8",
+    minHeight: 30,
+    padding: "0 12px",
+    borderRadius: 10,
+    border: `1px solid ${EDITOR_THEME.shellBorderSoft}`,
+    background: "rgba(255,255,255,.06)",
+    color: EDITOR_THEME.shellMuted,
     fontSize: 10,
-    fontWeight: 700,
+    fontWeight: 800,
     cursor: "pointer",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.04)",
   };
   const compactField = {
     display: "flex",
     flexDirection: "column",
-    gap: 3,
+    gap: 4,
     minWidth: 0,
   };
   const compactInput = {
     width: "100%",
-    minHeight: 28,
-    padding: "0 7px",
-    borderRadius: 5,
-    border: "1px solid rgba(255,255,255,.1)",
-    background: "#0f172a",
-    color: "#94a3b8",
+    minHeight: 32,
+    padding: "0 9px",
+    borderRadius: 10,
+    border: `1px solid ${EDITOR_THEME.shellBorderSoft}`,
+    background: "#0e1728",
+    color: EDITOR_THEME.shellMuted,
     fontSize: 10,
     boxSizing: "border-box",
     outline: "none",
@@ -8420,48 +9932,53 @@ function TimelineDock({
   };
 
   return (
-    <div style={{ height, borderTop: "1px solid #131b2e", background: "#161e30", display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div style={{ height, borderTop: `1px solid ${EDITOR_THEME.shellBorder}`, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelAlt}, ${EDITOR_THEME.shellBg})`, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* ── Timeline Header ── */}
-      <div style={{ minHeight: 40, borderBottom: "1px solid #1a2238", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 12px", background: "#1e2740", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#64748b", letterSpacing: 0.8, textTransform: "uppercase" }}>Timeline</div>
-          <div style={{ fontSize: 9, color: "#2d3a4f", marginTop: 1 }}>{currentTime.toFixed(1)}s / {totalDuration.toFixed(1)}s</div>
+      <div style={{ minHeight: 54, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "rgba(255,255,255,.02)", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 900, color: EDITOR_THEME.shellMuted, letterSpacing: 0.8, textTransform: "uppercase" }}>Timeline</div>
+            <div style={{ fontSize: 10, color: EDITOR_THEME.shellMutedSoft, marginTop: 2 }}>{currentSeconds}s / {totalDuration.toFixed(1)}s</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ padding: "5px 9px", borderRadius: 999, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.05)", fontSize: 9, fontWeight: 800, color: EDITOR_THEME.shellMuted }}>{timeline.length} klip</span>
+            <span style={{ padding: "5px 9px", borderRadius: 999, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.05)", fontSize: 9, fontWeight: 800, color: EDITOR_THEME.shellMuted }}>{activeKeyframes.length} keyframe</span>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <button onClick={() => onPlayingChange(!isPlaying)} style={{ ...toolbarButton, color: isPlaying ? "#4ade80" : "#94a3b8", borderColor: isPlaying ? "rgba(74,222,128,.3)" : "rgba(255,255,255,.12)" }}>
+          <button onClick={() => onPlayingChange(!isPlaying)} style={{ ...toolbarButton, color: isPlaying ? EDITOR_THEME.shellSuccess : EDITOR_THEME.shellMuted, borderColor: isPlaying ? "rgba(74,222,128,.3)" : EDITOR_THEME.shellBorderSoft }}>
             {isPlaying ? "⏸ Duraklat" : "▶ Oynat"}
           </button>
           <button onClick={() => { onCurrentTimeChange(0); onPlayingChange(false); }} style={toolbarButton}>⏮ Başa</button>
-          <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px 4px", borderRadius: 5, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.04)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "3px 4px", borderRadius: 10, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.04)" }}>
             <button onClick={() => setTimelineZoom(value => clamp(value - 18, 48, 168))} style={{ ...toolbarButton, minHeight: 22, padding: "0 7px", border: "none", background: "none" }}>−</button>
-            <span style={{ minWidth: 36, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#475569" }}>{zoomPercent}%</span>
+            <span style={{ minWidth: 36, textAlign: "center", fontSize: 9, fontWeight: 700, color: EDITOR_THEME.shellMutedSoft }}>{zoomPercent}%</span>
             <button onClick={() => setTimelineZoom(value => clamp(value + 18, 48, 168))} style={{ ...toolbarButton, minHeight: 22, padding: "0 7px", border: "none", background: "none" }}>+</button>
           </div>
-          <span style={{ padding: "3px 8px", borderRadius: 4, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.04)", fontSize: 9, fontWeight: 700, color: "#475569" }}>{timeline.length} nesne</span>
         </div>
       </div>
 
       {/* ── Active clip inspector ── */}
       {activeTimelineItem && (
-        <div style={{ borderBottom: "1px solid #1a2238", padding: "8px 12px", background: "#1a2238", flexShrink: 0 }}>
+        <div style={{ borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, padding: "10px 14px", background: "rgba(255,255,255,.03)", flexShrink: 0 }}>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 180, maxWidth: 260 }}>
+            <div style={{ minWidth: 180, maxWidth: 260, ...timelineCard, padding: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ padding: "2px 6px", borderRadius: 4, background: "rgba(99,131,255,.15)", color: "#a5b4fc", fontSize: 9, fontWeight: 700, border: "1px solid rgba(99,131,255,.3)" }}>Seçili klip</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{activeLabel}</span>
+                <span style={{ padding: "4px 8px", borderRadius: 999, background: EDITOR_THEME.shellAccentSoft, color: "#a5e6ff", fontSize: 9, fontWeight: 800, border: `1px solid ${EDITOR_THEME.shellAccentBorder}` }}>Seçili klip</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: EDITOR_THEME.shellMuted }}>{activeLabel}</span>
               </div>
-              <div style={{ fontSize: 9, color: "#334155", marginTop: 4, lineHeight: 1.4 }}>
+              <div style={{ fontSize: 10, color: EDITOR_THEME.shellMutedSoft, marginTop: 6, lineHeight: 1.5 }}>
                 {activeObject?.type ? `${activeObject.type}` : "Nesne"} · {shouldObjectPersistAfterTimeline(activeTimelineItem) ? "kalıcı" : "çıkış efekti var"}
               </div>
             </div>
 
-            <div style={{ flex: 1, minWidth: 380, display: "grid", gridTemplateColumns: "repeat(6, minmax(64px, 1fr))", gap: 5 }}>
+            <div style={{ flex: 1, minWidth: 380, ...timelineCard, padding: 12, display: "grid", gridTemplateColumns: "repeat(6, minmax(64px, 1fr))", gap: 8 }}>
               {[
                 { label: "Başlangıç", val: activeTimelineItem.start, key: "start", onChange: v => patchTimeline(activeTimelineItem.id, { start: Math.max(0, v) }) },
                 { label: "Süre", val: activeTimelineItem.duration, key: "duration", onChange: v => patchTimeline(activeTimelineItem.id, { duration: Math.max(0.2, v) }) },
               ].map(f => (
                 <label key={f.key} style={compactField}>
-                  <span style={{ fontSize: 8, color: "#334155", fontWeight: 700 }}>{f.label}</span>
+                  <span style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft, fontWeight: 700 }}>{f.label}</span>
                   <input type="number" value={f.val} onChange={e => f.onChange(+e.target.value || 0)} style={compactInput} />
                 </label>
               ))}
@@ -8472,7 +9989,7 @@ function TimelineDock({
                 { label: "Easing", val: activeTimelineItem.easing || "easeOut", key: "easing", options: TIMELINE_EASING_OPTIONS },
               ].map(f => (
                 <label key={f.key} style={compactField}>
-                  <span style={{ fontSize: 8, color: "#334155", fontWeight: 700 }}>{f.label}</span>
+                  <span style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft, fontWeight: 700 }}>{f.label}</span>
                   <select value={f.val} onChange={e => patchTimeline(activeTimelineItem.id, { [f.key]: e.target.value })} style={compactInput}>
                     {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -8482,11 +9999,11 @@ function TimelineDock({
           </div>
 
           {/* Keyframe panel */}
-          <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,.07)", background: "#161e30" }}>
+          <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "#0d1524" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
               <div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#475569" }}>Keyframe Noktaları</span>
-                <span style={{ fontSize: 9, color: "#2d3a4f", marginLeft: 8 }}>Nesne hareketini düzenle</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: EDITOR_THEME.shellMuted }}>Keyframe Noktaları</span>
+                <span style={{ fontSize: 9, color: EDITOR_THEME.shellMutedSoft, marginLeft: 8 }}>Nesne hareketini düzenle</span>
               </div>
               <button
                 onClick={() => patchTimelineKeyframes(activeTimelineItem.id, prev => {
@@ -8506,7 +10023,7 @@ function TimelineDock({
                     return (
                       <div key={frame.id} style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 7px", borderRadius: 4, border: `1px solid ${isPinned ? "rgba(99,131,255,.35)" : "rgba(255,255,255,.08)"}`, background: isPinned ? "rgba(99,131,255,.1)" : "rgba(255,255,255,.03)" }}>
                         <strong style={{ fontSize: 9, color: "#818cf8" }}>{Number(frame.time || 0).toFixed(1)}s</strong>
-                        <span style={{ fontSize: 8, color: "#334155" }}>{`X:${Math.round(frame.x || 0)} Y:${Math.round(frame.y || 0)} S:${Number(frame.scale || 1).toFixed(1)} O:${Number(frame.opacity ?? 1).toFixed(1)}`}</span>
+                        <span style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft }}>{`X:${Math.round(frame.x || 0)} Y:${Math.round(frame.y || 0)} S:${Number(frame.scale || 1).toFixed(1)} O:${Number(frame.opacity ?? 1).toFixed(1)}`}</span>
                         {!isPinned && activeKeyframes.length > 2 && (
                           <button onClick={() => patchTimelineKeyframes(activeTimelineItem.id, prev => prev.filter(e => e.id !== frame.id))} style={{ border: "none", background: "transparent", color: "#f87171", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }}>×</button>
                         )}
@@ -8529,12 +10046,12 @@ function TimelineDock({
                     );
                   })}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "52px 1fr 1fr 1fr 1fr 22px", gap: 3, marginTop: 3, fontSize: 8, color: "#2d3a4f" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "52px 1fr 1fr 1fr 1fr 22px", gap: 3, marginTop: 3, fontSize: 8, color: EDITOR_THEME.shellMutedSoft }}>
                   <span>sn</span><span>X</span><span>Y</span><span>Scale</span><span>Opacity</span><span />
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 9, color: "#2d3a4f" }}>Keyframe yok. + Keyframe ile hareket noktası ekle.</div>
+              <div style={{ fontSize: 9, color: EDITOR_THEME.shellMutedSoft }}>Keyframe yok. + Keyframe ile hareket noktası ekle.</div>
             )}
           </div>
         </div>
@@ -8543,16 +10060,16 @@ function TimelineDock({
       {/* ── Track area ── */}
       <div style={{ flex: 1, overflowX: "auto", overflowY: "auto", padding: 0 }}>
         {timeline.length > 0 ? (
-          <div style={{ minWidth: labelColumnWidth + trackWidth, paddingBottom: 8 }}>
+          <div style={{ minWidth: labelColumnWidth + trackWidth, padding: 10 }}>
             {/* Column headers */}
-            <div style={{ display: "flex", minWidth: labelColumnWidth + trackWidth, position: "sticky", top: 0, zIndex: 2, background: "#1a2238" }}>
-              <div style={{ width: labelColumnWidth, flexShrink: 0, padding: "6px 10px", fontSize: 9, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: 0.6, background: "#1a2238", borderRight: "1px solid #131b2e", borderBottom: "1px solid #131b2e" }}>
+            <div style={{ display: "flex", minWidth: labelColumnWidth + trackWidth, position: "sticky", top: 0, zIndex: 2, background: EDITOR_THEME.shellPanel, borderRadius: "12px 12px 0 0", overflow: "hidden" }}>
+              <div style={{ width: labelColumnWidth, flexShrink: 0, padding: "8px 12px", fontSize: 9, fontWeight: 800, color: EDITOR_THEME.shellMutedSoft, textTransform: "uppercase", letterSpacing: 0.7, background: EDITOR_THEME.shellPanel, borderRight: `1px solid ${EDITOR_THEME.shellBorder}`, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}` }}>
                 Nesneler
               </div>
-              <div onPointerDown={scrubFromPointer} style={{ width: trackWidth, height: 28, position: "relative", cursor: "ew-resize", borderBottom: "1px solid #131b2e", background: "#1a2238" }}>
+              <div onPointerDown={scrubFromPointer} style={{ width: trackWidth, height: 32, position: "relative", cursor: "ew-resize", borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, background: EDITOR_THEME.shellPanel }}>
                 {timelineTicks.map(tick => (
-                  <div key={tick.second} style={{ position: "absolute", left: tick.left, top: 0, bottom: 0, width: 1, background: tick.major ? "#2d3a4f" : "#1e2740" }}>
-                    {tick.major && <span style={{ position: "absolute", top: 5, left: 4, fontSize: 9, color: "#2d3a4f" }}>{tick.second}s</span>}
+                  <div key={tick.second} style={{ position: "absolute", left: tick.left, top: 0, bottom: 0, width: 1, background: tick.major ? EDITOR_THEME.shellBorderStrong : EDITOR_THEME.shellPanelAlt }}>
+                    {tick.major && <span style={{ position: "absolute", top: 7, left: 4, fontSize: 9, color: EDITOR_THEME.shellMutedSoft }}>{tick.second}s</span>}
                   </div>
                 ))}
                 <div style={{ position: "absolute", left: currentTime * pixelsPerSecond - 4, top: 0, width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "7px solid #ef4444" }} />
@@ -8567,26 +10084,26 @@ function TimelineDock({
               const isSelected = activeTimelineItem?.id === item.id;
               const isActive = isObjectTimelineActive(activity, item.objectId, currentTime);
               const objectIcon = objectTypeIcons[object?.type || "default"] || objectTypeIcons.default;
-              const rowBg = isSelected ? "rgba(99,131,255,.1)" : rowIndex % 2 === 0 ? "#161e30" : "#131a28";
+              const rowBg = isSelected ? "rgba(56,189,248,.08)" : rowIndex % 2 === 0 ? "rgba(9,18,33,.84)" : "rgba(11,20,36,.96)";
               return (
                 <div key={item.id} style={{ display: "flex", alignItems: "stretch", minWidth: labelColumnWidth + trackWidth }}>
                   <button
                     onClick={() => onSelectObject(item.objectId)}
-                    style={{ width: labelColumnWidth, flexShrink: 0, border: "none", borderRight: "1px solid #131b2e", borderBottom: "1px solid #131b2e", background: rowBg, padding: "6px 8px", cursor: "pointer", textAlign: "left", minHeight: rowHeight }}
+                    style={{ width: labelColumnWidth, flexShrink: 0, border: "none", borderRight: `1px solid ${EDITOR_THEME.shellBorder}`, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, background: rowBg, padding: "8px 10px", cursor: "pointer", textAlign: "left", minHeight: rowHeight }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 20, height: 20, borderRadius: 5, border: `1px solid ${isSelected ? "rgba(99,131,255,.4)" : "rgba(255,255,255,.08)"}`, background: isSelected ? "rgba(99,131,255,.15)" : "rgba(255,255,255,.04)", color: isSelected ? "#a5b4fc" : "#475569", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{objectIcon}</span>
-                      <span style={{ width: 8, height: 8, borderRadius: 999, background: isActive ? "#4ade80" : isSelected ? "#6483ff" : "#1e2740", boxShadow: isActive ? "0 0 0 3px rgba(74,222,128,.15)" : "none", flexShrink: 0 }} />
+                      <span style={{ width: 20, height: 20, borderRadius: 5, border: `1px solid ${isSelected ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`, background: isSelected ? EDITOR_THEME.shellAccentSoft : "rgba(255,255,255,.04)", color: isSelected ? "#a5e6ff" : EDITOR_THEME.shellMutedSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{objectIcon}</span>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: isActive ? EDITOR_THEME.shellSuccess : isSelected ? EDITOR_THEME.shellAccent : EDITOR_THEME.shellPanelAlt, boxShadow: isActive ? "0 0 0 3px rgba(74,222,128,.15)" : "none", flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? "#a5b4fc" : "#475569", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-                        <div style={{ fontSize: 8, color: "#2d3a4f", marginTop: 2 }}>{Number(item.start || 0).toFixed(1)}s–{Number((item.start || 0) + (item.duration || 0)).toFixed(1)}s · {(item.entryEffect || "fade")}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? "#a5e6ff" : EDITOR_THEME.shellMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+                        <div style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft, marginTop: 2 }}>{Number(item.start || 0).toFixed(1)}s–{Number((item.start || 0) + (item.duration || 0)).toFixed(1)}s · {(item.entryEffect || "fade")}</div>
                       </div>
                     </div>
                   </button>
 
-                  <div onPointerDown={scrubFromPointer} style={{ width: trackWidth, height: rowHeight, position: "relative", borderBottom: "1px solid #131b2e", background: rowBg, cursor: "ew-resize" }}>
+                  <div onPointerDown={scrubFromPointer} style={{ width: trackWidth, height: rowHeight, position: "relative", borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, background: rowBg, cursor: "ew-resize" }}>
                     {timelineTicks.map(tick => (
-                      <div key={tick.second} style={{ position: "absolute", left: tick.left, top: 0, bottom: 0, width: 1, background: tick.major ? "#1e2740" : "#161e30" }} />
+                      <div key={tick.second} style={{ position: "absolute", left: tick.left, top: 0, bottom: 0, width: 1, background: tick.major ? EDITOR_THEME.shellPanelAlt : EDITOR_THEME.shellBg }} />
                     ))}
                     <div style={{ position: "absolute", left: currentTime * pixelsPerSecond, top: 0, bottom: 0, width: 1, background: "#ef4444", pointerEvents: "none" }} />
 
@@ -8596,19 +10113,20 @@ function TimelineDock({
                       style={{
                         position: "absolute",
                         left: item.start * pixelsPerSecond,
-                        top: 12,
+                        top: 10,
                         width: Math.max(24, item.duration * pixelsPerSecond),
-                        height: 28,
-                        borderRadius: 4,
-                        background: isSelected ? "rgba(99,131,255,.55)" : "rgba(56,108,220,.35)",
-                        border: `1px solid ${isSelected ? "rgba(99,131,255,.8)" : "rgba(56,108,220,.5)"}`,
-                        color: isSelected ? "#c7d2fe" : "#6483ff",
+                        height: 32,
+                        borderRadius: 10,
+                        background: isSelected ? "linear-gradient(180deg,rgba(14,165,233,.5),rgba(8,47,73,.86))" : "linear-gradient(180deg,rgba(56,189,248,.28),rgba(8,47,73,.84))",
+                        border: `1px solid ${isSelected ? "rgba(125,211,252,.9)" : "rgba(56,189,248,.45)"}`,
+                        color: isSelected ? "#e0f2fe" : "#bae6fd",
                         cursor: "grab",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        padding: "0 6px",
+                        padding: "0 8px",
                         overflow: "hidden",
+                        boxShadow: isSelected ? "0 10px 22px rgba(14,165,233,.2)" : "0 4px 12px rgba(2,8,23,.18)",
                       }}
                     >
                       <div onPointerDown={e => beginClipDrag(e, item, "resize-start")} style={{ width: 6, alignSelf: "stretch", cursor: "ew-resize", marginLeft: -2 }} />
@@ -8618,7 +10136,7 @@ function TimelineDock({
                     </div>
 
                     {(item.keyframes || []).map((frame, fi) => (
-                      <div key={frame.id} style={{ position: "absolute", left: (item.start + frame.time) * pixelsPerSecond - 4, top: rowHeight - 12, width: 8, height: 8, borderRadius: 1, transform: "rotate(45deg)", background: fi === 0 || fi === (item.keyframes || []).length - 1 ? "rgba(99,131,255,.6)" : "#2d3a4f", border: `1px solid ${isSelected ? "#6483ff" : "#334155"}` }} title={`${frame.time}s`} />
+                      <div key={frame.id} style={{ position: "absolute", left: (item.start + frame.time) * pixelsPerSecond - 4, top: rowHeight - 12, width: 8, height: 8, borderRadius: 1, transform: "rotate(45deg)", background: fi === 0 || fi === (item.keyframes || []).length - 1 ? "rgba(56,189,248,.55)" : EDITOR_THEME.shellBorderStrong, border: `1px solid ${isSelected ? EDITOR_THEME.shellAccent : EDITOR_THEME.shellBorder}` }} title={`${frame.time}s`} />
                     ))}
                   </div>
                 </div>
@@ -8626,8 +10144,10 @@ function TimelineDock({
             })}
           </div>
         ) : (
-          <div style={{ height: "100%", border: "1px dashed rgba(255,255,255,.06)", borderRadius: 6, margin: 10, background: "rgba(255,255,255,.02)", display: "flex", alignItems: "center", justifyContent: "center", color: "#2d3a4f", fontSize: 12, textAlign: "center", padding: 16 }}>
-            Sahneye nesne ekleyin — timeline satırları otomatik oluşur.
+          <div style={{ height: "100%", border: `1px dashed ${EDITOR_THEME.shellBorderSoft}`, borderRadius: 16, margin: 10, background: "rgba(255,255,255,.03)", display: "flex", alignItems: "center", justifyContent: "center", color: EDITOR_THEME.shellMutedSoft, fontSize: 12, textAlign: "center", padding: 16, lineHeight: 1.7 }}>
+            Sahneye nesne ekleyin.
+            <br />
+            Timeline satırları ve klip kontrolleri otomatik oluşur.
           </div>
         )}
       </div>
@@ -8887,27 +10407,27 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
   };
 
   return (
-    <div style={{ flexShrink: 0, height: "100%", minHeight: 0, padding: 0, borderBottom: vertical ? "none" : "1px solid #1a2238", borderRight: vertical ? "1px solid #1a2238" : "none", background: "#1a2238", minWidth: vertical ? "100%" : "auto", width: vertical ? "100%" : "auto", display: "flex", flexDirection: "column" }}>
+    <div style={{ flexShrink: 0, height: "100%", minHeight: 0, padding: 0, borderBottom: vertical ? "none" : `1px solid ${EDITOR_THEME.shellBorder}`, borderRight: vertical ? `1px solid ${EDITOR_THEME.shellBorder}` : "none", background: EDITOR_THEME.shellPanel, minWidth: vertical ? "100%" : "auto", width: vertical ? "100%" : "auto", display: "flex", flexDirection: "column" }}>
 
       {/* ── Header ── */}
-      <div style={{ padding: "9px 10px 8px", borderBottom: "1px solid #131b2e", background: "#141c2e", flexShrink: 0 }}>
+      <div style={{ padding: "9px 10px 8px", borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, background: EDITOR_THEME.shellBg, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 6 }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", letterSpacing: 0.8, textTransform: "uppercase" }}>Scenes</div>
-            <div style={{ fontSize: 9, color: "#3d4f6b", marginTop: 1 }}>{slides.length} slide</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: EDITOR_THEME.shellMuted, letterSpacing: 0.8, textTransform: "uppercase" }}>Scenes</div>
+            <div style={{ fontSize: 9, color: EDITOR_THEME.shellMutedSoft, marginTop: 1 }}>{slides.length} slide</div>
           </div>
-          <button onClick={handleAdd} style={{ height: 26, padding: "0 10px", borderRadius: 5, border: "1px solid rgba(99,131,255,.4)", background: "rgba(99,131,255,.15)", color: "#a5b4fc", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Scene</button>
+          <button onClick={handleAdd} style={{ height: 26, padding: "0 10px", borderRadius: 5, border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, background: EDITOR_THEME.shellAccentSoft, color: "#a5e6ff", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Scene</button>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {!vertical && (
             <>
-              <button onClick={() => setLayoutMode("list")} style={{ height: 22, padding: "0 8px", borderRadius: 4, border: `1px solid ${effectiveLayoutMode === "list" ? "rgba(99,131,255,.45)" : "rgba(255,255,255,.1)"}`, background: effectiveLayoutMode === "list" ? "rgba(99,131,255,.2)" : "transparent", color: effectiveLayoutMode === "list" ? "#a5b4fc" : "#475569", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>☰</button>
-              <button onClick={() => setLayoutMode("grid")} style={{ height: 22, padding: "0 8px", borderRadius: 4, border: `1px solid ${effectiveLayoutMode === "grid" ? "rgba(99,131,255,.45)" : "rgba(255,255,255,.1)"}`, background: effectiveLayoutMode === "grid" ? "rgba(99,131,255,.2)" : "transparent", color: effectiveLayoutMode === "grid" ? "#a5b4fc" : "#475569", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>⊞</button>
+              <button onClick={() => setLayoutMode("list")} style={{ height: 22, padding: "0 8px", borderRadius: 4, border: `1px solid ${effectiveLayoutMode === "list" ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`, background: effectiveLayoutMode === "list" ? EDITOR_THEME.shellAccentSoft : "transparent", color: effectiveLayoutMode === "list" ? "#a5e6ff" : EDITOR_THEME.shellMutedSoft, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>☰</button>
+              <button onClick={() => setLayoutMode("grid")} style={{ height: 22, padding: "0 8px", borderRadius: 4, border: `1px solid ${effectiveLayoutMode === "grid" ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`, background: effectiveLayoutMode === "grid" ? EDITOR_THEME.shellAccentSoft : "transparent", color: effectiveLayoutMode === "grid" ? "#a5e6ff" : EDITOR_THEME.shellMutedSoft, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>⊞</button>
             </>
           )}
-          <button onClick={() => setThumbZoom(value => clamp(Number((value - 0.1).toFixed(2)), 0.6, 1.8))} style={{ height: 22, width: 22, borderRadius: 4, border: "1px solid rgba(255,255,255,.1)", background: "transparent", color: "#475569", fontSize: 12, cursor: "pointer" }}>−</button>
-          <span style={{ fontSize: 9, color: "#475569", minWidth: 28, textAlign: "center" }}>{Math.round(thumbZoom * 100)}%</span>
-          <button onClick={() => setThumbZoom(value => clamp(Number((value + 0.1).toFixed(2)), 0.6, 1.8))} style={{ height: 22, width: 22, borderRadius: 4, border: "1px solid rgba(255,255,255,.1)", background: "transparent", color: "#475569", fontSize: 12, cursor: "pointer" }}>+</button>
+          <button onClick={() => setThumbZoom(value => clamp(Number((value - 0.1).toFixed(2)), 0.6, 1.8))} style={{ height: 22, width: 22, borderRadius: 4, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "transparent", color: EDITOR_THEME.shellMutedSoft, fontSize: 12, cursor: "pointer" }}>−</button>
+          <span style={{ fontSize: 9, color: EDITOR_THEME.shellMutedSoft, minWidth: 28, textAlign: "center" }}>{Math.round(thumbZoom * 100)}%</span>
+          <button onClick={() => setThumbZoom(value => clamp(Number((value + 0.1).toFixed(2)), 0.6, 1.8))} style={{ height: 22, width: 22, borderRadius: 4, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "transparent", color: EDITOR_THEME.shellMutedSoft, fontSize: 12, cursor: "pointer" }}>+</button>
         </div>
       </div>
 
@@ -8928,19 +10448,19 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
                   minWidth: 0,
                   boxSizing: "border-box",
                   borderRadius: 6,
-                  border: `1px solid ${isActive ? "rgba(99,131,255,.6)" : "rgba(255,255,255,.06)"}`,
-                  background: isActive ? "rgba(99,131,255,.14)" : "rgba(255,255,255,.03)",
+                  border: `1px solid ${isActive ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`,
+                  background: isActive ? EDITOR_THEME.shellAccentSoft : "rgba(255,255,255,.03)",
                   cursor: "pointer",
                   overflow: "hidden",
-                  borderLeft: `3px solid ${isActive ? "#6483ff" : "transparent"}`,
+                  borderLeft: `3px solid ${isActive ? EDITOR_THEME.shellAccent : "transparent"}`,
                   transition: "background .12s, border-color .12s",
                 }}
               >
                 {/* Thumbnail full-width */}
-                <div style={{ width: "100%", aspectRatio: "16/9", background: "#0f172a", overflow: "hidden", position: "relative" }}>
+                <div style={{ width: "100%", aspectRatio: "16/9", background: EDITOR_THEME.shellInset, overflow: "hidden", position: "relative" }}>
                   <SlideThumbnail slide={slide} isActive={isActive} width={thumbWidth} height={thumbHeight} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   {/* Slide number badge */}
-                  <div style={{ position: "absolute", top: 4, left: 4, background: isActive ? "#6483ff" : "rgba(0,0,0,.55)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>
+                  <div style={{ position: "absolute", top: 4, left: 4, background: isActive ? EDITOR_THEME.shellAccent : "rgba(0,0,0,.55)", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 3 }}>
                     {index + 1}
                   </div>
                   {/* Action buttons overlay */}
@@ -8961,13 +10481,13 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
 
                 {/* Info row */}
                 <div style={{ padding: "5px 7px 6px" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: isActive ? "#c7d2fe" : "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 3 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: isActive ? "#d7f1ff" : EDITOR_THEME.shellMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 3 }}>
                     {slide.sceneName || slide.name || `Sahne ${index + 1}`}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap" }}>
-                    <span style={{ fontSize: 8, color: "#334155", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.08)", padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{slide.objects?.length || 0} nesne</span>
-                    <span style={{ fontSize: 8, color: "#334155", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.08)", padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{slide.timeline?.length || 0} klip</span>
-                    {outgoingLinks.length > 0 && <span style={{ fontSize: 8, color: "#6483ff", background: "rgba(99,131,255,.1)", border: "1px solid rgba(99,131,255,.2)", padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{outgoingLinks.length} bağ</span>}
+                    <span style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft, background: "rgba(255,255,255,.06)", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{slide.objects?.length || 0} nesne</span>
+                    <span style={{ fontSize: 8, color: EDITOR_THEME.shellMutedSoft, background: "rgba(255,255,255,.06)", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{slide.timeline?.length || 0} klip</span>
+                    {outgoingLinks.length > 0 && <span style={{ fontSize: 8, color: "#7dd3fc", background: EDITOR_THEME.shellAccentSoft, border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap" }}>{outgoingLinks.length} bağ</span>}
                   </div>
 
                   {/* Transition controls */}
@@ -8978,7 +10498,7 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
                         const nextSlides = slides.map(item => item.id === slide.id ? { ...item, slideTransitionEffect: event.target.value } : item);
                         onUpdate(selectActivitySlide({ ...activity, slides: nextSlides, currentSlideId: slide.id }, slide.id));
                       }}
-                      style={{ flex: 1, minWidth: 0, height: 22, borderRadius: 4, border: "1px solid rgba(255,255,255,.1)", background: "#0f172a", color: "#64748b", fontSize: 9, padding: "0 4px" }}
+                      style={{ flex: 1, minWidth: 0, height: 22, borderRadius: 4, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: EDITOR_THEME.shellInset, color: EDITOR_THEME.shellMuted, fontSize: 9, padding: "0 4px" }}
                     >
                       {SLIDE_TRANSITION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
@@ -8990,7 +10510,7 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
                         const nextSlides = slides.map(item => item.id === slide.id ? { ...item, slideTransitionDuration: Math.min(2.5, Math.max(0, Number(event.target.value) || 0)) } : item);
                         onUpdate(selectActivitySlide({ ...activity, slides: nextSlides, currentSlideId: slide.id }, slide.id));
                       }}
-                      style={{ width: 42, height: 22, borderRadius: 4, border: "1px solid rgba(255,255,255,.1)", background: "#0f172a", color: "#64748b", fontSize: 9, padding: "0 4px", textAlign: "center" }}
+                      style={{ width: 42, height: 22, borderRadius: 4, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: EDITOR_THEME.shellInset, color: EDITOR_THEME.shellMuted, fontSize: 9, padding: "0 4px", textAlign: "center" }}
                     />
                   </div>
                 </div>
@@ -9003,7 +10523,7 @@ function SlideStrip({ activity, onUpdate, vertical = false }) {
   );
 }
 
-function EditorToolRail({ selActivity, canvasRef, selectedIds, setActiveTab, previewMode, setPreviewMode, mobile = false, uiMode = "basic" }) {
+function EditorToolRail({ selActivity, canvasRef, selectedIds, setActiveTab, previewMode, setPreviewMode, mobile = false, uiMode = "advanced" }) {
   const disabled = !selActivity;
   const isAdvancedMode = uiMode === "advanced";
   const tools = [
@@ -9039,60 +10559,71 @@ function EditorToolRail({ selActivity, canvasRef, selectedIds, setActiveTab, pre
     texts:      { color: "#c084fc", iconBg: "rgba(192,132,252,.15)", iconBorder: "rgba(192,132,252,.3)" },
     settings:   { color: "#fb923c", iconBg: "rgba(251,146,60,.15)",  iconBorder: "rgba(251,146,60,.3)"  },
   };
+  const toolGroups = [
+    { id: "flow", label: "Akis", items: tools.filter(tool => ["preview", "stage", "texts", "settings"].includes(tool.id)) },
+    { id: "insert", label: "Ekle", items: tools.filter(tool => ["svg", "text", "button", "shape-rect", "image", "video", "audio", "shape"].includes(tool.id)) },
+    { id: "edit", label: "Duzen", items: tools.filter(tool => ["copy", "delete"].includes(tool.id)) },
+  ].filter(group => group.items.length);
 
   return (
-    <div style={{ width: mobile ? "100%" : 64, flexShrink: 0, borderRight: mobile ? "none" : "1px solid #1a2238", borderBottom: mobile ? "1px solid #1a2238" : "none", background: "#141c2e", display: "flex", flexDirection: mobile ? "row" : "column", alignItems: "stretch", gap: 4, padding: mobile ? "8px 8px 6px" : "8px 6px", overflowX: mobile ? "auto" : "visible", overflowY: mobile ? "visible" : "auto" }}>
-      {tools.map(tool => {
-        const buttonDisabled = disabled || tool.isDisabled;
-        const tone = toolToneMap[tool.id] || { color: "#64748b", iconBg: "rgba(148,163,184,.1)", iconBorder: "rgba(148,163,184,.2)" };
-        return (
-          <button
-            key={tool.id}
-            title={tool.title}
-            onClick={tool.onClick}
-            disabled={buttonDisabled}
-            style={{
-              width: mobile ? "auto" : "100%",
-              minWidth: mobile ? 72 : "100%",
-              minHeight: mobile ? 42 : 54,
-              borderRadius: 8,
-              border: `1px solid ${tool.active ? tone.color + "55" : "rgba(255,255,255,.05)"}`,
-              background: tool.active ? tone.iconBg : "transparent",
-              color: buttonDisabled ? "#2d3a4f" : tone.color,
-              cursor: buttonDisabled ? "default" : "pointer",
-              fontSize: 9,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: mobile ? 6 : 3,
-              padding: mobile ? "6px 10px" : "6px 4px",
-              textAlign: "center",
-              flexDirection: mobile ? "row" : "column",
-              opacity: buttonDisabled ? 0.28 : 1,
-              transition: "background .12s, opacity .12s",
-            }}
-          >
-            <span style={{ width: mobile ? 20 : 30, height: mobile ? 20 : 30, borderRadius: 7, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: tool.id === "svg" ? 9 : 12, fontWeight: 800, background: tone.iconBg, border: `1px solid ${tone.iconBorder}`, flexShrink: 0 }}>{tool.icon}</span>
-            <span style={{ fontSize: 8, whiteSpace: "nowrap", lineHeight: 1.2, color: buttonDisabled ? "#2d3a4f" : "#475569" }}>{tool.label}</span>
-          </button>
-        );
-      })}
+    <div style={{ width: mobile ? "100%" : 84, flexShrink: 0, borderRight: mobile ? "none" : `1px solid ${EDITOR_THEME.shellBorder}`, borderBottom: mobile ? `1px solid ${EDITOR_THEME.shellBorder}` : "none", background: `linear-gradient(180deg, ${EDITOR_THEME.shellBg}, ${EDITOR_THEME.shellPanelAlt})`, display: "flex", flexDirection: mobile ? "row" : "column", alignItems: "stretch", gap: 8, padding: mobile ? "8px" : "10px 8px", overflowX: mobile ? "auto" : "visible", overflowY: mobile ? "visible" : "auto" }}>
+      {toolGroups.map(group => (
+        <div key={group.id} style={{ borderRadius: 16, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.03)", padding: mobile ? "6px" : "8px 6px", display: "flex", flexDirection: mobile ? "row" : "column", alignItems: "stretch", gap: 6, minWidth: mobile ? "max-content" : "auto", boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)" }}>
+          {!mobile && <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: EDITOR_THEME.shellMutedSoft, textAlign: "center", paddingBottom: 2 }}>{group.label}</div>}
+          {group.items.map(tool => {
+            const buttonDisabled = disabled || tool.isDisabled;
+            const tone = toolToneMap[tool.id] || { color: "#64748b", iconBg: "rgba(148,163,184,.1)", iconBorder: "rgba(148,163,184,.2)" };
+            return (
+              <button
+                key={tool.id}
+                title={tool.title}
+                onClick={tool.onClick}
+                disabled={buttonDisabled}
+                style={{
+                  width: mobile ? "auto" : "100%",
+                  minWidth: mobile ? 78 : "100%",
+                  minHeight: mobile ? 42 : 58,
+                  borderRadius: 14,
+                  border: `1px solid ${tool.active ? tone.color + "55" : EDITOR_THEME.shellBorderSoft}`,
+                  background: tool.active ? `linear-gradient(180deg, ${tone.iconBg}, rgba(255,255,255,.04))` : "rgba(255,255,255,.02)",
+                  color: buttonDisabled ? "#2d3a4f" : tone.color,
+                  cursor: buttonDisabled ? "default" : "pointer",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: mobile ? 7 : 5,
+                  padding: mobile ? "6px 10px" : "8px 4px",
+                  textAlign: "center",
+                  flexDirection: mobile ? "row" : "column",
+                  opacity: buttonDisabled ? 0.28 : 1,
+                  transition: "background .12s, opacity .12s, border-color .12s",
+                  boxShadow: tool.active ? "0 10px 20px rgba(14,165,233,.12)" : "none",
+                }}
+              >
+                <span style={{ width: mobile ? 22 : 34, height: mobile ? 22 : 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: tool.id === "svg" ? 9 : 12, fontWeight: 800, background: tone.iconBg, border: `1px solid ${tone.iconBorder}`, flexShrink: 0 }}>{tool.icon}</span>
+                <span style={{ fontSize: mobile ? 9 : 8, whiteSpace: "nowrap", lineHeight: 1.2, color: buttonDisabled ? EDITOR_THEME.shellMutedSoft : EDITOR_THEME.shellMuted }}>{tool.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
 
 function SelectionStepShell({ title, subtitle, badge, onBack, children, compact = false }) {
   return (
-    <div style={{ flex: 1, minHeight: 0, height: "100%", background: "#161e30", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ padding: compact ? "10px 18px 8px" : "24px 28px 18px", color: "#ffffff", position: "relative", flexShrink: 0, background: "#1e2740", borderBottom: "1px solid #1a2238" }}>
-        {badge && <div style={{ position: "absolute", left: compact ? 18 : 24, top: compact ? 10 : 20, fontSize: compact ? 9 : 10, opacity: 0.5, letterSpacing: 0.8, color: "#64748b", textTransform: "uppercase" }}>{badge}</div>}
-        {onBack && <button onClick={onBack} style={{ position: "absolute", left: compact ? 18 : 24, top: compact ? 28 : 48, border: "1px solid rgba(255,255,255,.15)", background: "rgba(255,255,255,.07)", color: "rgba(255,255,255,.7)", borderRadius: 6, padding: compact ? "4px 10px" : "6px 14px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>← Geri</button>}
-        <div style={{ textAlign: "center", fontSize: compact ? 18 : 22, fontWeight: 700, lineHeight: 1.2, color: "#e2e8f0" }}>{title}</div>
-        {subtitle && <div style={{ textAlign: "center", fontSize: compact ? 10 : 12, color: "#475569", marginTop: compact ? 4 : 8 }}>{subtitle}</div>}
+    <div style={{ flex: 1, minHeight: 0, height: "100%", background: `radial-gradient(circle at top left, rgba(56,189,248,.12), transparent 26%), ${EDITOR_THEME.lightBg}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ padding: compact ? "14px 18px 12px" : "28px 28px 20px", color: EDITOR_THEME.shellText, position: "relative", flexShrink: 0, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelAlt}, ${EDITOR_THEME.shellBg})`, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, boxShadow: "0 10px 30px rgba(3,12,25,.2)" }}>
+        {badge && <div style={{ position: "absolute", left: compact ? 18 : 24, top: compact ? 12 : 18, fontSize: compact ? 9 : 10, opacity: 0.72, letterSpacing: 0.8, color: "#8fb5d9", textTransform: "uppercase", fontWeight: 800 }}>{badge}</div>}
+        {onBack && <button onClick={onBack} style={{ position: "absolute", left: compact ? 18 : 24, top: compact ? 36 : 48, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.06)", color: EDITOR_THEME.shellMuted, borderRadius: 999, padding: compact ? "5px 12px" : "7px 16px", cursor: "pointer", fontSize: 11, fontWeight: 800 }}>← Geri</button>}
+        <div style={{ textAlign: "center", fontSize: compact ? 20 : 24, fontWeight: 800, lineHeight: 1.2, color: EDITOR_THEME.shellText, letterSpacing: -0.3 }}>{title}</div>
+        {subtitle && <div style={{ textAlign: "center", fontSize: compact ? 11 : 13, color: "#a9bdd8", marginTop: compact ? 6 : 10, maxWidth: 860, marginInline: "auto", lineHeight: 1.6 }}>{subtitle}</div>}
       </div>
-      <div style={{ flex: 1, minHeight: 0, padding: compact ? "10px" : "16px" }}>
-        <div style={{ height: "100%", minHeight: 0, border: "1px solid #2e3a55", background: "#1e2740", padding: compact ? 10 : 20, boxSizing: "border-box", borderRadius: compact ? 8 : 10, overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, padding: compact ? "12px" : "18px" }}>
+        <div style={{ height: "100%", minHeight: 0, ...createLightPanelStyle({ padding: compact ? 12 : 20 }), boxSizing: "border-box", borderRadius: compact ? 16 : 22, overflow: "hidden" }}>
           {children}
         </div>
       </div>
@@ -9109,22 +10640,24 @@ const PDF_STATUS_META = {
 function SelectionGridLayout({ search, onSearchChange, addLabel, onAdd, children, toolbarExtras = null }) {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", width: 240, maxWidth: "100%" }}>
-          <span style={{ position: "absolute", left: 12, top: 10, fontSize: 14, color: "#334155" }}>⌕</span>
+      <div style={{ display: "flex", alignItems: "stretch", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ ...createLightPanelStyle({ padding: 10 }), width: 280, maxWidth: "100%", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 14, color: EDITOR_THEME.lightMuted, marginLeft: 2 }}>⌕</span>
           <input
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Ara"
-            style={{ width: "100%", height: 38, borderRadius: 7, border: "1px solid rgba(255,255,255,.1)", background: "#141c2e", color: "#94a3b8", fontSize: 13, padding: "0 12px 0 36px", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", height: 38, borderRadius: 12, border: `1px solid ${EDITOR_THEME.lightBorder}`, background: "#fdfefe", color: EDITOR_THEME.lightText, fontSize: 13, padding: "0 12px", outline: "none", boxSizing: "border-box" }}
           />
         </div>
-        {toolbarExtras}
-        <button onClick={onAdd} style={{ minWidth: 180, height: 38, borderRadius: 7, border: "1px solid rgba(99,131,255,.4)", background: "rgba(99,131,255,.18)", color: "#a5b4fc", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          {addLabel}
-        </button>
+        <div style={{ display: "flex", alignItems: "stretch", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", flex: 1, minWidth: 280 }}>
+          {toolbarExtras}
+          <button onClick={onAdd} style={{ minWidth: 190, height: 58, borderRadius: 16, border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, background: "linear-gradient(135deg,#eff8ff,#ffffff)", color: "#0f5d8e", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 20px rgba(14,165,233,.12)" }}>
+            {addLabel}
+          </button>
+        </div>
       </div>
-      <div style={{ flex: 1, border: "1px solid rgba(255,255,255,.06)", borderRadius: 8, padding: 14, overflowY: "auto", background: "#161e30" }}>
+      <div style={{ flex: 1, ...createLightPanelStyle({ padding: 14 }), overflowY: "auto", background: `linear-gradient(180deg, ${EDITOR_THEME.lightPanel}, #f3f8fe)` }}>
         {children}
       </div>
     </div>
@@ -9134,14 +10667,14 @@ function SelectionGridLayout({ search, onSearchChange, addLabel, onAdd, children
 function SelectionGridCards({ items, selectedId, onSelect, onEdit, onDelete, emptyText }) {
   if (items.length === 0) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#334155", fontSize: 13 }}>
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: EDITOR_THEME.lightMuted, fontSize: 13 }}>
         {emptyText}
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 16 }}>
       {items.map((item, index) => {
         const gradients = [
           ["#22c55e", "#06b6d4"],
@@ -9159,29 +10692,29 @@ function SelectionGridCards({ items, selectedId, onSelect, onEdit, onDelete, emp
             onClick={() => onSelect(item.id)}
             style={{ width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0 }}
           >
-            <div style={{ borderRadius: 8, padding: 10, background: isSelected ? "rgba(99,131,255,.14)" : "rgba(255,255,255,.03)", border: `1px solid ${isSelected ? "rgba(99,131,255,.5)" : "rgba(255,255,255,.08)"}`, transition: "all .15s" }}>
-              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 8, border: `1px solid ${isSelected ? "rgba(99,131,255,.4)" : "rgba(255,255,255,.08)"}`, background: `linear-gradient(135deg,${start},${end})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ borderRadius: 18, padding: 12, background: isSelected ? "#eef8ff" : "#ffffff", border: `1px solid ${isSelected ? "#8fd3ff" : EDITOR_THEME.lightBorder}`, transition: "all .15s", boxShadow: isSelected ? "0 14px 30px rgba(56,189,248,.14)" : "0 8px 18px rgba(15,23,42,.05)" }}>
+              <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 16, border: `1px solid ${isSelected ? "#8fd3ff" : "#dbe7f3"}`, background: `linear-gradient(135deg,${start},${end})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(255,255,255,.18)", border: "1px solid rgba(255,255,255,.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ffffff", fontSize: 24, fontWeight: 800 }}>
                   {initial}
                 </div>
               </div>
-              <div style={{ marginTop: 10, fontSize: 12, color: isSelected ? "#c7d2fe" : "#64748b", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: 700 }}>{item.name}</div>
+              <div style={{ marginTop: 12, fontSize: 13, color: isSelected ? "#0f5d8e" : EDITOR_THEME.lightText, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: 800 }}>{item.name}</div>
               {item.autoBuildStatus && (
-                <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 9, fontWeight: 700, color: (PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).color, background: (PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).bg, border: `1px solid ${(PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).border}`, borderRadius: 999, padding: "3px 8px" }}>
+                <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 9, fontWeight: 700, color: (PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).color, background: (PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).bg, border: `1px solid ${(PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).border}`, borderRadius: 999, padding: "4px 8px" }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: (PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).color }} />
                   {(PDF_STATUS_META[item.autoBuildStatus] || PDF_STATUS_META.review).label}
                 </div>
               )}
               {item.automationMeta?.pageCount ? (
-                <div style={{ marginTop: 4, fontSize: 9, color: "#334155", textAlign: "center" }}>
+                <div style={{ marginTop: 6, fontSize: 10, color: EDITOR_THEME.lightMuted, textAlign: "center" }}>
                   {item.automationMeta.pageCount} slide · {item.automationMeta.kind}
                 </div>
               ) : null}
             </div>
           </button>
-          <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 4 }}>
-            <button onClick={e => { e.stopPropagation(); onEdit(item); }} style={{ width: 24, height: 24, borderRadius: 5, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.08)", color: "#94a3b8", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>E</button>
-            <button onClick={e => { e.stopPropagation(); onDelete(item.id); }} style={{ width: 24, height: 24, borderRadius: 5, border: "1px solid rgba(248,113,113,.2)", background: "rgba(248,113,113,.1)", color: "#f87171", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>×</button>
+          <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: 6 }}>
+            <button onClick={e => { e.stopPropagation(); onEdit(item); }} style={{ width: 28, height: 28, borderRadius: 9, border: `1px solid ${EDITOR_THEME.lightBorderStrong}`, background: "rgba(255,255,255,.92)", color: EDITOR_THEME.lightMuted, cursor: "pointer", fontSize: 10, fontWeight: 800, boxShadow: "0 6px 12px rgba(15,23,42,.08)" }}>E</button>
+            <button onClick={e => { e.stopPropagation(); onDelete(item.id); }} style={{ width: 28, height: 28, borderRadius: 9, border: "1px solid rgba(248,113,113,.25)", background: "#fff5f5", color: "#dc2626", cursor: "pointer", fontSize: 10, fontWeight: 800, boxShadow: "0 6px 12px rgba(15,23,42,.08)" }}>×</button>
           </div>
         </div>
       )})}
@@ -9328,7 +10861,7 @@ function PublisherPanel({ publishers, selId, onSelect, onChange }) {
             <Inp label="Yayınevi Adı" value={name} onChange={e => setName(e.target.value)} placeholder="Yayınevi adı..." />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setShowModal(false)} color="#555">İptal</Btn>
-              <Btn onClick={add} color="#7C4DFF" disabled={!name.trim()}>Ekle</Btn>
+              <Btn onClick={add} color={EDITOR_THEME.shellAccentStrong} disabled={!name.trim()}>Ekle</Btn>
             </div>
           </div>
         </Modal>
@@ -9339,7 +10872,7 @@ function PublisherPanel({ publishers, selId, onSelect, onChange }) {
             <Inp label="Yayınevi Adı" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Yayınevi adı..." />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setEditId(null)} color="#555">İptal</Btn>
-              <Btn onClick={() => save(editId)} color="#7C4DFF" disabled={!editName.trim()}>Kaydet</Btn>
+              <Btn onClick={() => save(editId)} color={EDITOR_THEME.shellAccentStrong} disabled={!editName.trim()}>Kaydet</Btn>
             </div>
           </div>
         </Modal>
@@ -9386,6 +10919,11 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
   };
   const remove = (id) => onChange(books.filter(b => b.id !== id));
   const save = (id) => { onChange(books.map(b => b.id === id ? { ...b, name: editName.trim() || b.name } : b)); setEditId(null); };
+  const prepareBookAction = useCallback(async (bookId) => {
+    if (selId === bookId) return true;
+    const changed = await onSelect(bookId);
+    return changed !== false;
+  }, [onSelect, selId]);
 
   const handlePdfImport = async (file) => {
     if (!file) return;
@@ -9441,7 +10979,7 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
               onClick={() => pdfInputRef.current?.click()}
               disabled={!selId || pdfBusy}
               title={!selId ? "Once bir kitap sec" : "PDF dosyasi ekle"}
-              style={{ minWidth: 190, height: 46, borderRadius: 16, border: `1px solid ${!selId ? "#fed7aa" : "#c7d2fe"}`, background: !selId ? "linear-gradient(135deg,#fff7ed,#ffffff)" : pdfBusy ? "#eef2ff" : "linear-gradient(135deg,#eef2ff,#ffffff)", color: !selId ? "#c2410c" : "#4338ca", fontSize: 13, fontWeight: 800, cursor: !selId || pdfBusy ? "default" : "pointer", boxShadow: "0 12px 28px rgba(67,56,202,.12)", opacity: !selId || pdfBusy ? 0.72 : 1 }}
+              style={{ minWidth: 210, height: 58, borderRadius: 16, border: `1px solid ${!selId ? "#fed7aa" : "#bfe2f8"}`, background: !selId ? "linear-gradient(135deg,#fff7ed,#ffffff)" : pdfBusy ? "#eef7ff" : "linear-gradient(135deg,#f2faff,#ffffff)", color: !selId ? "#c2410c" : "#0f5d8e", fontSize: 13, fontWeight: 800, cursor: !selId || pdfBusy ? "default" : "pointer", boxShadow: "0 12px 28px rgba(14,165,233,.12)", opacity: !selId || pdfBusy ? 0.72 : 1 }}
             >
               {pdfBusy ? "PDF Çözümleniyor..." : !selId ? "Once Kitap Sec" : "PDF Iceri Al"}
             </button>
@@ -9452,18 +10990,27 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
           items={searched}
           selectedId={selId}
           onSelect={onSelect}
-          onEdit={(item) => { setEditId(item.id); setEditName(item.name); }}
-          onDelete={remove}
+          onEdit={async (item) => {
+            const allowed = await prepareBookAction(item.id);
+            if (!allowed) return;
+            setEditId(item.id);
+            setEditName(item.name);
+          }}
+          onDelete={async (id) => {
+            const allowed = await prepareBookAction(id);
+            if (!allowed) return;
+            remove(id);
+          }}
           emptyText="Kitap ekleyin."
         />
       </SelectionGridLayout>
 
       {(!selId || pdfBusy || pdfError || selectedBookImports.length > 0) && (
-        <div style={{ marginTop: 14, border: "1px solid #d7e0eb", borderRadius: 20, background: "linear-gradient(180deg,#ffffff,#f8fbff)", padding: 16, boxShadow: "0 12px 28px rgba(15,23,42,.06)" }}>
+        <div style={{ marginTop: 14, ...createLightPanelStyle({ padding: 16 }), borderRadius: 22 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>PDF Otomasyon Sonuclari</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: EDITOR_THEME.lightText }}>PDF Otomasyon Sonuclari</div>
             {selectedBook ? (
-              <div style={{ fontSize: 11, color: "#64748b" }}>{selectedBook.name}</div>
+              <div style={{ fontSize: 11, color: EDITOR_THEME.lightMuted }}>{selectedBook.name}</div>
             ) : (
               <div style={{ fontSize: 11, color: "#b45309" }}>PDF iceri almak icin once bir kitap sec.</div>
             )}
@@ -9475,10 +11022,10 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
           {selectedBookImports.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[...selectedBookImports].slice().reverse().map(importItem => (
-                <div key={importItem.id} style={{ border: "1px solid #e2e8f0", borderRadius: 16, padding: 12, background: "#ffffff" }}>
+                <div key={importItem.id} style={{ border: `1px solid ${EDITOR_THEME.lightBorder}`, borderRadius: 18, padding: 12, background: "#ffffff", boxShadow: "0 8px 18px rgba(15,23,42,.05)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>{importItem.fileName}</div>
-                    <div style={{ fontSize: 10, color: "#64748b" }}>{new Date(importItem.createdAt).toLocaleString("tr-TR")}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: EDITOR_THEME.lightText }}>{importItem.fileName}</div>
+                    <div style={{ fontSize: 10, color: EDITOR_THEME.lightMuted }}>{new Date(importItem.createdAt).toLocaleString("tr-TR")}</div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
                     {(importItem.items || []).map(item => {
@@ -9489,8 +11036,8 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
                             <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color }} />
                             {item.label}
                           </div>
-                          <div style={{ fontSize: 11, color: "#0f172a", fontWeight: 700 }}>{item.kind}</div>
-                          <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                          <div style={{ fontSize: 11, color: EDITOR_THEME.lightText, fontWeight: 700 }}>{item.kind}</div>
+                          <div style={{ fontSize: 10, color: EDITOR_THEME.lightMuted, marginTop: 4 }}>
                             {item.pageCount} sayfa · {item.startPage}-{item.endPage}
                             {item.interactionType ? ` · ${item.interactionType}` : ""}
                             {item.extractedItemCount ? ` · ${item.extractedItemCount} oge` : ""}
@@ -9513,7 +11060,7 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
             <Inp label="Kitap Adi" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Kitap adini girin..." />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setShowModal(false)} color="#555">İptal</Btn>
-              <Btn onClick={add} color="#00BCD4" disabled={!newName.trim()}>Ekle</Btn>
+              <Btn onClick={add} color={EDITOR_THEME.shellAccentStrong} disabled={!newName.trim()}>Ekle</Btn>
             </div>
           </div>
         </Modal>
@@ -9524,7 +11071,7 @@ function BookPanel({ books, selPubId, selId, onSelect, onChange, currentProjectI
             <Inp label="Kitap Adi" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Kitap adi..." />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setEditId(null)} color="#555">İptal</Btn>
-              <Btn onClick={() => save(editId)} color="#00BCD4" disabled={!editName.trim()}>Kaydet</Btn>
+              <Btn onClick={() => save(editId)} color={EDITOR_THEME.shellAccentStrong} disabled={!editName.trim()}>Kaydet</Btn>
             </div>
           </div>
         </Modal>
@@ -9620,7 +11167,7 @@ function ActivityPanel({ activities, books, selBookId, selId, onSelect, onChange
             <button
               onClick={() => pdfInputRef.current?.click()}
               disabled={pdfBusy}
-              style={{ minWidth: 190, height: 46, borderRadius: 16, border: "1px solid #c7d2fe", background: pdfBusy ? "#eef2ff" : "linear-gradient(135deg,#eef2ff,#ffffff)", color: "#4338ca", fontSize: 13, fontWeight: 800, cursor: pdfBusy ? "default" : "pointer", boxShadow: "0 12px 28px rgba(67,56,202,.12)", opacity: pdfBusy ? 0.72 : 1 }}
+              style={{ minWidth: 210, height: 58, borderRadius: 16, border: "1px solid #bfe2f8", background: pdfBusy ? "#eef7ff" : "linear-gradient(135deg,#f2faff,#ffffff)", color: "#0f5d8e", fontSize: 13, fontWeight: 800, cursor: pdfBusy ? "default" : "pointer", boxShadow: "0 12px 28px rgba(14,165,233,.12)", opacity: pdfBusy ? 0.72 : 1 }}
               title="Secili kitap icin PDF dosyasi ekle"
             >
               {pdfBusy ? "PDF Çözümleniyor..." : "PDF Iceri Al"}
@@ -9638,17 +11185,17 @@ function ActivityPanel({ activities, books, selBookId, selId, onSelect, onChange
         />
       </SelectionGridLayout>
       {(pdfBusy || pdfError || selectedBookImports.length > 0) && (
-        <div style={{ marginTop: 14, border: "1px solid #d7e0eb", borderRadius: 20, background: "linear-gradient(180deg,#ffffff,#f8fbff)", padding: 16, boxShadow: "0 12px 28px rgba(15,23,42,.06)" }}>
+        <div style={{ marginTop: 14, ...createLightPanelStyle({ padding: 16 }), borderRadius: 22 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>PDF Otomasyon Sonuclari</div>
-            <div style={{ fontSize: 11, color: "#64748b" }}>{selectedBook?.name || "Secili kitap"}</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: EDITOR_THEME.lightText }}>PDF Otomasyon Sonuclari</div>
+            <div style={{ fontSize: 11, color: EDITOR_THEME.lightMuted }}>{selectedBook?.name || "Secili kitap"}</div>
           </div>
           {pdfBusy && <div style={{ fontSize: 11, color: "#4338ca", marginBottom: 8 }}>{pdfMessage || "PDF analiz ediliyor..."}</div>}
           {!pdfBusy && !pdfError && pdfMessage && <div style={{ fontSize: 11, color: "#0f766e", background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 12, padding: "8px 10px", marginBottom: 8 }}>{pdfMessage}</div>}
           {pdfError && <div style={{ fontSize: 11, color: "#b91c1c", marginBottom: 8 }}>{pdfError}</div>}
           {selectedBookImports.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 11, color: "#475569" }}>{selectedBookImports.length} PDF analiz kaydi bulundu.</div>
+              <div style={{ fontSize: 11, color: EDITOR_THEME.lightMuted }}>{selectedBookImports.length} PDF analiz kaydi bulundu.</div>
               {[...selectedBookImports].slice().reverse().slice(0, 2).map(importItem => (
                 <PdfImportLogPanel key={importItem.id} importItem={importItem} />
               ))}
@@ -9675,7 +11222,7 @@ function ActivityPanel({ activities, books, selBookId, selId, onSelect, onChange
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setShowModal(false)} color="#555">İptal</Btn>
-              <Btn onClick={add} color="#4CAF50" disabled={!newName.trim()}>Ekle</Btn>
+              <Btn onClick={add} color={EDITOR_THEME.shellAccentStrong} disabled={!newName.trim()}>Ekle</Btn>
             </div>
           </div>
         </Modal>
@@ -9686,7 +11233,7 @@ function ActivityPanel({ activities, books, selBookId, selId, onSelect, onChange
             <Inp label="Etkinlik Adi" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Etkinlik adi..." />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setEditId(null)} color="#555">İptal</Btn>
-              <Btn onClick={() => save(editId)} color="#4CAF50" disabled={!editName.trim()}>Kaydet</Btn>
+              <Btn onClick={() => save(editId)} color={EDITOR_THEME.shellAccentStrong} disabled={!editName.trim()}>Kaydet</Btn>
             </div>
           </div>
         </Modal>
@@ -9724,42 +11271,62 @@ function ProjectVersionManagerModal({
   if (!open) return null;
 
   const dbReady = dbStatus === "connected";
-  const apiBase = typeof getApiBase === "function" ? getApiBase() : "";
+  const modalCard = {
+    ...createLightPanelStyle({ padding: 16 }),
+    borderRadius: 18,
+    boxShadow: "0 12px 28px rgba(15,23,42,.07)",
+  };
+  const sectionTitle = { fontSize: 11, fontWeight: 900, color: "#334155", letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 10 };
+  const statPill = {
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: `1px solid ${EDITOR_THEME.lightBorder}`,
+    background: "#ffffff",
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: 800,
+  };
+  const projectCount = projects.length;
+  const publishedCount = versions.filter(version => version.isPublished).length;
+  const totalBooks = Array.isArray(books) ? books.length : 0;
 
   return (
     <Modal title="Proje ve Surumler" onClose={onClose} width={1100}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 18, background: `linear-gradient(180deg, ${EDITOR_THEME.lightBg}, #eef6ff)`, borderRadius: 20 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {/* Active project */}
-          <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#00BCD4", marginBottom: 10 }}>AKTIF PROJE</div>
+          <div style={modalCard}>
+            <div style={{ ...sectionTitle, color: "#0f5d8e" }}>Aktif Proje</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div style={{ flex: 1 }}>
                   <Inp label="Proje Adi" value={projectNameDraft} onChange={e => onProjectNameChange(e.target.value)} placeholder="Proje adi..." />
                 </div>
-                <Btn onClick={onSaveProjectName} color="#00BCD4" disabled={!dbReady || !currentProject}>Kaydet</Btn>
+                <Btn onClick={onSaveProjectName} color={EDITOR_THEME.shellAccentStrong} disabled={!dbReady || !currentProject}>Kaydet</Btn>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 11, color: "#94a3b8" }}>
-                <span>ID: {currentProject?.id?.slice(0, 8) || "-"}</span>
-                <span>Aktivite: {activityCount}</span>
-                <span>Taslak: {currentProject?.draftUpdatedAt ? new Date(currentProject.draftUpdatedAt).toLocaleString("tr-TR") : "-"}</span>
-                <span style={{ color: currentProject?.publishedVersionId ? "#4CAF50" : "#667085" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <span style={statPill}>ID: {currentProject?.id?.slice(0, 8) || "-"}</span>
+                <span style={statPill}>Aktivite: {activityCount}</span>
+                <span style={statPill}>Kitap: {totalBooks}</span>
+                <span style={{ ...statPill, color: currentProject?.publishedVersionId ? "#15803d" : "#64748b", background: currentProject?.publishedVersionId ? "#ecfdf5" : "#ffffff", borderColor: currentProject?.publishedVersionId ? "#86efac" : EDITOR_THEME.lightBorder }}>
                   {currentProject?.publishedVersionId ? "Yayinda" : "Yayinda degil"}
                 </span>
               </div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>
+                Taslak guncelleme: {currentProject?.draftUpdatedAt ? new Date(currentProject.draftUpdatedAt).toLocaleString("tr-TR") : "-"}
+              </div>
               {currentProjectId && dbReady && (
-                <div style={{ fontSize: 11, color: "#94a3b8", background: "#0a0d1f", border: "1px solid #1a2540", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 11, color: "#475569", background: "#f8fbff", border: `1px solid ${EDITOR_THEME.lightBorder}`, borderRadius: 14, padding: 12, lineHeight: 1.6 }}>
                   Harici SCORM indirme kaldırıldı. Proje artık yalnızca editör ve FTP yayın akışıyla devam eder.
                 </div>
               )}
-              {!dbReady && <div style={{ fontSize: 11, color: "#f59e0b" }}>Veritabanı baglantisi yoksa surumleme ozellikleri pasif kalir.</div>}
+              {!dbReady && <div style={{ fontSize: 11, color: "#b45309" }}>Veritabanı baglantisi yoksa surumleme ozellikleri pasif kalir.</div>}
             </div>
           </div>
 
           {/* New project */}
-          <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#B388FF", marginBottom: 10 }}>YENI PROJE</div>
+          <div style={modalCard}>
+            <div style={{ ...sectionTitle, color: "#6d28d9" }}>Yeni Proje</div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               <div style={{ flex: 1 }}>
                 <Inp label="Bos Proje Adi" value={newProjectName} onChange={e => onNewProjectNameChange(e.target.value)} placeholder="Yeni proje..." />
@@ -9769,8 +11336,8 @@ function ProjectVersionManagerModal({
           </div>
 
           {/* Version create */}
-          <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#4CAF50", marginBottom: 10 }}>SURUM OLUSTUR</div>
+          <div style={modalCard}>
+            <div style={{ ...sectionTitle, color: "#15803d" }}>Surum Olustur</div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               <div style={{ flex: 1 }}>
                 <Inp label="Etiket" value={versionLabel} onChange={e => onVersionLabelChange(e.target.value)} placeholder="Orn. Beta 1 / Nisan Guncellemesi" />
@@ -9781,30 +11348,36 @@ function ProjectVersionManagerModal({
           </div>
 
           {/* Version history */}
-          <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 12, padding: 14, minHeight: 200 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#E0E0E0", marginBottom: 10 }}>SURUM GECMISI</div>
+          <div style={{ ...modalCard, minHeight: 200 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+              <div style={sectionTitle}>Surum Gecmisi</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <span style={statPill}>{versions.length} surum</span>
+                <span style={statPill}>{publishedCount} yayin</span>
+              </div>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto", paddingRight: 4 }}>
               {versions.length ? versions.map(version => (
-                <div key={version.id} style={{ border: `1px solid ${version.isPublished ? "#FF9800" : "#252540"}`, background: version.isPublished ? "#FF980014" : "#0d0d1a", borderRadius: 10, padding: 10 }}>
+                <div key={version.id} style={{ border: `1px solid ${version.isPublished ? "#f59e0b" : EDITOR_THEME.lightBorder}`, background: version.isPublished ? "#fff7ed" : "#ffffff", borderRadius: 14, padding: 12, boxShadow: "0 8px 18px rgba(15,23,42,.05)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: version.isPublished ? "#FFB74D" : "#E2E8F0" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: version.isPublished ? "#b45309" : "#0f172a" }}>
                         v{version.versionNo} · {version.label}
-                        {version.isPublished && <span style={{ marginLeft: 6, fontSize: 9, padding: "2px 6px", borderRadius: 999, background: "#FF980022", color: "#FFB74D", border: "1px solid #FF9800" }}>Yayinda</span>}
+                        {version.isPublished && <span style={{ marginLeft: 6, fontSize: 9, padding: "3px 7px", borderRadius: 999, background: "#fef3c7", color: "#b45309", border: "1px solid #fcd34d" }}>Yayinda</span>}
                       </div>
-                      <div style={{ fontSize: 10, color: "#78909C", marginTop: 3 }}>
+                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
                         {new Date(version.createdAt).toLocaleString("tr-TR")}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <Btn onClick={() => onRestoreVersion(version.id)} color="#00BCD4" small disabled={!dbReady}>Geri Yükle</Btn>
+                      <Btn onClick={() => onRestoreVersion(version.id)} color={EDITOR_THEME.shellAccentStrong} small disabled={!dbReady}>Geri Yükle</Btn>
                       {!version.isPublished && <Btn onClick={() => onPublishVersion(version.id)} color="#FF9800" small disabled={!dbReady}>Yayinla</Btn>}
                       <Btn onClick={() => onDeleteVersion(version.id)} color="#f44336" small disabled={!dbReady}>Sil</Btn>
                     </div>
                   </div>
                 </div>
               )) : (
-                <div style={{ fontSize: 11, color: "#667085", textAlign: "center", padding: "24px 12px", border: "1px dashed #2a314b", borderRadius: 10 }}>
+                <div style={{ fontSize: 11, color: "#667085", textAlign: "center", padding: "24px 12px", border: `1px dashed ${EDITOR_THEME.lightBorderStrong}`, borderRadius: 14 }}>
                   Henuz surum alinmadi.
                 </div>
               )}
@@ -9813,26 +11386,29 @@ function ProjectVersionManagerModal({
         </div>
 
         {/* Projects list */}
-        <div style={{ background: "#111125", border: "1px solid #252540", borderRadius: 12, padding: 14, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#E0E0E0", marginBottom: 10 }}>PROJELER ({projects.length})</div>
+        <div style={{ ...modalCard, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+            <div style={sectionTitle}>Projeler ({projectCount})</div>
+            <span style={statPill}>{currentProject ? "1 aktif" : "Aktif yok"}</span>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", maxHeight: 640, paddingRight: 4 }}>
             {projects.length ? projects.map(project => {
               const isCurrent = project.id === currentProject?.id;
               return (
-                <div key={project.id} style={{ border: `1px solid ${isCurrent ? "#00BCD4" : "#252540"}`, background: isCurrent ? "#00BCD412" : "#0d0d1a", borderRadius: 10, padding: 12 }}>
+                <div key={project.id} style={{ border: `1px solid ${isCurrent ? "#7dd3fc" : EDITOR_THEME.lightBorder}`, background: isCurrent ? "#eff8ff" : "#ffffff", borderRadius: 14, padding: 12, boxShadow: isCurrent ? "0 12px 24px rgba(14,165,233,.1)" : "0 8px 18px rgba(15,23,42,.04)" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: isCurrent ? "#67e8f9" : "#E2E8F0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {isCurrent && <span style={{ fontSize: 9, marginRight: 5, padding: "2px 5px", background: "#00BCD422", border: "1px solid #00BCD4", borderRadius: 4, color: "#00BCD4" }}>Aktif</span>}
+                      <div style={{ fontSize: 12, fontWeight: 800, color: isCurrent ? "#0f5d8e" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {isCurrent && <span style={{ fontSize: 9, marginRight: 5, padding: "3px 6px", background: "#dff6ff", border: "1px solid #7dd3fc", borderRadius: 999, color: "#0f5d8e" }}>Aktif</span>}
                         {project.name}
                       </div>
-                      <div style={{ fontSize: 10, color: "#78909C", marginTop: 4 }}>Taslak: {new Date(project.draftUpdatedAt).toLocaleString("tr-TR")}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>Taslak: {new Date(project.draftUpdatedAt).toLocaleString("tr-TR")}</div>
                       {project.publishedVersionId && (
-                        <div style={{ fontSize: 10, color: "#4CAF50", marginTop: 2 }}>Yayinda surumu var</div>
+                        <div style={{ fontSize: 10, color: "#15803d", marginTop: 2 }}>Yayinda surumu var</div>
                       )}
                     </div>
                     <div style={{ display: "flex", gap: 5, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {!isCurrent && <Btn onClick={() => onSwitchProject(project.id)} color="#00BCD4" small disabled={!dbReady}>Ac</Btn>}
+                      {!isCurrent && <Btn onClick={() => onSwitchProject(project.id)} color={EDITOR_THEME.shellAccentStrong} small disabled={!dbReady}>Ac</Btn>}
                       <Btn onClick={() => onDuplicateProject(project.id, project.name)} color="#9C27B0" small disabled={!dbReady}>Çoğalt</Btn>
                       <Btn onClick={() => onDeleteProject(project.id)} color="#f44336" small disabled={!dbReady || projects.length <= 1}>Sil</Btn>
                     </div>
@@ -9840,7 +11416,7 @@ function ProjectVersionManagerModal({
                 </div>
               );
             }) : (
-              <div style={{ fontSize: 11, color: "#667085", textAlign: "center", padding: "24px 12px", border: "1px dashed #2a314b", borderRadius: 10 }}>
+              <div style={{ fontSize: 11, color: "#667085", textAlign: "center", padding: "24px 12px", border: `1px dashed ${EDITOR_THEME.lightBorderStrong}`, borderRadius: 14 }}>
                 Henuz proje yok.
               </div>
             )}
@@ -9856,14 +11432,27 @@ function ProjectVersionManagerModal({
 const EMPTY = { publishers: [], books: [], previewTemplates: [], textStudioPresets: [], variables: [], activities: [], selPubId: null, selBookId: null, selActId: null, lmsConfig: { ...DEFAULT_LMS_CONFIG } };
 
 export default function EIcerikEditor() {
-  const [history, setHistory] = useState(() => {
-    try { const r = localStorage.getItem(STORAGE_KEY); if (r) return { past: [], present: normalizeState(JSON.parse(r)), future: [] }; } catch {}
-    return { past: [], present: normalizeState(EMPTY), future: [] };
+  const [authState, setAuthState] = useState(() => readStoredAuth());
+  const [loginForm, setLoginForm] = useState(() => {
+    return {
+      userId: FIXED_EDITOR_USERS[0].id,
+      password: "1234",
+    };
   });
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [lockState, setLockState] = useState(null);
+  const [logoutReason, setLogoutReason] = useState(null);
+  const [kickRequested, setKickRequested] = useState(false);
+  const [kickCountdown, setKickCountdown] = useState(30);
+  const [bookLockInfo, setBookLockInfo] = useState(null);
+  const [bookLockWarning, setBookLockWarning] = useState("");
+  const [history, setHistory] = useState(() => readStoredEditorHistory(readStoredAuth()?.userId, EMPTY));
   const [lastSaved, setLastSaved] = useState(null);
   const [dbStatus, setDbStatus] = useState("connecting");
   const [activeTab, setActiveTab] = useState("nesneler");
   const [previewMode, setPreviewMode] = useState(false);
+  const [canvasExpanded, setCanvasExpanded] = useState(false);
   const [zoom, setZoom] = useState("fit");
   const [panelScale, setPanelScale] = useState(1);
   const [timelineHeight, setTimelineHeight] = useState(260);
@@ -9872,7 +11461,7 @@ export default function EIcerikEditor() {
   const [leftPanelWidth, setLeftPanelWidth] = useState(196);
   const [rightPanelWidth, setRightPanelWidth] = useState(388);
   const [isSlidePanelCollapsed, setIsSlidePanelCollapsed] = useState(false);
-  const [uiMode, setUiMode] = useState("basic");
+  const uiMode = "advanced";
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1280));
   const [workspaceInfo, setWorkspaceInfo] = useState({ currentProject: null, projects: [], versions: [] });
   const [showProjectManager, setShowProjectManager] = useState(false);
@@ -9892,6 +11481,9 @@ export default function EIcerikEditor() {
   const resizeSessionRef = useRef(null);
 
   const present = history.present;
+  const activeUser = authState?.user || null;
+  const activeUserId = authState?.userId || "";
+  const activeSessionId = authState?.sessionId || "";
   const currentProject = workspaceInfo.currentProject;
   const currentProjectId = currentProject?.id || null;
   const isMobileViewport = viewportWidth <= 980;
@@ -9916,6 +11508,73 @@ export default function EIcerikEditor() {
     });
   }, [currentZoomPercent]);
 
+  const resetWorkspaceSession = useCallback((userId = "") => {
+    skipRemoteSaveRef.current = true;
+    remoteReadyRef.current = false;
+    lastRemoteUpdatedAtRef.current = null;
+    setHistory(readStoredEditorHistory(userId, EMPTY));
+    setWorkspaceInfo({ currentProject: null, projects: [], versions: [] });
+    setProjectNameDraft("");
+    setNewProjectName("");
+    setVersionLabel("");
+    setSelectedIds(new Set());
+    setAnswerPreview(null);
+    setPreviewMode(false);
+    setShowProjectManager(false);
+    setBookLockInfo(null);
+    setBookLockWarning("");
+    setActiveTab("nesneler");
+    setTimelineCurrentTime(0);
+    setTimelinePlaying(false);
+    setDbStatus(userId ? "connecting" : "local");
+  }, []);
+
+  const finalizeLogin = useCallback((nextAuth) => {
+    writeStoredAuth(nextAuth);
+    setAuthState(nextAuth);
+    setLockState(null);
+    setLoginError("");
+    resetWorkspaceSession(nextAuth.userId);
+  }, [resetWorkspaceSession]);
+
+  const forceLogoutToLogin = useCallback((message = "", nextLockState = null) => {
+    if (message && !nextLockState) {
+      setLogoutReason(message);
+    }
+    clearStoredAuth();
+    setAuthState(null);
+    setLockState(nextLockState);
+    setLoginForm(current => ({
+      ...current,
+      userId: nextLockState?.userId || current.userId,
+      password: nextLockState?.password || current.password,
+    }));
+    setLoginError(nextLockState ? "" : message);
+    resetWorkspaceSession("");
+  }, [resetWorkspaceSession]);
+
+  const claimLoginSession = useCallback(async (credentials, preferredSession = null) => {
+    const sessionId = preferredSession?.sessionId || createSessionId();
+    const sessionLabel = preferredSession?.sessionLabel || createSessionLabel();
+    const response = await apiRequest("/auth/login", {
+      method: "POST",
+      headers: { "X-User-Id": "", "X-Session-Id": "" },
+      body: JSON.stringify({
+        userId: credentials.userId,
+        password: credentials.password,
+        sessionId,
+        sessionLabel,
+        force: credentials.force || false,
+      }),
+    });
+    return {
+      userId: response?.user?.id || credentials.userId,
+      user: response?.user || FIXED_EDITOR_USERS.find(item => item.id === credentials.userId) || null,
+      sessionId,
+      sessionLabel,
+    };
+  }, []);
+
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
@@ -9930,7 +11589,7 @@ export default function EIcerikEditor() {
 
   useEffect(() => {
     const handleStorage = (event) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
+      if (!activeUserId || event.key !== getUserStorageKey(activeUserId) || !event.newValue) return;
       try {
         const next = normalizeState(JSON.parse(event.newValue));
         setHistory(prev => JSON.stringify(prev.present) === JSON.stringify(next) ? prev : { ...prev, present: next });
@@ -9938,7 +11597,7 @@ export default function EIcerikEditor() {
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  }, [activeUserId, resetWorkspaceSession]);
 
   const commit = useCallback((updater) => {
     setHistory(h => {
@@ -9993,6 +11652,36 @@ export default function EIcerikEditor() {
     }
   }, []);
 
+  const releaseBookLock = useCallback(async (projectId, bookId) => {
+    const resolvedProjectId = String(projectId || "").trim();
+    const resolvedBookId = String(bookId || "").trim();
+    if (!resolvedProjectId || !resolvedBookId || !activeUserId || !activeSessionId) return;
+    try {
+      await apiRequest(`/projects/${resolvedProjectId}/books/${resolvedBookId}/unlock`, { method: "POST" });
+    } catch {}
+    setBookLockInfo(current => current?.projectId === resolvedProjectId && current?.bookId === resolvedBookId ? null : current);
+  }, [activeSessionId, activeUserId]);
+
+  const acquireBookLock = useCallback(async (projectId, bookId) => {
+    const resolvedProjectId = String(projectId || "").trim();
+    const resolvedBookId = String(bookId || "").trim();
+    if (!resolvedProjectId || !resolvedBookId) return false;
+    try {
+      const response = await apiRequest(`/projects/${resolvedProjectId}/books/${resolvedBookId}/lock`, { method: "POST" });
+      setBookLockInfo(response?.lock || { projectId: resolvedProjectId, bookId: resolvedBookId });
+      setBookLockWarning("");
+      return true;
+    } catch (error) {
+      if (error?.code === "BOOK_LOCKED") {
+        const message = formatBookLockMessage(error.lock, error.message || "Bu kitap kilitli.");
+        setBookLockWarning(message);
+        alert(message);
+        return false;
+      }
+      throw error;
+    }
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
@@ -10002,6 +11691,7 @@ export default function EIcerikEditor() {
 
       if (modKey && e.key === "z") { e.preventDefault(); undo(); return; }
       if (modKey && e.key === "y") { e.preventDefault(); redo(); return; }
+      if (modKey && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); setCanvasExpanded(v => !v); return; }
 
       if (!canvasRef.current) return;
 
@@ -10010,7 +11700,7 @@ export default function EIcerikEditor() {
       else if (modKey && e.key.toLowerCase() === "v") { e.preventDefault(); canvasRef.current.pasteClipboard?.(); }
       else if (modKey && e.key.toLowerCase() === "d") { e.preventDefault(); canvasRef.current.duplicateSelected(); }
       else if (modKey && e.key.toLowerCase() === "a") { e.preventDefault(); const a = history.present; setSelectedIds(new Set((a.activities.find(x => x.id === a.selActId)?.objects || []).map(o => o.id))); }
-      else if (e.key === "Escape") setSelectedIds(new Set());
+      else if (e.key === "Escape") { if (canvasExpanded) { setCanvasExpanded(false); } else { setSelectedIds(new Set()); } }
       else if (e.key === "ArrowLeft")  { e.preventDefault(); canvasRef.current.nudge(e.shiftKey ? -10 : -1, 0); }
       else if (e.key === "ArrowRight") { e.preventDefault(); canvasRef.current.nudge(e.shiftKey ? 10 : 1, 0); }
       else if (e.key === "ArrowUp")    { e.preventDefault(); canvasRef.current.nudge(0, e.shiftKey ? -10 : -1); }
@@ -10056,7 +11746,7 @@ export default function EIcerikEditor() {
   useEffect(() => {
     const saveState = () => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(present));
+        localStorage.setItem(getUserStorageKey(activeUserId), JSON.stringify(present));
         setLastSaved(new Date());
       } catch {}
     };
@@ -10068,7 +11758,7 @@ export default function EIcerikEditor() {
 
     const timer = window.setTimeout(saveState, 180);
     return () => window.clearTimeout(timer);
-  }, [present]);
+  }, [activeUserId, present]);
 
   useEffect(() => {
     const handlePointerMove = (e) => {
@@ -10100,26 +11790,14 @@ export default function EIcerikEditor() {
     };
   }, []);
 
-  const refreshRemoteState = useCallback(async () => {
-    try {
-      const r = await apiRequest("/workspace");
-      syncWorkspaceMeta(r);
-      const remoteState = r?.state, remoteUpdatedAt = r?.updatedAt || null;
-      if (!remoteUpdatedAt) return null;
-      const currentTs = lastRemoteUpdatedAtRef.current ? new Date(lastRemoteUpdatedAtRef.current).getTime() : 0;
-      const incomingTs = new Date(remoteUpdatedAt).getTime();
-      if (!lastRemoteUpdatedAtRef.current || incomingTs > currentTs) {
-        lastRemoteUpdatedAtRef.current = remoteUpdatedAt;
-        if (remoteState && JSON.stringify(remoteState) !== JSON.stringify(history.present)) {
-          loadWorkspaceState(r);
-        }
-      }
-      setDbStatus("connected"); return r;
-    } catch { setDbStatus("local"); return null; }
-  }, [history.present, loadWorkspaceState, syncWorkspaceMeta]);
-
   useEffect(() => {
     let cancelled = false;
+    remoteReadyRef.current = false;
+    if (!activeUserId) {
+      setDbStatus("local");
+      return () => { cancelled = true; };
+    }
+    setDbStatus("connecting");
     (async () => {
       try {
         const sr = await apiRequest("/workspace");
@@ -10130,27 +11808,151 @@ export default function EIcerikEditor() {
           loadWorkspaceState(sr);
         }
         setDbStatus("connected");
-      } catch { if (!cancelled) setDbStatus("local"); }
-      finally { remoteReadyRef.current = true; }
+      } catch (error) {
+        if (cancelled) return;
+        if (error?.code === "USER_LOCKED") {
+          forceLogoutToLogin("", {
+            userId: activeUserId,
+            password: loginForm.password,
+            sessionId: activeSessionId,
+            sessionLabel: authState?.sessionLabel || createSessionLabel(),
+            session: error.session || null,
+            message: error.message || "Bu kullanici baska bir cihazda aktif.",
+          });
+          return;
+        }
+        if (error?.code === "SESSION_EXPIRED") {
+          forceLogoutToLogin(error.message || "Oturum suresi doldu.");
+          return;
+        }
+        setDbStatus("local");
+      }
+      finally { if (!cancelled) remoteReadyRef.current = true; }
     })();
     return () => { cancelled = true; };
-  }, [loadWorkspaceState, syncWorkspaceMeta]);
+  }, [activeSessionId, activeUserId, authState?.sessionLabel, forceLogoutToLogin, loadWorkspaceState, loginForm.password, syncWorkspaceMeta]);
 
-  useEffect(() => { const onFocus = () => { refreshRemoteState(); }; window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, [refreshRemoteState]);
-  useEffect(() => { if (!remoteReadyRef.current || dbStatus !== "connected") return; const t = setInterval(refreshRemoteState, 2500); return () => clearInterval(t); }, [dbStatus, refreshRemoteState]);
   useEffect(() => {
-    if (!remoteReadyRef.current || dbStatus !== "connected" || !currentProjectId) return;
+    if (!activeUserId || !activeSessionId) return undefined;
+    let cancelled = false;
+    let failCount = 0;
+    const heartbeat = async () => {
+      try {
+        const result = await apiRequest("/auth/heartbeat", {
+          method: "POST",
+          body: JSON.stringify({ userId: activeUserId, sessionId: activeSessionId }),
+        });
+        failCount = 0;
+        if (result?.kickRequested) setKickRequested(true);
+      } catch (error) {
+        if (cancelled) return;
+        if (error?.code === "USER_LOCKED") {
+          forceLogoutToLogin("", {
+            userId: activeUserId,
+            password: loginForm.password,
+            sessionId: activeSessionId,
+            sessionLabel: authState?.sessionLabel || createSessionLabel(),
+            session: error.session || null,
+            message: error.message || "Bu kullanici baska bir cihazda aktif.",
+          });
+          return;
+        }
+        // Tüm hatalar (SESSION_EXPIRED dahil) failCount'a girer
+        // 3 üst üste başarısız → logout (tek hiccup kullanıcıyı atmasın)
+        failCount += 1;
+        if (failCount >= 3) {
+          forceLogoutToLogin(error.message || "Sunucu baglantisi kesildi.");
+        }
+      }
+    };
+
+    const timer = window.setInterval(heartbeat, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeSessionId, activeUserId, authState?.sessionLabel, forceLogoutToLogin, loginForm.password]);
+
+  useEffect(() => {
+    if (!activeUserId || !activeSessionId) return undefined;
+    const releaseSession = () => {
+      const payload = JSON.stringify({ userId: activeUserId, sessionId: activeSessionId });
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(`${getApiBase()}/auth/logout`, blob);
+        return;
+      }
+      fetch(`${getApiBase()}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    window.addEventListener("beforeunload", releaseSession);
+    window.addEventListener("pagehide", releaseSession);
+    return () => {
+      window.removeEventListener("beforeunload", releaseSession);
+      window.removeEventListener("pagehide", releaseSession);
+    };
+  }, [activeSessionId, activeUserId]);
+
+  // Kick countdown: when another device requests this session
+  useEffect(() => {
+    if (!kickRequested || !activeUserId) return undefined;
+    setKickCountdown(30);
+    const timer = window.setInterval(() => setKickCountdown(prev => Math.max(0, prev - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [kickRequested, activeUserId]);
+
+  useEffect(() => {
+    if (kickRequested && kickCountdown === 0 && activeUserId) {
+      setKickRequested(false);
+      forceLogoutToLogin("Baska bir cihaz bu hesaba giris yapti. Oturumunuz sonlandirildi.");
+    }
+  }, [kickRequested, kickCountdown, activeUserId, forceLogoutToLogin]);
+
+  useEffect(() => {
+    if (!activeUserId || !remoteReadyRef.current || dbStatus !== "connected" || !currentProjectId) return;
     if (skipRemoteSaveRef.current) { skipRemoteSaveRef.current = false; return; }
     const t = setTimeout(() => {
-      apiRequest(`/projects/${currentProjectId}/draft`, { method: "PUT", body: JSON.stringify({ state: present, name: projectNameDraft, setCurrent: true }) })
+      apiRequest(`/projects/${currentProjectId}/draft`, { method: "PUT", body: JSON.stringify({ state: present, name: projectNameDraft, setCurrent: true, lockBookId: present.selBookId || "" }) })
         .then(r => {
           if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
           mergeWorkspaceProjectData({ currentProject: r?.project });
         })
-        .catch(() => setDbStatus("local"));
+        .catch((error) => {
+          if (error?.code === "BOOK_LOCKED" || error?.code === "BOOK_LOCK_REQUIRED") {
+            const message = formatBookLockMessage(error.lock, error.message || "Bu kitap baska bir kullanici tarafindan kilitlendi.");
+            setBookLockWarning(message);
+            alert(message);
+            if (currentProjectId && present.selBookId) {
+              releaseBookLock(currentProjectId, present.selBookId);
+            }
+            commit(p => ({ ...p, selActId: null, selBookId: null }));
+            return;
+          }
+          if (error?.code === "USER_LOCKED") {
+            forceLogoutToLogin("", {
+              userId: activeUserId,
+              password: loginForm.password,
+              sessionId: activeSessionId,
+              sessionLabel: authState?.sessionLabel || createSessionLabel(),
+              session: error.session || null,
+              message: error.message || "Bu kullanici baska bir cihazda aktif.",
+            });
+            return;
+          }
+          if (error?.code === "SESSION_EXPIRED") {
+            forceLogoutToLogin(error.message || "Oturum suresi doldu.");
+            return;
+          }
+          setDbStatus("local");
+        });
     }, 350);
     return () => clearTimeout(t);
-  }, [present, dbStatus, currentProjectId, projectNameDraft, mergeWorkspaceProjectData]);
+  }, [activeSessionId, activeUserId, authState?.sessionLabel, commit, currentProjectId, dbStatus, forceLogoutToLogin, loginForm.password, mergeWorkspaceProjectData, present, projectNameDraft, releaseBookLock]);
 
   const selActivity = useMemo(() => {
     const rawActivity = present.activities.find(a => a.id === present.selActId) || null;
@@ -10179,8 +11981,40 @@ export default function EIcerikEditor() {
     return () => window.clearInterval(timer);
   }, [previewMode, selActivity, timelinePlaying]);
 
-  const handleSelectPub = (id) => commit(p => ({ ...p, selPubId: id, selBookId: null, selActId: null }));
-  const handleSelectBook = (id) => commit(p => ({ ...p, selBookId: id, selActId: null }));
+  const handleSelectPub = useCallback(async (id) => {
+    if (currentProjectId && present.selBookId) {
+      await releaseBookLock(currentProjectId, present.selBookId);
+    }
+    commit(p => ({ ...p, selPubId: id, selBookId: null, selActId: null }));
+  }, [commit, currentProjectId, present.selBookId, releaseBookLock]);
+
+  const handleSelectBook = useCallback(async (id) => {
+    if (!id) {
+      if (currentProjectId && present.selBookId) {
+        await releaseBookLock(currentProjectId, present.selBookId);
+      }
+      commit(p => ({ ...p, selBookId: null, selActId: null }));
+      return true;
+    }
+
+    if (!currentProjectId) {
+      commit(p => ({ ...p, selBookId: id, selActId: null }));
+      return true;
+    }
+
+    if (present.selBookId === id) {
+      commit(p => ({ ...p, selBookId: id, selActId: null }));
+      return true;
+    }
+
+    const locked = await acquireBookLock(currentProjectId, id);
+    if (!locked) return false;
+    if (present.selBookId) {
+      await releaseBookLock(currentProjectId, present.selBookId);
+    }
+    commit(p => ({ ...p, selBookId: id, selActId: null }));
+    return true;
+  }, [acquireBookLock, commit, currentProjectId, present.selBookId, releaseBookLock]);
 
   const startLayoutResize = useCallback((type, e) => {
     e.preventDefault();
@@ -10268,7 +12102,177 @@ export default function EIcerikEditor() {
     commit(p => ({ ...p, textStudioPresets: (p.textStudioPresets || []).filter(item => item.id !== presetId) }));
   }, [commit]);
 
+  const handleSaveBookLayerPreset = useCallback((name, sourceActivity) => {
+    const cleanName = String(name || "").trim();
+    const bookId = sourceActivity?.bookId || present.selBookId;
+    if (!cleanName || !sourceActivity || !bookId) return "";
+    let resolvedId = "";
+    commit(p => {
+      const targetBook = p.books.find(book => book.id === bookId);
+      if (!targetBook) return p;
+      const existing = (targetBook.layerPresets || []).find(item => item.name.toLowerCase() === cleanName.toLowerCase());
+      resolvedId = existing?.id || uid();
+      const preset = normalizeLayerPreset({
+        id: resolvedId,
+        name: cleanName,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        payload: pickBookLayerPresetPayload(sourceActivity),
+      });
+      return {
+        ...p,
+        books: p.books.map(book => {
+          if (book.id !== bookId) return book;
+          const others = (book.layerPresets || []).filter(item => item.id !== resolvedId);
+          return normalizeBook({ ...book, layerPresets: [preset, ...others].slice(0, 40) });
+        }),
+      };
+    });
+    return resolvedId;
+  }, [commit, present.selBookId]);
+
+  const handleApplyBookLayerPreset = useCallback((presetId, activityId) => {
+    if (!presetId || !activityId) return;
+    let nextActivity = null;
+    commit(p => {
+      const activity = p.activities.find(item => item.id === activityId);
+      if (!activity?.bookId) return p;
+      const targetBook = p.books.find(book => book.id === activity.bookId);
+      const preset = (targetBook?.layerPresets || []).find(item => item.id === presetId);
+      if (!preset) return p;
+      nextActivity = applyBookLayerPresetToActivity(activity, preset);
+      return {
+        ...p,
+        activities: p.activities.map(item => item.id === activityId ? nextActivity : item),
+      };
+    });
+    if (nextActivity) {
+      setTimelineCurrentTime(current => Math.min(current, getTimelineDuration(nextActivity)));
+      setAnswerPreview(null);
+      setSelectedIds(new Set());
+    }
+  }, [commit]);
+
+  const handleLogin = useCallback(async () => {
+    setLoginBusy(true);
+    setLoginError("");
+    const attemptedSession = {
+      sessionId: createSessionId(),
+      sessionLabel: createSessionLabel(),
+    };
+    try {
+      const nextAuth = await claimLoginSession(loginForm, attemptedSession);
+      finalizeLogin(nextAuth);
+    } catch (error) {
+      if (error?.code === "USER_LOCKED") {
+        setLockState(current => ({
+          userId: loginForm.userId,
+          password: loginForm.password,
+          sessionId: attemptedSession.sessionId,
+          sessionLabel: attemptedSession.sessionLabel,
+          session: error.session || null,
+          message: error.message || "Bu kullanici baska bir cihazda aktif.",
+          kickPending: error.kickPending || false,
+          kickSentAt: current?.kickSentAt || (error.kickPending ? Date.now() : null),
+          waitSeconds: error.waitSeconds ?? 20,
+        }));
+        return;
+      }
+      setLoginError(error.message || "Giris yapilamadi.");
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [claimLoginSession, finalizeLogin, loginForm]);
+
+  const handleForceKick = useCallback(async () => {
+    if (!lockState) return;
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const nextAuth = await claimLoginSession(
+        { userId: lockState.userId, password: lockState.password, force: true },
+        { sessionId: lockState.sessionId, sessionLabel: lockState.sessionLabel },
+      );
+      finalizeLogin(nextAuth);
+      setLockState(null);
+    } catch (error) {
+      if (error?.code === "USER_LOCKED") {
+        setLockState(current => current ? {
+          ...current,
+          session: error.session || current.session,
+          message: error.message || current.message,
+          waitSeconds: error.waitSeconds ?? 0,
+          kickPending: true,
+        } : current);
+        return;
+      }
+      setLoginError(error.message || "Giris yapilamadi.");
+      setLockState(null);
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [claimLoginSession, finalizeLogin, lockState]);
+
+  useEffect(() => {
+    if (!lockState || activeUserId) return undefined;
+    let cancelled = false;
+    const tryAgain = async () => {
+      try {
+        const nextAuth = await claimLoginSession(
+          { userId: lockState.userId, password: lockState.password },
+          lockState,
+        );
+        if (cancelled) return;
+        finalizeLogin(nextAuth);
+      } catch (error) {
+        if (cancelled) return;
+        if (error?.code === "USER_LOCKED") {
+          setLockState(current => current ? {
+            ...current,
+            session: error.session || current.session,
+            message: error.message || current.message,
+            waitSeconds: error.waitSeconds ?? 0,
+            kickPending: true,
+          } : current);
+          return;
+        }
+        setLockState(null);
+        setLoginError(error.message || "Giris yapilamadi.");
+      }
+    };
+    const timer = window.setInterval(tryAgain, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeUserId, claimLoginSession, finalizeLogin, lockState]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      if (activeUserId && activeSessionId) {
+        await apiRequest("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ userId: activeUserId, sessionId: activeSessionId }),
+        });
+      }
+    } catch {}
+    finally {
+      clearStoredAuth();
+      setLoginForm(current => ({
+        ...current,
+        userId: activeUserId || current.userId,
+        password: "1234",
+      }));
+      setAuthState(null);
+      setLockState(null);
+      setLoginError("");
+      resetWorkspaceSession("");
+    }
+  }, [activeSessionId, activeUserId, resetWorkspaceSession]);
+
   const handleCreateProject = useCallback(async () => {
+    const previousProjectId = currentProjectId;
+    const previousBookId = present.selBookId;
     try {
       const workspace = await apiRequest("/projects", {
         method: "POST",
@@ -10276,13 +12280,18 @@ export default function EIcerikEditor() {
       });
       lastRemoteUpdatedAtRef.current = workspace?.updatedAt || null;
       loadWorkspaceState(workspace);
+      if (previousProjectId && previousBookId) {
+        await releaseBookLock(previousProjectId, previousBookId);
+      }
       setNewProjectName("");
     } catch (error) {
       alert(error.message || "Proje olusturulamadi.");
     }
-  }, [loadWorkspaceState, newProjectName]);
+  }, [currentProjectId, loadWorkspaceState, newProjectName, present.selBookId, releaseBookLock]);
 
   const handleSwitchProject = useCallback(async (projectId) => {
+    const previousProjectId = currentProjectId;
+    const previousBookId = present.selBookId;
     try {
       const workspace = await apiRequest("/workspace/current-project", {
         method: "PUT",
@@ -10290,21 +12299,27 @@ export default function EIcerikEditor() {
       });
       lastRemoteUpdatedAtRef.current = workspace?.updatedAt || null;
       loadWorkspaceState(workspace);
+      if (previousProjectId && previousBookId) {
+        await releaseBookLock(previousProjectId, previousBookId);
+      }
     } catch (error) {
       alert(error.message || "Proje acilamadi.");
     }
-  }, [loadWorkspaceState]);
+  }, [currentProjectId, loadWorkspaceState, present.selBookId, releaseBookLock]);
 
   const handleDeleteProject = useCallback(async (projectId) => {
     if (!window.confirm("Bu projeyi silmek istedigine emin misin?")) return;
     try {
+      if (projectId === currentProjectId && present.selBookId) {
+        await releaseBookLock(currentProjectId, present.selBookId);
+      }
       const workspace = await apiRequest(`/projects/${projectId}`, { method: "DELETE" });
       lastRemoteUpdatedAtRef.current = workspace?.updatedAt || null;
       loadWorkspaceState(workspace);
     } catch (error) {
       alert(error.message || "Proje silinemedi.");
     }
-  }, [loadWorkspaceState]);
+  }, [currentProjectId, loadWorkspaceState, present.selBookId, releaseBookLock]);
 
   const handleCreateVersion = useCallback(async (publish = false) => {
     if (!currentProjectId) return;
@@ -10374,14 +12389,19 @@ export default function EIcerikEditor() {
 
   const handleDuplicateProject = useCallback(async (projectId, projectName) => {
     if (!window.confirm(`"${projectName}" projesini kopyalamak istiyor musun?`)) return;
+    const previousProjectId = currentProjectId;
+    const previousBookId = present.selBookId;
     try {
       const workspace = await apiRequest(`/projects/${projectId}/duplicate`, { method: "POST" });
       lastRemoteUpdatedAtRef.current = workspace?.updatedAt || null;
       loadWorkspaceState(workspace);
+      if (previousProjectId && previousBookId) {
+        await releaseBookLock(previousProjectId, previousBookId);
+      }
     } catch (error) {
       alert(error.message || "Proje kopyalanamadi.");
     }
-  }, [loadWorkspaceState]);
+  }, [currentProjectId, loadWorkspaceState, present.selBookId, releaseBookLock]);
 
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(present, null, 2)], { type: "application/json" });
@@ -10397,7 +12417,6 @@ export default function EIcerikEditor() {
     reader.readAsText(file); e.target.value = "";
   };
 
-  const isDragDropAct = selActivity?.type === "drag-drop" || selActivity?.type === "mixed";
   const isSelectionAct = selActivity?.type === "selection" || selActivity?.type === "mixed";
 
   const selBook = present.books.find(b => b.id === present.selBookId);
@@ -10408,14 +12427,13 @@ export default function EIcerikEditor() {
   const TABS = [
     { id: "nesneler", label: "Nesneler", needsActivity: true },
     { id: "sahne", label: "Sahne", needsActivity: true },
-    { id: "surukle-birak", label: "Surukle-Birak", needsActivity: true, condition: () => isDragDropAct },
     { id: "soru", label: "Soru", needsActivity: true, condition: () => isSelectionAct },
     { id: "metinler", label: "Metin Stüdyosu ↗", needsActivity: true },
     { id: "ayarlar", label: "Ayarlar", needsActivity: true },
   ].filter(t => t.needsActivity && selActivity && (!t.condition || t.condition()));
 
   // Ribbon content height (some tabs need more space)
-  const tallTabs = ["surukle-birak", "soru", "metinler", "ayarlar"];
+  const tallTabs = ["soru", "metinler", "ayarlar"];
   const visibleTabs = isMixedAct
     ? [
         TABS.find(t => t.id === "nesneler"),
@@ -10440,7 +12458,153 @@ export default function EIcerikEditor() {
     }
   }, [activeTab, isMixedAct, selActivity, visibleTabs]);
 
-  if (isTextStudioMode) {
+  const renderEditorTabButtons = useCallback((buttonStyleFactory = null) => (
+    visibleTabs.map(t => {
+      const style = typeof buttonStyleFactory === "function"
+        ? buttonStyleFactory(t)
+        : {
+            padding: "6px 12px",
+            border: `1px solid ${activeTab === t.id ? EDITOR_THEME.shellAccentBorder : "transparent"}`,
+            borderRadius: 6,
+            background: activeTab === t.id ? EDITOR_THEME.shellAccentSoftStrong : "transparent",
+            color: activeTab === t.id ? "#a5e6ff" : "rgba(255,255,255,.5)",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            transition: "all .14s ease",
+          };
+      return (
+        <button key={t.id} onClick={() => handleEditorTabSelect(t.id)} style={style}>
+          {t.label}
+        </button>
+      );
+    })
+  ), [activeTab, handleEditorTabSelect, visibleTabs]);
+
+  const renderEditorRibbon = useCallback((options = {}) => {
+    const isFullscreen = !!options.fullscreen;
+    if (currentView !== "editor" || !selActivity) return null;
+    return (
+      <div style={{ flexShrink: 0, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelSoft}, ${EDITOR_THEME.shellPanelElevated})`, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, padding: isFullscreen ? "12px 16px 14px" : "10px 14px 12px", minHeight: ribbonHeight, maxHeight: tallTabs.includes(activeTab) ? (isFullscreen ? 340 : 300) : ribbonHeight, transition: "min-height .2s, max-height .2s", overflowY: tallTabs.includes(activeTab) ? "auto" : "hidden" }}>
+        {activeTab === "nesneler" && (
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ ...createShellGroupStyle({ wrap: true, pad: "10px 12px" }), flexDirection: "column", alignItems: "flex-start" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#8fd3ff", textTransform: "uppercase", letterSpacing: 0.6 }}>Zemin ve medya</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {[
+                  { type: "text", color: "#E0E0E0", label: "+ Metin" },
+                  { type: "button", color: "#7C4DFF", label: "+ Buton" },
+                  { type: "draggable", color: "#2563eb", label: "+ Surukle" },
+                  { type: "dropzone", color: "#f97316", label: "+ Birak Alani" },
+                  { type: "shape", color: "#0ea5e9", label: "+ Sekil" },
+                  { type: "hotspot", color: "#f44336", label: "+ Hotspot" },
+                ].map(({ type, color, label }) => (
+                  <Btn key={type} onClick={() => canvasRef.current?.addObject(type)} color={color} small>{label}</Btn>
+                ))}
+                <Btn onClick={() => canvasRef.current?.addImage()} color="#4CAF50" small>Resim</Btn>
+                <Btn onClick={() => canvasRef.current?.addVideo()} color="#38bdf8" small>Video</Btn>
+                <Btn onClick={() => canvasRef.current?.loadSVG()} color="#B388FF" small>SVG Zemin</Btn>
+              </div>
+            </div>
+            <div style={{ ...createShellGroupStyle({ wrap: true, pad: "10px 12px" }), flexDirection: "column", alignItems: "flex-start" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#8fd3ff", textTransform: "uppercase", letterSpacing: 0.6 }}>Düzenleme</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                <Btn onClick={() => canvasRef.current?.duplicateSelected()} color="#00BCD4" small disabled={selectedIds.size === 0 && !selActivity?.selectedObjectId}>Kopyala</Btn>
+                <Btn onClick={() => canvasRef.current?.bringFront()} color="#FF9800" small disabled={!selActivity?.selectedObjectId}>One Al</Btn>
+                <Btn onClick={() => canvasRef.current?.sendBack()} color="#607D8B" small disabled={!selActivity?.selectedObjectId}>Arkaya At</Btn>
+                <Btn onClick={() => canvasRef.current?.deleteSelected()} color="#f44336" small disabled={selectedIds.size === 0 && !selActivity?.selectedObjectId}>Sil</Btn>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "sahne" && (
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>BOYUT</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <div style={{ width: 80 }}><Inp label="G" type="number" value={selActivity.stageWidth} onChange={e => updateActivity({ ...selActivity, stageWidth: +e.target.value || 1920 })} /></div>
+                <span style={{ color: "#444", fontSize: 12 }}>×</span>
+                <div style={{ width: 80 }}><Inp label="Y" type="number" value={selActivity.stageHeight} onChange={e => updateActivity({ ...selActivity, stageHeight: +e.target.value || 1080 })} /></div>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>ZEMIN RENGI</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="color" value={selActivity.backgroundColor || "#ffffff"} onChange={e => updateActivity({ ...selActivity, backgroundColor: e.target.value })} style={{ width: 36, height: 30, border: "none", background: "none", cursor: "pointer" }} />
+                <span style={{ fontSize: 10, color: "#78909C" }}>{selActivity.backgroundColor || "#ffffff"}</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SAHNE ADI</div>
+              <div style={{ width: 160 }}><Inp value={selActivity.sceneName || ""} onChange={e => updateActivity({ ...selActivity, sceneName: e.target.value })} placeholder="Sahne 1" /></div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SVG ZEMIN</div>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <Btn onClick={() => canvasRef.current?.loadSVG()} color="#B388FF" small>Yükle</Btn>
+                <span style={{ fontSize: 10, color: "#444" }}>{selActivity.svgName || "Yüklenmedi"}</span>
+                {selActivity.svgMarkup && <button onClick={() => updateActivity({ ...selActivity, svgMarkup: "", svgName: "" })} style={{ background: "none", border: "none", color: "#f44336", cursor: "pointer", fontSize: 11 }}>×</button>}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SES / NARRASYON</div>
+              <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                <label style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #4CAF50", background: "#4CAF5022", color: "#4CAF50", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                  Ses Yükle
+                  <input type="file" accept="audio/*" style={{ display: "none" }} onChange={async e => {
+                    const file = e.target.files[0]; if (!file) return;
+                    e.target.value = "";
+                    const url = await uploadMediaFile(file);
+                    updateActivity({ ...selActivity, audioUrl: url, audioName: file.name });
+                  }} />
+                </label>
+                {selActivity.audioUrl && (
+                  <>
+                    <span style={{ fontSize: 10, color: "#4CAF50", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selActivity.audioName || "ses.mp3"}</span>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#78909C", cursor: "pointer" }}>
+                      <input type="checkbox" checked={selActivity.audioAutoPlay !== false} onChange={e => updateActivity({ ...selActivity, audioAutoPlay: e.target.checked })} style={{ accentColor: "#4CAF50" }} />
+                      Otomatik Oynat
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#78909C", cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!selActivity.audioLoop} onChange={e => updateActivity({ ...selActivity, audioLoop: e.target.checked })} style={{ accentColor: "#4CAF50" }} />
+                      Dongu
+                    </label>
+                    <button onClick={() => updateActivity({ ...selActivity, audioUrl: "", audioName: "" })} style={{ background: "none", border: "none", color: "#f44336", cursor: "pointer", fontSize: 11 }}>×</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "karma" && isMixedAct && <MixedActivityEditor activity={selActivity} onUpdate={updateActivity} />}
+        {activeTab === "soru" && selActivity?.type === "selection" && <SelectionEditor activity={selActivity} onUpdate={updateActivity} />}
+        {activeTab === "metinler" && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, borderRadius: 18, border: "1px solid #bfdbfe", background: "linear-gradient(135deg,#eff6ff,#ffffff)", boxShadow: "0 14px 30px rgba(59,130,246,.10)" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "#1d4ed8" }}>Metin Stüdyosu ayrı sekmede açılır</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>Canva benzeri çalışma alanı otomatik yeni sekmede çalışır.</div>
+            </div>
+            <button onClick={openTextStudioWindow} style={{ padding: "9px 12px", borderRadius: 12, border: "1px solid #93c5fd", background: "#ffffff", color: "#1d4ed8", fontSize: 11, fontWeight: 900, cursor: "pointer" }}>
+              Stüdyoyu Aç
+            </button>
+          </div>
+        )}
+        {activeTab === "ayarlar" && (
+          <ActivityScreenFlowEditor
+            activity={selActivity}
+            onUpdate={updateActivity}
+            layerPresets={selBook?.layerPresets || []}
+            onSaveLayerPreset={handleSaveBookLayerPreset}
+            onApplyLayerPreset={handleApplyBookLayerPreset}
+          />
+        )}
+      </div>
+    );
+  }, [activeTab, currentView, handleApplyBookLayerPreset, handleSaveBookLayerPreset, isMixedAct, openTextStudioWindow, ribbonHeight, selActivity, selBook, selectedIds, tallTabs, updateActivity, visibleTabs]);
+
+  if (isTextStudioMode && activeUserId) {
     return (
       <TextStudioWorkspace
         activity={selActivity}
@@ -10463,208 +12627,305 @@ export default function EIcerikEditor() {
     );
   }
 
+  if (!activeUserId) {
+    return (
+      <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "radial-gradient(circle at top, #17355d 0%, #09111f 48%, #050914 100%)", color: EDITOR_THEME.shellText, fontFamily: "'Segoe UI',Tahoma,Geneva,Verdana,sans-serif" }}>
+        {logoutReason && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.72)", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "min(420px, 90vw)", background: "#131e33", border: "1px solid #2a3a5a", borderRadius: 20, padding: 28, boxShadow: "0 24px 64px rgba(0,0,0,.6)", color: "#e6eefc" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(248,113,113,.18)", border: "1px solid rgba(248,113,113,.4)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 15 }}>Oturum Sonlandi</div>
+                  <div style={{ fontSize: 11, color: "#91a6c6", marginTop: 2 }}>Sunucudan gelen hata mesaji</div>
+                </div>
+              </div>
+              <div style={{ background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#fecaca", fontFamily: "monospace", wordBreak: "break-word", marginBottom: 20 }}>
+                {logoutReason}
+              </div>
+              <button
+                onClick={() => setLogoutReason(null)}
+                style={{ width: "100%", height: 42, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #0ea5e9, #38bdf8)", color: "#03111f", fontSize: 13, fontWeight: 900, cursor: "pointer" }}
+              >
+                Tamam, Giris Yap
+              </button>
+            </div>
+          </div>
+        )}
+        <div style={{ width: "min(920px, 100%)", display: "grid", gridTemplateColumns: viewportWidth <= 900 ? "1fr" : "minmax(0, 1.1fr) minmax(320px, .9fr)", gap: 20 }}>
+          <div style={{ ...createShellPanelStyle(), borderRadius: 28, padding: 28, background: "linear-gradient(180deg, rgba(27,43,71,.96), rgba(9,17,31,.98))" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, background: EDITOR_THEME.shellAccentSoft }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: EDITOR_THEME.shellSuccess }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: "#bfe7ff", letterSpacing: 0.2 }}>2 kullanicili editor alani</span>
+            </div>
+            <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 1.08, marginTop: 18 }}>Kullanicini sec, kendi proje alaninla devam et.</div>
+            <div style={{ fontSize: 14, color: EDITOR_THEME.shellMuted, lineHeight: 1.7, marginTop: 14 }}>
+              Her kullanici kendi proje listesi, surumleri ve aktif calisma kaydiyla ayriliyor. Ilk kurulum icin iki sabit hesap hazir durumda.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: viewportWidth <= 640 ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 12, marginTop: 22 }}>
+              {FIXED_EDITOR_USERS.map(user => {
+                const isActive = loginForm.userId === user.id;
+                return (
+                  <button
+                    key={user.id}
+                    onClick={() => {
+                      setLockState(null);
+                      setLoginError("");
+                      setLoginForm(current => ({ ...current, userId: user.id }));
+                    }}
+                    style={{ textAlign: "left", padding: 18, borderRadius: 20, border: `1px solid ${isActive ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`, background: isActive ? EDITOR_THEME.shellAccentSoftStrong : "rgba(255,255,255,.04)", color: EDITOR_THEME.shellText, cursor: "pointer", boxShadow: isActive ? "0 18px 36px rgba(14,165,233,.16)" : "none" }}
+                  >
+                    <div style={{ fontSize: 16, fontWeight: 900 }}>{user.name}</div>
+                    <div style={{ fontSize: 11, color: EDITOR_THEME.shellMuted, marginTop: 6 }}>Kullanici ID: {user.id}</div>
+                    <div style={{ fontSize: 11, color: "#d7f3ff", marginTop: 10 }}>Sifre: {user.password}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ ...createShellPanelStyle(), borderRadius: 28, padding: 24, display: "flex", flexDirection: "column", justifyContent: "center", gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#8fd3ff", textTransform: "uppercase", letterSpacing: 0.7 }}>Giris</div>
+              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>
+                {lockState ? "Kullanici su anda baska cihazda acik" : "Editor oturumunu baslat"}
+              </div>
+              <div style={{ fontSize: 12, color: EDITOR_THEME.shellMuted, marginTop: 6 }}>
+                {lockState
+                  ? "Bu ekran kapanmadan bekler; diger oturum cikis yaptiginda giris otomatik tamamlanir."
+                  : "Sistem her ilk acilista kullanici girisi ister."}
+              </div>
+            </div>
+
+            {lockState ? (
+              <div style={{ padding: 18, borderRadius: 20, border: "1px solid rgba(251,191,36,.28)", background: "linear-gradient(180deg, rgba(251,191,36,.14), rgba(148,64,12,.14))", display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#fde68a" }}>
+                  {FIXED_EDITOR_USERS.find(user => user.id === lockState.userId)?.name || lockState.userId} baska bir cihazda acik.
+                </div>
+                {lockState.kickPending ? (
+                  <>
+                    <div style={{ fontSize: 12, lineHeight: 1.6, color: "#fef3c7" }}>
+                      O cihaza cikis istegi gonderildi.
+                      {(lockState.waitSeconds ?? 0) > 0
+                        ? <> <strong style={{ color: "#fbbf24" }}>{lockState.waitSeconds}</strong> saniye sonra zorla cikarabilirsiniz.</>
+                        : <> Artik zorla cikabilirsiniz.</>}
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+                      Diger cihaz cikis yaparsa bu ekran otomatik acilacak.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: "#fef3c7" }}>
+                    {lockState.message || "Bu kullanici ayni anda yalnizca tek cihazda editor acabilir."}
+                  </div>
+                )}
+                {lockState.session?.lastSeenAt && (
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>
+                    Son aktif: {new Date(lockState.session.lastSeenAt).toLocaleString("tr-TR")}
+                  </div>
+                )}
+                {lockState.kickPending && (
+                  <button
+                    onClick={handleForceKick}
+                    disabled={loginBusy}
+                    title="Anlik zorla cikar"
+                    style={{ alignSelf: "flex-end", background: "none", border: "none", padding: "2px 4px", fontSize: 10, color: "rgba(255,255,255,.18)", cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3, transition: "color .2s" }}
+                    onMouseEnter={e => e.currentTarget.style.color = "rgba(251,191,36,.7)"}
+                    onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,.18)"}
+                  >
+                    zorla cikar
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: EDITOR_THEME.shellMuted }}>Kullanici</span>
+                  <select value={loginForm.userId} onChange={e => setLoginForm(current => ({ ...current, userId: e.target.value }))} style={{ height: 42, borderRadius: 12, border: `1px solid ${EDITOR_THEME.shellBorderStrong}`, background: "rgba(5,12,24,.9)", color: EDITOR_THEME.shellText, padding: "0 12px" }}>
+                    {FIXED_EDITOR_USERS.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: EDITOR_THEME.shellMuted }}>Sifre</span>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={e => setLoginForm(current => ({ ...current, password: e.target.value }))}
+                    onKeyDown={e => { if (e.key === "Enter" && !loginBusy) handleLogin(); }}
+                    style={{ height: 42, borderRadius: 12, border: `1px solid ${EDITOR_THEME.shellBorderStrong}`, background: "rgba(5,12,24,.9)", color: EDITOR_THEME.shellText, padding: "0 12px" }}
+                  />
+                </label>
+              </div>
+            )}
+
+            {loginError && (
+              <div style={{ padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(248,113,113,.32)", background: "rgba(248,113,113,.12)", color: "#fecaca", fontSize: 12 }}>
+                {loginError}
+              </div>
+            )}
+
+            {lockState ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {lockState.kickPending && (lockState.waitSeconds ?? 1) === 0 && (
+                  <button
+                    onClick={handleForceKick}
+                    disabled={loginBusy}
+                    style={{ height: 46, borderRadius: 14, border: "none", background: "linear-gradient(135deg, #f59e0b, #fbbf24)", color: "#1c1007", fontSize: 13, fontWeight: 900, cursor: loginBusy ? "default" : "pointer", opacity: loginBusy ? 0.72 : 1 }}
+                  >
+                    {loginBusy ? "Cikis isteniyor..." : "Zorla Cikar ve Giris Yap"}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setLockState(null);
+                    setLoginError("");
+                    setLoginForm(current => ({ ...current, userId: lockState.userId, password: lockState.password || current.password }));
+                  }}
+                  style={{ height: 40, borderRadius: 14, border: `1px solid ${EDITOR_THEME.shellBorderStrong}`, background: "rgba(255,255,255,.06)", color: EDITOR_THEME.shellMuted, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Farkli Kullanici Sec
+                </button>
+              </div>
+            ) : (
+              <button onClick={handleLogin} disabled={loginBusy} style={{ height: 46, borderRadius: 14, border: "none", background: "linear-gradient(135deg, #0ea5e9, #38bdf8)", color: "#03111f", fontSize: 13, fontWeight: 900, cursor: loginBusy ? "default" : "pointer", opacity: loginBusy ? 0.72 : 1 }}>
+                {loginBusy ? "Giris yapiliyor..." : "Editoru Ac"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", background: "#161e30", color: "#e2e8f0", fontFamily: "'Segoe UI',Tahoma,Geneva,Verdana,sans-serif", overflow: "hidden", fontSize: 13 }}>
+    <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", background: EDITOR_THEME.shellBg, color: EDITOR_THEME.shellText, fontFamily: "'Segoe UI',Tahoma,Geneva,Verdana,sans-serif", overflow: "hidden", fontSize: 13 }}>
+
+      {/* ─── KICK NOTIFICATION OVERLAY ───────────────────────────── */}
+      {kickRequested && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.75)", backdropFilter: "blur(6px)" }}>
+          <div style={{ width: "min(440px, 90vw)", background: "#131e33", border: "1px solid rgba(251,191,36,.35)", borderRadius: 22, padding: 28, boxShadow: "0 24px 64px rgba(0,0,0,.7)", color: "#e6eefc" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(251,191,36,.18)", border: "1px solid rgba(251,191,36,.4)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 15 }}>Cikis Istegi Geldi</div>
+                <div style={{ fontSize: 11, color: "#91a6c6", marginTop: 2 }}>Baska bir cihaz bu hesaba giris yapmak istiyor</div>
+              </div>
+            </div>
+            <div style={{ background: "rgba(251,191,36,.08)", border: "1px solid rgba(251,191,36,.2)", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#fef3c7", lineHeight: 1.6, marginBottom: 20 }}>
+              Calismaniz otomatik kaydedildi. <strong style={{ color: "#fbbf24" }}>{kickCountdown}</strong> saniye sonra oturumunuz otomatik olarak kapatilacak.
+            </div>
+            <button
+              onClick={() => { setKickRequested(false); forceLogoutToLogin(""); }}
+              style={{ width: "100%", height: 44, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #f59e0b, #fbbf24)", color: "#1c1007", fontSize: 13, fontWeight: 900, cursor: "pointer" }}
+            >
+              Simdi Kaydet ve Cikis Yap
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── TOP BAR ─────────────────────────────────────────────── */}
-      <div style={{ minHeight: 52, background: "#1e2740", display: "flex", alignItems: "center", padding: isMobileViewport ? "10px 12px" : "0 14px", borderBottom: "1px solid #131b2e", gap: 8, flexShrink: 0, boxShadow: "0 2px 10px rgba(0,0,0,.45)", flexWrap: isMobileViewport ? "wrap" : "nowrap" }}>
-        <span style={{ fontSize: 15, fontWeight: 800, color: "#e2e8f0", whiteSpace: "nowrap", letterSpacing: -0.2 }}>E-İçerik</span>
-        <span style={{ fontSize: 9, background: "#3b4fa8", color: "#a5b4fc", padding: "2px 7px", borderRadius: 4, fontWeight: 700, border: "1px solid #4f63c8" }}>v5</span>
-        <div style={{ width: 1, height: 20, background: "rgba(255,255,255,.12)" }} />
+      <div style={{ minHeight: 64, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelElevated}, ${EDITOR_THEME.shellPanelAlt})`, display: "flex", alignItems: "center", padding: isMobileViewport ? "10px 12px" : "10px 14px", borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, gap: 10, flexShrink: 0, boxShadow: "0 8px 24px rgba(0,0,0,.28)", flexWrap: "wrap" }}>
+        <div style={{ ...createShellGroupStyle(), padding: "8px 12px", gap: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: EDITOR_THEME.shellText, whiteSpace: "nowrap", letterSpacing: -0.2 }}>E-İçerik</span>
+          <span style={{ fontSize: 9, background: EDITOR_THEME.shellBadgeBg, color: EDITOR_THEME.shellBadgeText, padding: "2px 7px", borderRadius: 999, fontWeight: 700, border: `1px solid ${EDITOR_THEME.shellBadgeBorder}` }}>v5</span>
+        </div>
 
         {currentView === "editor" ? (
-          <div style={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={() => { commit(p => ({ ...p, selActId: null })); setPreviewMode(false); setSelectedIds(new Set()); }} style={{ padding: "6px 12px", border: "1px solid rgba(255,255,255,.14)", borderRadius: 6, background: "rgba(255,255,255,.08)", color: "#94a3b8", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>← Etkinlikler</button>
-            {visibleTabs.map(t => (
-              <button key={t.id} onClick={() => handleEditorTabSelect(t.id)} style={{ padding: "6px 12px", border: `1px solid ${activeTab === t.id ? "rgba(99,131,255,.6)" : "transparent"}`, borderRadius: 6, background: activeTab === t.id ? "rgba(99,131,255,.22)" : "transparent", color: activeTab === t.id ? "#a5b4fc" : "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all .14s ease" }}>{t.label}</button>
-            ))}
+          <div style={{ ...createShellGroupStyle({ grow: true, wrap: true }), justifyContent: "flex-start" }}>
+            <button onClick={() => { commit(p => ({ ...p, selActId: null })); setPreviewMode(false); setSelectedIds(new Set()); }} style={{ padding: "6px 12px", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, borderRadius: 6, background: "rgba(255,255,255,.08)", color: EDITOR_THEME.shellMuted, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>← Etkinlikler</button>
+            {renderEditorTabButtons()}
           </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,.45)", fontSize: 11 }}>
+          <div style={{ ...createShellGroupStyle({ grow: true, wrap: true }), color: "rgba(255,255,255,.45)", fontSize: 11 }}>
             <span>{currentView === "publishers" ? "1. Yayınevi seç" : currentView === "books" ? "2. Kitap sec" : "3. Etkinlik sec"}</span>
             {selPub && <span style={{ color: "rgba(255,255,255,.65)" }}>• {selPub.name}</span>}
             {selBook && <span style={{ color: "rgba(255,255,255,.65)" }}>• {selBook.name}</span>}
           </div>
         )}
 
-        <div style={{ flex: 1 }} />
-
         {currentView === "editor" && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 3, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 7px" }}>
-              <button onClick={() => adjustStageZoom(-0.1)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>−</button>
-              <span style={{ fontSize: 10, color: "#cbd5e1", minWidth: 62, textAlign: "center", fontWeight: 700 }}>{zoom === "fit" ? `Sığdır ${currentZoomPercent}%` : `Sahne ${currentZoomPercent}%`}</span>
-              <button onClick={() => adjustStageZoom(0.1)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>+</button>
-              <button onClick={() => setZoom("fit")} style={{ background: "rgba(99,131,255,.2)", border: "1px solid rgba(99,131,255,.35)", color: "#a5b4fc", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Sığdır</button>
-              <button onClick={() => setZoom(1)} style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "#94a3b8", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>1:1</button>
+            <div style={createShellGroupStyle()}>
+              <button onClick={() => adjustStageZoom(-0.1)} style={{ background: "none", border: "none", color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>−</button>
+              <span style={{ fontSize: 10, color: EDITOR_THEME.shellText, minWidth: 62, textAlign: "center", fontWeight: 700 }}>{zoom === "fit" ? `Sığdır ${currentZoomPercent}%` : `Sahne ${currentZoomPercent}%`}</span>
+              <button onClick={() => adjustStageZoom(0.1)} style={{ background: "none", border: "none", color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>+</button>
+              <button onClick={() => setZoom("fit")} style={{ background: EDITOR_THEME.shellAccentSoftStrong, border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, color: "#a5e6ff", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Sığdır</button>
+              <button onClick={() => setZoom(1)} style={{ background: "rgba(255,255,255,.06)", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>1:1</button>
             </div>
 
-            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,.1)" }} />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 3, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 7px" }}>
-              <button onClick={() => setPanelScale(z => clamp(Number((z - 0.1).toFixed(2)), 0.8, 1.35))} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>−</button>
-              <span style={{ fontSize: 10, color: "#cbd5e1", minWidth: 50, textAlign: "center", fontWeight: 700 }}>UI {Math.round(panelScale * 100)}%</span>
-              <button onClick={() => setPanelScale(z => clamp(Number((z + 0.1).toFixed(2)), 0.8, 1.35))} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>+</button>
-              <button onClick={() => setPanelScale(1)} style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "#94a3b8", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Reset</button>
+            <div style={createShellGroupStyle()}>
+              <button onClick={() => setPanelScale(z => clamp(Number((z - 0.1).toFixed(2)), 0.8, 1.35))} style={{ background: "none", border: "none", color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>−</button>
+              <span style={{ fontSize: 10, color: EDITOR_THEME.shellText, minWidth: 50, textAlign: "center", fontWeight: 700 }}>UI {Math.round(panelScale * 100)}%</span>
+              <button onClick={() => setPanelScale(z => clamp(Number((z + 0.1).toFixed(2)), 0.8, 1.35))} style={{ background: "none", border: "none", color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>+</button>
+              <button onClick={() => setPanelScale(1)} style={{ background: "rgba(255,255,255,.06)", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, color: EDITOR_THEME.shellMuted, cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Reset</button>
             </div>
 
-            <button onClick={resetLayout} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.07)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-              Yerlesim
-            </button>
-
-            <button onClick={() => setUiMode(mode => mode === "basic" ? "advanced" : "basic")} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${uiMode === "advanced" ? "rgba(99,131,255,.45)" : "rgba(255,255,255,.12)"}`, background: uiMode === "advanced" ? "rgba(99,131,255,.22)" : "rgba(255,255,255,.07)", color: uiMode === "advanced" ? "#a5b4fc" : "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-              {uiMode === "advanced" ? "Gelismis" : "Temel"}
-            </button>
-
-            <div style={{ width: 1, height: 18, background: "rgba(255,255,255,.1)" }} />
+            <div style={createShellGroupStyle()}>
+              <button onClick={resetLayout} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.07)", color: EDITOR_THEME.shellMuted, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                Yerlesim
+              </button>
+            </div>
           </>
         )}
 
-        {currentView === "editor" && selActivity && (
-          <button onClick={() => setPreviewMode(v => !v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${previewMode ? "rgba(34,197,94,.5)" : "rgba(255,255,255,.12)"}`, background: previewMode ? "rgba(34,197,94,.18)" : "rgba(255,255,255,.07)", color: previewMode ? "#4ade80" : "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-            {previewMode ? "▶ Önizleme" : "▶ Önizle"}
-          </button>
-        )}
-
-        {currentView === "editor" && currentProject && (
-          <span style={{ fontSize: 10, color: "#64748b", padding: "4px 9px", borderRadius: 5, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.09)", whiteSpace: "nowrap", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
-            {currentProject.name}
-          </span>
-        )}
-
         {currentView === "editor" && (
-          <button onClick={() => setShowProjectManager(true)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.07)", color: "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-            Sürümler
-          </button>
+          <div style={createShellGroupStyle({ wrap: true })}>
+            {selActivity && (
+              <button onClick={() => setPreviewMode(v => !v)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${previewMode ? "rgba(34,197,94,.5)" : EDITOR_THEME.shellBorderSoft}`, background: previewMode ? "rgba(34,197,94,.18)" : "rgba(255,255,255,.07)", color: previewMode ? EDITOR_THEME.shellSuccess : EDITOR_THEME.shellMuted, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                {previewMode ? "▶ Önizleme" : "▶ Önizle"}
+              </button>
+            )}
+            {currentProject && (
+              <span style={{ fontSize: 10, color: EDITOR_THEME.shellMutedSoft, padding: "4px 9px", borderRadius: 999, background: "rgba(255,255,255,.05)", border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, whiteSpace: "nowrap", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {currentProject.name}
+              </span>
+            )}
+            <button onClick={() => setShowProjectManager(true)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.07)", color: EDITOR_THEME.shellMuted, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+              Sürümler
+            </button>
+            <Btn onClick={undo} disabled={!history.past.length} color="#78909C" small>Geri Al</Btn>
+            <Btn onClick={redo} disabled={!history.future.length} color="#78909C" small>Yinele</Btn>
+            <Btn onClick={handleExport} color="#00BCD4" small>JSON</Btn>
+            <Btn onClick={() => importRef.current?.click()} color="#FF9800" small>İçe Aktar</Btn>
+            <input ref={importRef} type="file" accept=".json" onChange={handleImport} style={{ display: "none" }} />
+            <Btn onClick={() => { if (window.confirm("Tum veriler sifirlanacak. Devam?")) setHistory({ past: [], present: EMPTY, future: [] }); }} color="#f44336" small>Sil</Btn>
+          </div>
         )}
 
-        <div style={{ width: 1, height: 18, background: "rgba(255,255,255,.1)" }} />
-        <Btn onClick={undo} disabled={!history.past.length} color="#78909C" small>Geri Al</Btn>
-        <Btn onClick={redo} disabled={!history.future.length} color="#78909C" small>Yinele</Btn>
-        <Btn onClick={handleExport} color="#00BCD4" small>JSON</Btn>
-        <Btn onClick={() => importRef.current?.click()} color="#FF9800" small>İçe Aktar</Btn>
-        <input ref={importRef} type="file" accept=".json" onChange={handleImport} style={{ display: "none" }} />
-        <Btn onClick={() => { if (window.confirm("Tum veriler sifirlanacak. Devam?")) setHistory({ past: [], present: EMPTY, future: [] }); }} color="#f44336" small>Sil</Btn>
+        <div style={createShellGroupStyle({ wrap: true })}>
+          {activeUser && (
+            <span style={{ fontSize: 10, color: "#d7f3ff", padding: "4px 10px", borderRadius: 999, background: "rgba(14,165,233,.16)", border: `1px solid ${EDITOR_THEME.shellAccentBorder}`, whiteSpace: "nowrap" }}>
+              {activeUser.name}
+            </span>
+          )}
+          <button onClick={handleLogout} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${EDITOR_THEME.shellBorderSoft}`, background: "rgba(255,255,255,.07)", color: EDITOR_THEME.shellMuted, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+            Kullanici Degistir
+          </button>
+        </div>
 
-        <div style={{ width: 1, height: 18, background: "rgba(255,255,255,.1)" }} />
-        <span style={{ fontSize: 9, color: dbStatus === "connected" ? "#4ade80" : dbStatus === "connecting" ? "#fbbf24" : "#64748b", background: dbStatus === "connected" ? "rgba(74,222,128,.1)" : "rgba(255,255,255,.05)", padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap", border: "1px solid " + (dbStatus === "connected" ? "rgba(74,222,128,.2)" : "rgba(255,255,255,.08)") }}>
-          {dbStatus === "connected" ? "SQLite" : dbStatus === "connecting" ? "DB" : "Lokal"}
-        </span>
-        {lastSaved && <span style={{ fontSize: 9, color: "#4ade80", whiteSpace: "nowrap", opacity: 0.7 }}>● {lastSaved.toLocaleTimeString("tr-TR")}</span>}
+        <div style={createShellGroupStyle()}>
+          <span style={{ fontSize: 9, color: dbStatus === "connected" ? EDITOR_THEME.shellSuccess : dbStatus === "connecting" ? EDITOR_THEME.shellWarning : EDITOR_THEME.shellMutedSoft, background: dbStatus === "connected" ? "rgba(74,222,128,.1)" : "rgba(255,255,255,.05)", padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap", border: "1px solid " + (dbStatus === "connected" ? "rgba(74,222,128,.2)" : EDITOR_THEME.shellBorderSoft) }}>
+            {dbStatus === "connected" ? "SQLite" : dbStatus === "connecting" ? "DB" : "Lokal"}
+          </span>
+          {lastSaved && <span style={{ fontSize: 9, color: EDITOR_THEME.shellSuccess, whiteSpace: "nowrap", opacity: 0.8 }}>● {lastSaved.toLocaleTimeString("tr-TR")}</span>}
+        </div>
       </div>
 
-      {currentView === "editor" && selActivity && (
-        <div style={{ flexShrink: 0, background: "#252f4a", borderBottom: "1px solid #1a2238", padding: "8px 14px 10px", minHeight: ribbonHeight, maxHeight: tallTabs.includes(activeTab) ? 300 : ribbonHeight, transition: "min-height .2s, max-height .2s", overflowY: tallTabs.includes(activeTab) ? "auto" : "hidden" }}>
-          {activeTab === "nesneler" && (
-            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#7c3aed", textTransform: "uppercase", letterSpacing: 0.5 }}>Zemin ve medya</div>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                {[
-                  { type: "text", color: "#E0E0E0", label: "+ Metin" },
-                  { type: "button", color: "#7C4DFF", label: "+ Buton" },
-                  { type: "draggable", color: "#2563eb", label: "+ Surukle" },
-                  { type: "dropzone", color: "#f97316", label: "+ Birak Alani" },
-                  { type: "shape", color: "#0ea5e9", label: "+ Sekil" },
-                  { type: "hotspot", color: "#f44336", label: "+ Hotspot" },
-                ].map(({ type, color, label }) => (
-                  <Btn key={type} onClick={() => canvasRef.current?.addObject(type)} color={color} small>{label}</Btn>
-                ))}
-                <Btn onClick={() => canvasRef.current?.addImage()} color="#4CAF50" small>Resim</Btn>
-                <Btn onClick={() => canvasRef.current?.addVideo()} color="#38bdf8" small>Video</Btn>
-                <Btn onClick={() => canvasRef.current?.loadSVG()} color="#B388FF" small>SVG Zemin</Btn>
-                </div>
-              </div>
-              <div style={{ width: 1, alignSelf: "stretch", background: "#d7e0eb" }} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#0284c7", textTransform: "uppercase", letterSpacing: 0.5 }}>Düzenleme</div>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                <Btn onClick={() => canvasRef.current?.duplicateSelected()} color="#00BCD4" small disabled={selectedIds.size === 0 && !selActivity?.selectedObjectId}>Kopyala</Btn>
-                <Btn onClick={() => canvasRef.current?.bringFront()} color="#FF9800" small disabled={!selActivity?.selectedObjectId}>One Al</Btn>
-                <Btn onClick={() => canvasRef.current?.sendBack()} color="#607D8B" small disabled={!selActivity?.selectedObjectId}>Arkaya At</Btn>
-                <Btn onClick={() => canvasRef.current?.deleteSelected()} color="#f44336" small disabled={selectedIds.size === 0 && !selActivity?.selectedObjectId}>Sil</Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "sahne" && (
-            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>BOYUT</div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <div style={{ width: 80 }}><Inp label="G" type="number" value={selActivity.stageWidth} onChange={e => updateActivity({ ...selActivity, stageWidth: +e.target.value || 1920 })} /></div>
-                  <span style={{ color: "#444", fontSize: 12 }}>×</span>
-                  <div style={{ width: 80 }}><Inp label="Y" type="number" value={selActivity.stageHeight} onChange={e => updateActivity({ ...selActivity, stageHeight: +e.target.value || 1080 })} /></div>
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>ZEMIN RENGI</div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input type="color" value={selActivity.backgroundColor || "#ffffff"} onChange={e => updateActivity({ ...selActivity, backgroundColor: e.target.value })} style={{ width: 36, height: 30, border: "none", background: "none", cursor: "pointer" }} />
-                  <span style={{ fontSize: 10, color: "#78909C" }}>{selActivity.backgroundColor || "#ffffff"}</span>
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SAHNE ADI</div>
-                <div style={{ width: 160 }}><Inp value={selActivity.sceneName || ""} onChange={e => updateActivity({ ...selActivity, sceneName: e.target.value })} placeholder="Sahne 1" /></div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SVG ZEMIN</div>
-                <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                  <Btn onClick={() => canvasRef.current?.loadSVG()} color="#B388FF" small>Yükle</Btn>
-                  <span style={{ fontSize: 10, color: "#444" }}>{selActivity.svgName || "Yüklenmedi"}</span>
-                  {selActivity.svgMarkup && <button onClick={() => updateActivity({ ...selActivity, svgMarkup: "", svgName: "" })} style={{ background: "none", border: "none", color: "#f44336", cursor: "pointer", fontSize: 11 }}>×</button>}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: "#78909C", marginBottom: 4 }}>SES / NARRASYON</div>
-                <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-                  <label style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #4CAF50", background: "#4CAF5022", color: "#4CAF50", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
-                    Ses Yükle
-                    <input type="file" accept="audio/*" style={{ display: "none" }} onChange={async e => {
-                      const file = e.target.files[0]; if (!file) return;
-                      e.target.value = "";
-                      const url = await uploadMediaFile(file);
-                      updateActivity({ ...selActivity, audioUrl: url, audioName: file.name });
-                    }} />
-                  </label>
-                  {selActivity.audioUrl && (
-                    <>
-                      <span style={{ fontSize: 10, color: "#4CAF50", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selActivity.audioName || "ses.mp3"}</span>
-                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#78909C", cursor: "pointer" }}>
-                        <input type="checkbox" checked={selActivity.audioAutoPlay !== false} onChange={e => updateActivity({ ...selActivity, audioAutoPlay: e.target.checked })} style={{ accentColor: "#4CAF50" }} />
-                        Otomatik Oynat
-                      </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#78909C", cursor: "pointer" }}>
-                        <input type="checkbox" checked={!!selActivity.audioLoop} onChange={e => updateActivity({ ...selActivity, audioLoop: e.target.checked })} style={{ accentColor: "#4CAF50" }} />
-                        Dongu
-                      </label>
-                      <button onClick={() => updateActivity({ ...selActivity, audioUrl: "", audioName: "" })} style={{ background: "none", border: "none", color: "#f44336", cursor: "pointer", fontSize: 11 }}>×</button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "karma" && isMixedAct && <MixedActivityEditor activity={selActivity} onUpdate={updateActivity} />}
-          {activeTab === "surukle-birak" && selActivity?.type === "drag-drop" && <DragDropConfigPanel activity={selActivity} onUpdate={updateActivity} />}
-          {activeTab === "soru" && selActivity?.type === "selection" && <SelectionEditor activity={selActivity} onUpdate={updateActivity} />}
-          {activeTab === "metinler" && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14, borderRadius: 18, border: "1px solid #bfdbfe", background: "linear-gradient(135deg,#eff6ff,#ffffff)", boxShadow: "0 14px 30px rgba(59,130,246,.10)" }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "#1d4ed8" }}>Metin Stüdyosu ayrı sekmede açılır</div>
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>Canva benzeri çalışma alanı otomatik yeni sekmede çalışır.</div>
-              </div>
-              <button onClick={openTextStudioWindow} style={{ padding: "9px 12px", borderRadius: 12, border: "1px solid #93c5fd", background: "#ffffff", color: "#1d4ed8", fontSize: 11, fontWeight: 900, cursor: "pointer" }}>
-                Stüdyoyu Aç
-              </button>
-            </div>
-          )}
-          {activeTab === "ayarlar" && <ActivityScreenFlowEditor activity={selActivity} onUpdate={updateActivity} />}
+      {bookLockWarning && (
+        <div style={{ flexShrink: 0, padding: "10px 14px", background: "rgba(245,158,11,.14)", borderBottom: "1px solid rgba(245,158,11,.28)", color: "#fde68a", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{bookLockWarning}</div>
+          <button onClick={() => setBookLockWarning("")} style={{ border: "none", background: "rgba(255,255,255,.08)", color: "#fff7ed", borderRadius: 999, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            Kapat
+          </button>
         </div>
       )}
+
+      {renderEditorRibbon()}
 
       {currentView === "publishers" && (
         <SelectionStepShell
@@ -10681,7 +12942,7 @@ export default function EIcerikEditor() {
           title="Kitap Olusturma Ve Secim Sayfasi"
           subtitle="Secilen yayinevi altinda kitaplarini yonet ve duzenlemek istedigin kitabi ac."
           badge="02 - Calisma Yuzeyi"
-          onBack={() => commit(p => ({ ...p, selPubId: null, selBookId: null, selActId: null }))}
+          onBack={() => handleSelectPub(null)}
         >
           <BookPanel books={present.books} selPubId={present.selPubId} selId={present.selBookId} onSelect={handleSelectBook} onChange={books => commit(p => ({ ...p, books: books.map(normalizeBook) }))} currentProjectId={currentProjectId} activities={present.activities} onActivitiesChange={activities => commit(p => ({ ...p, activities }))} onOpenPreviewEditor={() => {}} />
         </SelectionStepShell>
@@ -10692,18 +12953,18 @@ export default function EIcerikEditor() {
           title="Kitaba Ait Etkinlik Oluşturma ve Seçim Sayfası"
           subtitle="Düzenlemek veya yeni olusturmak istedigin etkinligi sec. Editore girdiginde once SVG zeminle baslayabilirsin."
           badge="03 - Calisma Yuzeyi"
-          onBack={() => commit(p => ({ ...p, selBookId: null, selActId: null }))}
+          onBack={() => handleSelectBook(null)}
         >
           <ActivityPanel activities={present.activities} books={present.books} selBookId={present.selBookId} selId={present.selActId} onSelect={handleSelectAct} onChange={acts => commit(p => ({ ...p, activities: acts }))} onBooksChange={books => commit(p => ({ ...p, books: books.map(normalizeBook) }))} onOpenPreviewEditor={() => {}} />
         </SelectionStepShell>
       )}
 
       {currentView === "editor" && (
-        <div ref={editorScrollRef} style={{ flex: 1, minHeight: 0, overflow: "auto", background: "#161e30" }}>
+        <div ref={editorScrollRef} style={{ flex: 1, minHeight: 0, overflow: "auto", background: `linear-gradient(180deg, ${EDITOR_THEME.shellBg}, ${EDITOR_THEME.appFooter})` }}>
           <div style={{ width: `${100 / effectivePanelScale}%`, height: `${100 / effectivePanelScale}%`, minHeight: `${100 / effectivePanelScale}%`, transform: `scale(${effectivePanelScale})`, transformOrigin: "top left", display: "flex", flexDirection: "column", paddingBottom: isMobileViewport ? 86 : 0 }}>
-            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobileViewport ? "column" : "row", overflow: "hidden", background: "transparent", padding: isMobileViewport ? 8 : 10, gap: isMobileViewport ? 10 : 8 }}>
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: isMobileViewport ? "column" : "row", overflow: "hidden", background: "transparent", padding: isMobileViewport ? 10 : 14, gap: isMobileViewport ? 12 : 12 }}>
               {!isMobileViewport && selActivity && !isSlidePanelCollapsed && (
-                <div style={{ width: leftPanelWidth, flexShrink: 0, border: "1px solid #2e3a55", borderRadius: 8, background: "#1e2740", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,.3)" }}>
+                <div style={{ width: leftPanelWidth, flexShrink: 0, ...createShellPanelStyle(), borderRadius: 20, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
                   <SlideStrip activity={selActivity} onUpdate={updateActivity} vertical />
                 </div>
               )}
@@ -10712,7 +12973,7 @@ export default function EIcerikEditor() {
                   {isSlidePanelCollapsed ? (
                     <button
                       onClick={() => setIsSlidePanelCollapsed(false)}
-                      style={{ width: 34, height: "100%", minHeight: 180, borderRadius: 6, border: "1px solid #2e3a55", background: "#252f4a", color: "#64748b", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.25)", fontSize: 10, fontWeight: 700, writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: 0.5 }}
+                      style={{ width: 34, height: "100%", minHeight: 180, borderRadius: 12, border: `1px solid ${EDITOR_THEME.shellBorderStrong}`, background: EDITOR_THEME.shellPanelSoft, color: EDITOR_THEME.shellMuted, cursor: "pointer", boxShadow: EDITOR_THEME.shadowMd, fontSize: 10, fontWeight: 700, writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: 0.5 }}
                     >
                       Scenes →
                     </button>
@@ -10724,7 +12985,7 @@ export default function EIcerikEditor() {
                     >
                       <button
                         onClick={(e) => { e.stopPropagation(); setIsSlidePanelCollapsed(true); }}
-                        style={{ position: "absolute", top: 14, left: -4, width: 16, height: 48, borderRadius: 999, border: "1px solid #2e3a55", background: "#252f4a", color: "#475569", cursor: "pointer" }}
+                        style={{ position: "absolute", top: 14, left: -4, width: 16, height: 48, borderRadius: 999, border: `1px solid ${EDITOR_THEME.shellBorderStrong}`, background: EDITOR_THEME.shellPanelSoft, color: EDITOR_THEME.shellMutedSoft, cursor: "pointer" }}
                       >
                         ‹
                       </button>
@@ -10733,14 +12994,25 @@ export default function EIcerikEditor() {
                   )}
                 </div>
               )}
-              <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", border: "1px solid #2e3a55", borderRadius: 8, background: "#252f4a", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,.35)" }}>
-                <div style={{ height: 36, borderBottom: "1px solid #1a2238", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 14px", color: "#64748b", fontSize: 10, background: "#1e2740", flexShrink: 0 }}>
-                  <span style={{ color: "#94a3b8", fontWeight: 600 }}>{selActivity ? (selActivity.sceneName || selActivity.name || "Sahne") : "Sahne"}</span>
-                  <span style={{ color: "#475569", fontFamily: "monospace", fontSize: 10 }}>{selActivity ? `${selActivity.stageWidth} × ${selActivity.stageHeight}` : "Etkinlik seç"}</span>
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", ...createShellPanelStyle({ grow: true }), borderRadius: 22, overflow: "hidden" }}>
+                <div style={{ minHeight: 36, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px 0 14px", color: EDITOR_THEME.shellMuted, fontSize: 10, background: `linear-gradient(180deg, ${EDITOR_THEME.shellPanelSoft}, ${EDITOR_THEME.shellPanelAlt})`, flexShrink: 0 }}>
+                  <span style={{ color: EDITOR_THEME.shellText, fontWeight: 700, fontSize: 11 }}>{selActivity ? (selActivity.sceneName || selActivity.name || "Sahne") : "Sahne"}</span>
+                  <span style={{ color: EDITOR_THEME.shellMutedSoft, fontFamily: "monospace", fontSize: 9 }}>{selActivity ? `${selActivity.stageWidth} × ${selActivity.stageHeight}` : ""}</span>
                 </div>
 
                 {isMobileViewport && selActivity && <SlideStrip activity={selActivity} onUpdate={updateActivity} />}
-                <div style={{ flex: 1, minHeight: isMobileViewport ? 320 : 0, display: "flex", overflow: "hidden", background: "#6b7280", padding: isMobileViewport ? 8 : 20 }}>
+                <div style={{ flex: 1, minHeight: isMobileViewport ? 320 : 0, display: "flex", overflow: "hidden", background: EDITOR_THEME.appCanvas, padding: isMobileViewport ? 10 : 20, position: "relative" }}>
+                  {/* ── Tam Ekran Butonu ── */}
+                  {selActivity && !previewMode && (
+                    <button
+                      onClick={() => setCanvasExpanded(true)}
+                      title="Tam ekran düzenle (Ctrl+Shift+F)"
+                      style={{ position: "absolute", top: 10, right: 10, zIndex: 50, height: 34, padding: "0 14px", borderRadius: 8, border: "none", background: "#ffffff", color: "#1a2036", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 800, boxShadow: "0 4px 16px rgba(0,0,0,.4)", flexShrink: 0 }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5V2H5M9 2H12V5M12 9V12H9M5 12H2V9" stroke="#1a2036" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Tam Ekran
+                    </button>
+                  )}
                   {previewMode && selActivity ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0f1e", borderRadius: 20, flexDirection: "column", gap: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(34,197,94,.15)", border: "1px solid rgba(34,197,94,.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>▶</div>
@@ -10766,7 +13038,7 @@ export default function EIcerikEditor() {
                     <div
                       onPointerDown={e => startLayoutResize("timeline", e)}
                       onDoubleClick={() => setTimelineHeight(isMobileViewport ? 190 : 260)}
-                      style={{ height: 10, flexShrink: 0, borderTop: "1px solid #1a2238", borderBottom: "1px solid #1a2238", background: "#1e2740", cursor: isMobileViewport ? "default" : "row-resize", display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
+                      style={{ height: 12, flexShrink: 0, borderTop: `1px solid ${EDITOR_THEME.shellBorder}`, borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`, background: EDITOR_THEME.shellPanelAlt, cursor: isMobileViewport ? "default" : "row-resize", display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}
                     >
                       <div style={{ width: 48, height: 3, borderRadius: 999, background: "rgba(148,163,184,.3)" }} />
                     </div>
@@ -10799,7 +13071,7 @@ export default function EIcerikEditor() {
                 </div>
               )}
 
-              <div ref={isMobileViewport ? mobileInspectorRef : null} style={{ width: isMobileViewport ? "100%" : rightPanelWidth, minWidth: isMobileViewport ? 0 : rightPanelWidth, maxWidth: isMobileViewport ? "100%" : rightPanelWidth, minHeight: 0, display: "flex", flexDirection: isMobileViewport ? "column" : "row", border: "1px solid #2e3a55", borderRadius: 8, background: "#1e2740", overflowX: "hidden", overflowY: isMobileViewport ? "auto" : "hidden", WebkitOverflowScrolling: "touch", touchAction: isMobileViewport ? "pan-y" : "auto", maxHeight: isMobileViewport ? "45vh" : "none", boxShadow: "0 4px 16px rgba(0,0,0,.3)" }}>
+              <div ref={isMobileViewport ? mobileInspectorRef : null} style={{ width: isMobileViewport ? "100%" : rightPanelWidth, minWidth: isMobileViewport ? 0 : rightPanelWidth, maxWidth: isMobileViewport ? "100%" : rightPanelWidth, minHeight: 0, display: "flex", flexDirection: isMobileViewport ? "column" : "row", ...createShellPanelStyle(), borderRadius: 20, overflowX: "hidden", overflowY: isMobileViewport ? "auto" : "hidden", WebkitOverflowScrolling: "touch", touchAction: isMobileViewport ? "pan-y" : "auto", maxHeight: isMobileViewport ? "45vh" : "none" }}>
                 <EditorToolRail
                   selActivity={selActivity}
                   canvasRef={canvasRef}
@@ -10827,12 +13099,12 @@ export default function EIcerikEditor() {
               </div>
             </div>
 
-            <div style={{ minHeight: 24, background: "#1a2034", borderTop: "1px solid #131b2e", display: "flex", alignItems: "center", padding: "4px 14px", fontSize: 9, color: "#475569", gap: 14, flexShrink: 0, flexWrap: isCompactViewport ? "wrap" : "nowrap" }}>
-              <span style={{ color: "#374151" }}>Etkinlikler: {present.activities.length}</span>
-              {selActivity && <span style={{ color: "#4b5563" }}>{selActivity.name} · {selActivity.objects?.length || 0} nesne · {ACTIVITY_TYPES.find(t => t.id === selActivity.type)?.label}</span>}
-              {selectedIds.size > 0 && <span style={{ color: "#6366f1", fontWeight: 700 }}>{selectedIds.size} nesne seçili</span>}
+            <div style={{ minHeight: 34, background: EDITOR_THEME.appFooter, borderTop: `1px solid ${EDITOR_THEME.shellBorder}`, display: "flex", alignItems: "center", padding: "6px 16px", fontSize: 9, color: EDITOR_THEME.appFooterText, gap: 14, flexShrink: 0, flexWrap: isCompactViewport ? "wrap" : "nowrap" }}>
+              <span>Etkinlikler: {present.activities.length}</span>
+              {selActivity && <span>{selActivity.name} · {selActivity.objects?.length || 0} nesne · {ACTIVITY_TYPES.find(t => t.id === selActivity.type)?.label}</span>}
+              {selectedIds.size > 0 && <span style={{ color: "#7dd3fc", fontWeight: 700 }}>{selectedIds.size} nesne seçili</span>}
               <span style={{ flex: 1 }} />
-              <span style={{ color: "#374151" }}>Ctrl+Z/Y · Del · Ctrl+D · Ok / Shift+Ok</span>
+              <span>Ctrl+Z/Y · Del · Ctrl+D · Ok / Shift+Ok</span>
             </div>
           </div>
           {isMobileViewport && (
@@ -10860,6 +13132,106 @@ export default function EIcerikEditor() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── Tam Ekran Canvas Düzenleme Katmanı ──────────────────────────── */}
+      {canvasExpanded && selActivity && currentView === "editor" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, display: "flex", flexDirection: "column", background: "#161e30" }}>
+          <div style={{ minHeight: 52, flexShrink: 0, background: "#1e2740", borderBottom: "1px solid #131b2e", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#cbd5e1" }}>{selActivity.sceneName || selActivity.name || "Sahne"}</span>
+              <span style={{ fontSize: 9, color: "#64748b", fontFamily: "monospace" }}>{selActivity.stageWidth} × {selActivity.stageHeight}</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {renderEditorTabButtons(tab => ({
+                  padding: "6px 10px",
+                  border: `1px solid ${activeTab === tab.id ? "rgba(125,211,252,.45)" : "rgba(255,255,255,.12)"}`,
+                  borderRadius: 8,
+                  background: activeTab === tab.id ? "rgba(14,165,233,.16)" : "rgba(255,255,255,.04)",
+                  color: activeTab === tab.id ? "#d7f3ff" : "#94a3b8",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }))}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 3, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 6, padding: "3px 7px" }}>
+                <button onClick={() => adjustStageZoom(-0.1)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>−</button>
+                <span style={{ fontSize: 10, color: "#cbd5e1", minWidth: 56, textAlign: "center", fontWeight: 700 }}>{zoom === "fit" ? `Sığdır ${currentZoomPercent}%` : `${currentZoomPercent}%`}</span>
+                <button onClick={() => adjustStageZoom(0.1)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}>+</button>
+                <button onClick={() => setZoom("fit")} style={{ background: "rgba(99,131,255,.2)", border: "1px solid rgba(99,131,255,.35)", color: "#a5b4fc", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Sığdır</button>
+                <button onClick={() => setZoom(1)} style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "#94a3b8", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>1:1</button>
+              </div>
+              <button
+                onClick={() => setCanvasExpanded(false)}
+                title="Küçült (Esc)"
+                style={{ height: 30, padding: "0 12px", borderRadius: 6, border: "1px solid rgba(248,113,113,.35)", background: "rgba(248,113,113,.12)", color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1L9 9M9 1L1 9" stroke="#fca5a5" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                Küçült
+              </button>
+            </div>
+          </div>
+          {renderEditorRibbon({ fullscreen: true })}
+          <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", background: "#6b7280", padding: 14, gap: 14 }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", background: EDITOR_THEME.appCanvas, borderRadius: 22, padding: 18, boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+                <StageCanvas
+                  ref={canvasRef}
+                  activity={selActivity}
+                  onUpdate={updateActivity}
+                  zoom={zoom}
+                  onZoomChange={setZoom}
+                  selectedIds={selectedIds}
+                  onSelectionChange={setSelectedIds}
+                  timelineTime={timelineCurrentTime}
+                  answerPreview={answerPreview}
+                />
+              </div>
+              <div style={{ flexShrink: 0, overflow: "hidden", borderRadius: 18 }}>
+                <TimelineDock
+                  activity={selActivity}
+                  onUpdate={updateActivity}
+                  height={Math.min(Math.max(timelineHeight, 220), 340)}
+                  currentTime={timelineCurrentTime}
+                  onCurrentTimeChange={setTimelineCurrentTime}
+                  isPlaying={timelinePlaying}
+                  onPlayingChange={setTimelinePlaying}
+                  selectedIds={selectedIds}
+                  onSelectObject={objectId => {
+                    if (!objectId) return;
+                    setSelectedIds(new Set([objectId]));
+                    if (selActivity) updateActivity({ ...selActivity, selectedObjectId: objectId });
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{ width: Math.max(368, rightPanelWidth), minWidth: Math.max(368, rightPanelWidth), maxWidth: Math.max(368, rightPanelWidth), minHeight: 0, display: "flex", flexDirection: "row", ...createShellPanelStyle(), borderRadius: 22, overflow: "hidden" }}>
+              <EditorToolRail
+                selActivity={selActivity}
+                canvasRef={canvasRef}
+                selectedIds={selectedIds}
+                setActiveTab={handleEditorTabSelect}
+                previewMode={previewMode}
+                setPreviewMode={setPreviewMode}
+                uiMode={uiMode}
+              />
+              <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                <RightInspectorPhase2
+                  activity={selActivity}
+                  onUpdate={updateActivity}
+                  selectedIds={selectedIds}
+                  activities={present.activities}
+                  variables={present.variables}
+                  onVariablesChange={nextVariables => commit(p => ({ ...p, variables: nextVariables }))}
+                  hideTimeline
+                  uiMode={uiMode}
+                  onAnswerPreviewChange={setAnswerPreview}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

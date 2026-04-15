@@ -12,6 +12,12 @@ const DATA_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DATA_DIR, "e-icerik-editor.sqlite");
 const BUILD_DIR = path.join(__dirname, "build");
 const PDF_ANALYSIS_MODE = "offline";
+const FIXED_USERS = [
+  { id: "kullanici1", name: "Kullanici 1", password: "1234" },
+  { id: "kullanici2", name: "Kullanici 2", password: "1234" },
+];
+const DEFAULT_USER_ID = FIXED_USERS[0].id;
+const SESSION_TTL_MS = 20_000;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -39,11 +45,32 @@ db.exec(`
     created_at TEXT NOT NULL,
     is_published INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    user_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    session_label TEXT,
+    locked_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS book_locks (
+    project_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    session_label TEXT,
+    locked_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, book_id)
+  );
 `);
 
 ensureProjectColumn("created_at", "ALTER TABLE projects ADD COLUMN created_at TEXT");
 ensureProjectColumn("published_version_id", "ALTER TABLE projects ADD COLUMN published_version_id TEXT");
+ensureProjectColumn("user_id", "ALTER TABLE projects ADD COLUMN user_id TEXT");
 db.exec(`UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ''`);
+db.prepare("UPDATE projects SET user_id = ? WHERE user_id IS NULL OR user_id = ''").run(DEFAULT_USER_ID);
 
 function ensureProjectColumn(columnName, sql) {
   const columns = db.prepare("PRAGMA table_info(projects)").all();
@@ -57,7 +84,7 @@ function sendJson(res, statusCode, data) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Session-Id",
   });
   res.end(JSON.stringify(data));
 }
@@ -242,6 +269,7 @@ async function requestPdfAiLayout() {
 function projectSummaryFromRow(row) {
   return {
     id: row.id,
+    userId: row.user_id || DEFAULT_USER_ID,
     name: row.name,
     draftUpdatedAt: row.saved_at,
     createdAt: row.created_at || row.saved_at,
@@ -255,7 +283,208 @@ function getAppState() {
   return { payload: parseJson(row.payload), updatedAt: row.updated_at };
 }
 
-function saveWorkspaceMeta(currentProjectId) {
+function resolveFixedUser(userId) {
+  return FIXED_USERS.find(user => user.id === String(userId || "").trim()) || null;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function cleanupExpiredSessions() {
+  const threshold = new Date(Date.now() - SESSION_TTL_MS).toISOString();
+  db.prepare("DELETE FROM user_sessions WHERE last_seen_at < ?").run(threshold);
+  db.prepare("DELETE FROM book_locks WHERE last_seen_at < ?").run(threshold);
+}
+
+function getUserSession(userId) {
+  cleanupExpiredSessions();
+  return db.prepare(`
+    SELECT user_id, session_id, session_label, locked_at, last_seen_at
+    FROM user_sessions
+    WHERE user_id = ?
+  `).get(userId) || null;
+}
+
+function buildSessionPayload(row) {
+  if (!row) return null;
+  const user = resolveFixedUser(row.user_id);
+  return {
+    userId: row.user_id,
+    userName: user?.name || row.user_id,
+    sessionId: row.session_id,
+    sessionLabel: row.session_label || "",
+    lockedAt: row.locked_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function claimUserSession(userId, sessionId, sessionLabel = "") {
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!cleanSessionId) {
+    throw new Error("Session id required");
+  }
+
+  cleanupExpiredSessions();
+  const current = getUserSession(userId);
+  if (current && current.session_id !== cleanSessionId) {
+    return {
+      ok: false,
+      reason: "locked",
+      session: buildSessionPayload(current),
+    };
+  }
+
+  const timestamp = nowIso();
+  db.prepare(`
+    INSERT INTO user_sessions (user_id, session_id, session_label, locked_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      session_id = excluded.session_id,
+      session_label = excluded.session_label,
+      locked_at = CASE
+        WHEN user_sessions.session_id = excluded.session_id THEN user_sessions.locked_at
+        ELSE excluded.locked_at
+      END,
+      last_seen_at = excluded.last_seen_at
+  `).run(userId, cleanSessionId, String(sessionLabel || "").trim(), timestamp, timestamp);
+
+  return {
+    ok: true,
+    session: buildSessionPayload(getUserSession(userId)),
+  };
+}
+
+function touchUserSession(userId, sessionId) {
+  const current = getUserSession(userId);
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!current) {
+    return { ok: false, reason: "missing" };
+  }
+  if (current.session_id !== cleanSessionId) {
+    return {
+      ok: false,
+      reason: "locked",
+      session: buildSessionPayload(current),
+    };
+  }
+
+  const timestamp = nowIso();
+  db.prepare("UPDATE user_sessions SET last_seen_at = ? WHERE user_id = ? AND session_id = ?").run(timestamp, userId, cleanSessionId);
+  return {
+    ok: true,
+    session: buildSessionPayload(getUserSession(userId)),
+  };
+}
+
+function releaseUserSession(userId, sessionId) {
+  db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND session_id = ?").run(userId, String(sessionId || "").trim());
+  db.prepare("DELETE FROM book_locks WHERE user_id = ? AND session_id = ?").run(userId, String(sessionId || "").trim());
+}
+
+function buildBookLockPayload(row) {
+  if (!row) return null;
+  const user = resolveFixedUser(row.user_id);
+  return {
+    projectId: row.project_id,
+    bookId: row.book_id,
+    userId: row.user_id,
+    userName: user?.name || row.user_id,
+    sessionId: row.session_id,
+    sessionLabel: row.session_label || "",
+    lockedAt: row.locked_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function getBookLock(projectId, bookId) {
+  cleanupExpiredSessions();
+  return db.prepare(`
+    SELECT project_id, book_id, user_id, session_id, session_label, locked_at, last_seen_at
+    FROM book_locks
+    WHERE project_id = ? AND book_id = ?
+  `).get(projectId, bookId) || null;
+}
+
+function claimBookLock(userId, sessionId, projectId, bookId, sessionLabel = "") {
+  const cleanProjectId = String(projectId || "").trim();
+  const cleanBookId = String(bookId || "").trim();
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!cleanProjectId || !cleanBookId || !cleanSessionId) {
+    throw new Error("Book lock bilgisi eksik");
+  }
+
+  const current = getBookLock(cleanProjectId, cleanBookId);
+  if (current && current.session_id !== cleanSessionId) {
+    return { ok: false, reason: "locked", lock: buildBookLockPayload(current) };
+  }
+
+  const timestamp = nowIso();
+  db.prepare(`
+    INSERT INTO book_locks (project_id, book_id, user_id, session_id, session_label, locked_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(project_id, book_id) DO UPDATE SET
+      user_id = excluded.user_id,
+      session_id = excluded.session_id,
+      session_label = excluded.session_label,
+      locked_at = CASE
+        WHEN book_locks.session_id = excluded.session_id THEN book_locks.locked_at
+        ELSE excluded.locked_at
+      END,
+      last_seen_at = excluded.last_seen_at
+  `).run(cleanProjectId, cleanBookId, userId, cleanSessionId, String(sessionLabel || "").trim(), timestamp, timestamp);
+
+  return { ok: true, lock: buildBookLockPayload(getBookLock(cleanProjectId, cleanBookId)) };
+}
+
+function touchBookLocksBySession(userId, sessionId) {
+  const timestamp = nowIso();
+  db.prepare("UPDATE book_locks SET last_seen_at = ? WHERE user_id = ? AND session_id = ?").run(timestamp, userId, String(sessionId || "").trim());
+}
+
+function ensureBookLockOwner(userId, sessionId, projectId, bookId) {
+  const current = getBookLock(projectId, bookId);
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!current) {
+    return { ok: false, reason: "missing" };
+  }
+  if (current.session_id !== cleanSessionId || current.user_id !== userId) {
+    return { ok: false, reason: "locked", lock: buildBookLockPayload(current) };
+  }
+  const timestamp = nowIso();
+  db.prepare("UPDATE book_locks SET last_seen_at = ? WHERE project_id = ? AND book_id = ?").run(timestamp, projectId, bookId);
+  return { ok: true, lock: buildBookLockPayload(getBookLock(projectId, bookId)) };
+}
+
+function releaseBookLock(userId, sessionId, projectId, bookId) {
+  db.prepare(`
+    DELETE FROM book_locks
+    WHERE project_id = ? AND book_id = ? AND user_id = ? AND session_id = ?
+  `).run(String(projectId || "").trim(), String(bookId || "").trim(), userId, String(sessionId || "").trim());
+}
+
+function sanitizeWorkspaceRegistry(payload) {
+  if (payload && typeof payload === "object" && payload.workspaceVersion === 2 && payload.users && typeof payload.users === "object") {
+    return Object.entries(payload.users).reduce((acc, [userId, userPayload]) => {
+      acc[userId] = {
+        currentProjectId: String(userPayload?.currentProjectId || "").trim(),
+      };
+      return acc;
+    }, {});
+  }
+
+  if (isWorkspaceMeta(payload)) {
+    return {
+      [DEFAULT_USER_ID]: {
+        currentProjectId: String(payload.currentProjectId || "").trim(),
+      },
+    };
+  }
+
+  return {};
+}
+
+function saveWorkspaceRegistry(users) {
   const updatedAt = new Date().toISOString();
   db.prepare(`
     INSERT INTO app_state (id, payload, updated_at)
@@ -263,19 +492,44 @@ function saveWorkspaceMeta(currentProjectId) {
     ON CONFLICT(id) DO UPDATE SET
       payload = excluded.payload,
       updated_at = excluded.updated_at
-  `).run(JSON.stringify({ workspaceVersion: 1, currentProjectId }), updatedAt);
+  `).run(JSON.stringify({ workspaceVersion: 2, users }), updatedAt);
   return updatedAt;
 }
 
-function listProjects() {
-  return db.prepare("SELECT id, name, saved_at, created_at, published_version_id FROM projects ORDER BY saved_at DESC").all().map(projectSummaryFromRow);
+function saveWorkspaceMeta(userId, currentProjectId) {
+  const appState = getAppState();
+  const users = sanitizeWorkspaceRegistry(appState.payload);
+  users[userId] = {
+    currentProjectId: String(currentProjectId || "").trim(),
+  };
+  return saveWorkspaceRegistry(users);
 }
 
-function getProject(projectId) {
-  const row = db.prepare("SELECT id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ?").get(projectId);
+function getWorkspaceMeta(userId) {
+  const appState = getAppState();
+  const users = sanitizeWorkspaceRegistry(appState.payload);
+  return {
+    currentProjectId: String(users[userId]?.currentProjectId || "").trim(),
+    updatedAt: appState.updatedAt,
+    legacyState: isEditorState(appState.payload) ? appState.payload : null,
+  };
+}
+
+function listProjects(userId) {
+  return db
+    .prepare("SELECT id, user_id, name, saved_at, created_at, published_version_id FROM projects ORDER BY saved_at DESC")
+    .all()
+    .map(projectSummaryFromRow);
+}
+
+function getProject(projectId, userId) {
+  const row = db
+    .prepare("SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ?")
+    .get(projectId);
   if (!row) return null;
   return {
     id: row.id,
+    userId: row.user_id || DEFAULT_USER_ID,
     name: row.name,
     state: parseJson(row.payload, emptyEditorState()) || emptyEditorState(),
     draftUpdatedAt: row.saved_at,
@@ -284,10 +538,11 @@ function getProject(projectId) {
   };
 }
 
-function getProjectSummary(projectId) {
-  const project = getProject(projectId);
+function getProjectSummary(projectId, userId) {
+  const project = getProject(projectId, userId);
   return project ? {
     id: project.id,
+    userId: project.userId,
     name: project.name,
     draftUpdatedAt: project.draftUpdatedAt,
     createdAt: project.createdAt,
@@ -295,23 +550,23 @@ function getProjectSummary(projectId) {
   } : null;
 }
 
-function projectExists(projectId) {
+function projectExists(projectId, userId) {
   return Boolean(db.prepare("SELECT 1 FROM projects WHERE id = ? LIMIT 1").get(projectId));
 }
 
-function createProject(name, state) {
+function createProject(userId, name, state) {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   const projectName = String(name || "").trim() || "Yeni Proje";
   db.prepare(`
-    INSERT INTO projects (id, name, payload, saved_at, created_at, published_version_id)
-    VALUES (?, ?, ?, ?, ?, NULL)
-  `).run(id, projectName, JSON.stringify(state || emptyEditorState()), timestamp, timestamp);
-  return getProject(id);
+    INSERT INTO projects (id, user_id, name, payload, saved_at, created_at, published_version_id)
+    VALUES (?, ?, ?, ?, ?, ?, NULL)
+  `).run(id, userId, projectName, JSON.stringify(state || emptyEditorState()), timestamp, timestamp);
+  return getProject(id, userId);
 }
 
-function saveProjectDraft(projectId, state, name = null) {
-  const project = getProject(projectId);
+function saveProjectDraft(userId, projectId, state, name = null) {
+  const project = getProject(projectId, userId);
   if (!project) throw new Error("Project not found");
   const timestamp = new Date().toISOString();
   const projectName = name && String(name).trim() ? String(name).trim() : project.name;
@@ -320,10 +575,11 @@ function saveProjectDraft(projectId, state, name = null) {
     SET name = ?, payload = ?, saved_at = ?
     WHERE id = ?
   `).run(projectName, JSON.stringify(state || {}), timestamp, projectId);
-  return getProject(projectId);
+  return getProject(projectId, userId);
 }
 
-function listProjectVersions(projectId) {
+function listProjectVersions(userId, projectId) {
+  if (!projectExists(projectId, userId)) return [];
   return db.prepare(`
     SELECT id, project_id, version_no, label, created_at, is_published
     FROM project_versions
@@ -339,8 +595,8 @@ function listProjectVersions(projectId) {
   }));
 }
 
-function createProjectVersion(projectId, label, publish = false, stateOverride = null) {
-  const project = getProject(projectId);
+function createProjectVersion(userId, projectId, label, publish = false, stateOverride = null) {
+  const project = getProject(projectId, userId);
   if (!project) throw new Error("Project not found");
 
   const maxRow = db.prepare("SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM project_versions WHERE project_id = ?").get(projectId);
@@ -373,14 +629,16 @@ function createProjectVersion(projectId, label, publish = false, stateOverride =
   };
 }
 
-function restoreProjectVersion(projectId, versionId) {
+function restoreProjectVersion(userId, projectId, versionId) {
+  if (!projectExists(projectId, userId)) throw new Error("Project not found");
   const row = db.prepare("SELECT payload FROM project_versions WHERE id = ? AND project_id = ?").get(versionId, projectId);
   if (!row) throw new Error("Version not found");
   const savedAt = new Date().toISOString();
   db.prepare("UPDATE projects SET payload = ?, saved_at = ? WHERE id = ?").run(row.payload, savedAt, projectId);
 }
 
-function publishProjectVersion(projectId, versionId) {
+function publishProjectVersion(userId, projectId, versionId) {
+  if (!projectExists(projectId, userId)) throw new Error("Project not found");
   const row = db.prepare("SELECT id FROM project_versions WHERE id = ? AND project_id = ?").get(versionId, projectId);
   if (!row) throw new Error("Version not found");
   db.prepare("UPDATE project_versions SET is_published = 0 WHERE project_id = ?").run(projectId);
@@ -388,47 +646,62 @@ function publishProjectVersion(projectId, versionId) {
   db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(versionId, projectId);
 }
 
-function deleteProject(projectId) {
+function deleteProject(userId, projectId) {
+  if (!projectExists(projectId, userId)) throw new Error("Project not found");
   db.prepare("DELETE FROM project_versions WHERE project_id = ?").run(projectId);
   db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+  db.prepare("DELETE FROM book_locks WHERE project_id = ?").run(projectId);
 }
 
-function buildWorkspace(currentProjectId) {
-  const currentProject = getProject(currentProjectId);
+function deleteProjectVersion(userId, projectId, versionId) {
+  if (!projectExists(projectId, userId)) throw new Error("Project not found");
+  db.prepare("DELETE FROM project_versions WHERE id = ? AND project_id = ?").run(versionId, projectId);
+  const remainingPublished = db.prepare("SELECT id FROM project_versions WHERE project_id = ? AND is_published = 1 LIMIT 1").get(projectId);
+  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(remainingPublished?.id || null, projectId);
+}
+
+function duplicateProject(userId, projectId) {
+  const project = getProject(projectId, userId);
+  if (!project) throw new Error("Project not found");
+  const duplicateName = `${project.name} Kopya`;
+  return createProject(userId, duplicateName, project.state);
+}
+
+function buildWorkspace(userId, currentProjectId) {
+  const currentProject = getProject(currentProjectId, userId);
   if (!currentProject) throw new Error("Current project not found");
   return {
-    currentProject: getProjectSummary(currentProjectId),
-    projects: listProjects(),
-    versions: listProjectVersions(currentProjectId),
+    currentProject: getProjectSummary(currentProjectId, userId),
+    projects: listProjects(userId),
+    versions: listProjectVersions(userId, currentProjectId),
     state: currentProject.state,
     updatedAt: currentProject.draftUpdatedAt,
   };
 }
 
-function ensureWorkspace() {
-  const appState = getAppState();
-  const payload = appState.payload;
+function ensureWorkspace(userId) {
+  const workspaceMeta = getWorkspaceMeta(userId);
 
-  if (isEditorState(payload)) {
-    const project = createProject("Varsayilan Proje", payload);
-    saveWorkspaceMeta(project.id);
-    return buildWorkspace(project.id);
+  if (workspaceMeta.legacyState) {
+    const project = createProject(userId, "Varsayilan Proje", workspaceMeta.legacyState);
+    saveWorkspaceMeta(userId, project.id);
+    return buildWorkspace(userId, project.id);
   }
 
-  const currentProjectId = isWorkspaceMeta(payload) ? String(payload.currentProjectId || "").trim() : "";
-  if (currentProjectId && projectExists(currentProjectId)) {
-    return buildWorkspace(currentProjectId);
+  const currentProjectId = workspaceMeta.currentProjectId;
+  if (currentProjectId && projectExists(currentProjectId, userId)) {
+    return buildWorkspace(userId, currentProjectId);
   }
 
-  const projects = listProjects();
+  const projects = listProjects(userId);
   if (projects.length > 0) {
-    saveWorkspaceMeta(projects[0].id);
-    return buildWorkspace(projects[0].id);
+    saveWorkspaceMeta(userId, projects[0].id);
+    return buildWorkspace(userId, projects[0].id);
   }
 
-  const project = createProject("Varsayilan Proje", emptyEditorState());
-  saveWorkspaceMeta(project.id);
-  return buildWorkspace(project.id);
+  const project = createProject(userId, "Varsayilan Proje", emptyEditorState());
+  saveWorkspaceMeta(userId, project.id);
+  return buildWorkspace(userId, project.id);
 }
 
 function serveStatic(req, res) {
@@ -473,6 +746,118 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/auth/status" && req.method === "POST") {
+      const body = await readBody(req);
+      const userId = String(body.userId || "").trim();
+      const sessionId = String(body.sessionId || "").trim();
+      const user = resolveFixedUser(userId);
+      if (!user) {
+        sendJson(res, 404, { ok: false, error: "Kullanici bulunamadi" });
+        return;
+      }
+      const session = getUserSession(user.id);
+      if (!session) {
+        sendJson(res, 200, { ok: true, locked: false, session: null });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        locked: session.session_id !== sessionId,
+        session: buildSessionPayload(session),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/login" && req.method === "POST") {
+      const body = await readBody(req);
+      const userId = String(body.userId || "").trim();
+      const password = String(body.password || "");
+      const sessionId = String(body.sessionId || "").trim();
+      const sessionLabel = String(body.sessionLabel || "").trim();
+      const user = resolveFixedUser(userId);
+      if (!user || user.password !== password) {
+        sendJson(res, 401, { ok: false, error: "Kullanici bilgileri hatali" });
+        return;
+      }
+      const claimed = claimUserSession(user.id, sessionId, sessionLabel);
+      if (!claimed.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          code: "USER_LOCKED",
+          error: "Bu kullanici baska bir cihazda acik. Cikis yapilana kadar beklenmeli.",
+          session: claimed.session,
+        });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        user: { id: user.id, name: user.name },
+        session: claimed.session,
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/heartbeat" && req.method === "POST") {
+      const body = await readBody(req);
+      const userId = String(body.userId || "").trim();
+      const sessionId = String(body.sessionId || "").trim();
+      const user = resolveFixedUser(userId);
+      if (!user) {
+        sendJson(res, 404, { ok: false, error: "Kullanici bulunamadi" });
+        return;
+      }
+      const touched = touchUserSession(user.id, sessionId);
+      if (!touched.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          code: touched.reason === "missing" ? "SESSION_EXPIRED" : "USER_LOCKED",
+          error: touched.reason === "missing"
+            ? "Oturum suresi doldu. Yeniden giris yapin."
+            : "Bu kullanici baska bir cihazda aktif gorunuyor.",
+          session: touched.session || null,
+        });
+        return;
+      }
+      touchBookLocksBySession(user.id, sessionId);
+      sendJson(res, 200, { ok: true, session: touched.session });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+      const body = await readBody(req);
+      const userId = String(body.userId || "").trim();
+      const sessionId = String(body.sessionId || "").trim();
+      const user = resolveFixedUser(userId);
+      if (user && sessionId) {
+        releaseUserSession(user.id, sessionId);
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    let currentUser = null;
+    let currentSessionId = "";
+    if (url.pathname.startsWith("/api/")) {
+      currentUser = resolveFixedUser(req.headers["x-user-id"]);
+      currentSessionId = String(req.headers["x-session-id"] || "").trim();
+      if (!currentUser || !currentSessionId) {
+        sendJson(res, 401, { ok: false, error: "Kullanici secimi gerekli" });
+        return;
+      }
+      const touched = touchUserSession(currentUser.id, currentSessionId);
+      if (!touched.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          code: touched.reason === "missing" ? "SESSION_EXPIRED" : "USER_LOCKED",
+          error: touched.reason === "missing"
+            ? "Oturum suresi doldu. Yeniden giris yapin."
+            : "Bu kullanici baska bir cihazda aktif.",
+          session: touched.session || null,
+        });
+        return;
+      }
+    }
+
     if (url.pathname === "/api/pdf-layout/analyze" && req.method === "POST") {
       const body = await readBody(req);
       const result = await requestPdfAiLayout(body || {});
@@ -481,24 +866,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/workspace" && req.method === "GET") {
-      sendJson(res, 200, ensureWorkspace());
+      sendJson(res, 200, ensureWorkspace(currentUser.id));
       return;
     }
 
     if (url.pathname === "/api/workspace/current-project" && req.method === "PUT") {
       const body = await readBody(req);
       const projectId = String(body.projectId || "").trim();
-      if (!projectId || !projectExists(projectId)) {
+      if (!projectId || !projectExists(projectId, currentUser.id)) {
         sendJson(res, 404, { ok: false, error: "Project not found" });
         return;
       }
-      saveWorkspaceMeta(projectId);
-      sendJson(res, 200, ensureWorkspace());
+      saveWorkspaceMeta(currentUser.id, projectId);
+      sendJson(res, 200, ensureWorkspace(currentUser.id));
       return;
     }
 
     if (url.pathname === "/api/state" && req.method === "GET") {
-      const workspace = ensureWorkspace();
+      const workspace = ensureWorkspace(currentUser.id);
       sendJson(res, 200, {
         state: workspace.state,
         updatedAt: workspace.updatedAt,
@@ -509,48 +894,48 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/state" && req.method === "PUT") {
-      const workspace = ensureWorkspace();
+      const workspace = ensureWorkspace(currentUser.id);
       const body = await readBody(req);
       const projectId = String(body.projectId || workspace.currentProject?.id || "").trim();
-      if (!projectId || !projectExists(projectId)) {
+      if (!projectId || !projectExists(projectId, currentUser.id)) {
         sendJson(res, 404, { ok: false, error: "Project not found" });
         return;
       }
-      const project = saveProjectDraft(projectId, body.state || {}, body.projectName);
-      saveWorkspaceMeta(projectId);
+      const project = saveProjectDraft(currentUser.id, projectId, body.state || {}, body.projectName);
+      saveWorkspaceMeta(currentUser.id, projectId);
       sendJson(res, 200, { ok: true, updatedAt: project.draftUpdatedAt, project });
       return;
     }
 
     if (url.pathname === "/api/projects" && req.method === "GET") {
-      sendJson(res, 200, { projects: listProjects() });
+      sendJson(res, 200, { projects: listProjects(currentUser.id) });
       return;
     }
 
     if (url.pathname === "/api/projects" && req.method === "POST") {
       const body = await readBody(req);
-      const project = createProject(body.name, body.state || emptyEditorState());
-      saveWorkspaceMeta(project.id);
-      sendJson(res, 200, ensureWorkspace());
+      const project = createProject(currentUser.id, body.name, body.state || emptyEditorState());
+      saveWorkspaceMeta(currentUser.id, project.id);
+      sendJson(res, 200, ensureWorkspace(currentUser.id));
       return;
     }
 
     const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && req.method === "GET") {
       const projectId = decodeURIComponent(projectMatch[1]);
-      const project = getProject(projectId);
+      const project = getProject(projectId, currentUser.id);
       if (!project) {
         sendJson(res, 404, { ok: false, error: "Project not found" });
         return;
       }
-      sendJson(res, 200, { project, versions: listProjectVersions(projectId) });
+      sendJson(res, 200, { project, versions: listProjectVersions(currentUser.id, projectId) });
       return;
     }
 
     if (projectMatch && req.method === "DELETE") {
       const projectId = decodeURIComponent(projectMatch[1]);
-      deleteProject(projectId);
-      sendJson(res, 200, { ok: true, ...ensureWorkspace() });
+      deleteProject(currentUser.id, projectId);
+      sendJson(res, 200, { ok: true, ...ensureWorkspace(currentUser.id) });
       return;
     }
 
@@ -558,31 +943,86 @@ const server = http.createServer(async (req, res) => {
     if (draftMatch && req.method === "PUT") {
       const projectId = decodeURIComponent(draftMatch[1]);
       const body = await readBody(req);
-      const project = saveProjectDraft(projectId, body.state || {}, body.name);
+      const lockBookId = String(body.lockBookId || "").trim();
+      if (lockBookId) {
+        const bookLock = ensureBookLockOwner(currentUser.id, currentSessionId, projectId, lockBookId);
+        if (!bookLock.ok) {
+          sendJson(res, 409, {
+            ok: false,
+            code: bookLock.reason === "missing" ? "BOOK_LOCK_REQUIRED" : "BOOK_LOCKED",
+            error: bookLock.reason === "missing"
+              ? "Bu kitabi duzenlemek icin once kitabi kilitle."
+              : "Bu kitap baska bir kullanici tarafindan duzenleniyor.",
+            lock: bookLock.lock || null,
+          });
+          return;
+        }
+      }
+      const project = saveProjectDraft(currentUser.id, projectId, body.state || {}, body.name);
       if (body.setCurrent !== false) {
-        saveWorkspaceMeta(projectId);
+        saveWorkspaceMeta(currentUser.id, projectId);
       }
       sendJson(res, 200, { ok: true, updatedAt: project.draftUpdatedAt, project });
+      return;
+    }
+
+    const bookLockMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/books\/([^/]+)\/lock$/);
+    if (bookLockMatch && req.method === "POST") {
+      const projectId = decodeURIComponent(bookLockMatch[1]);
+      const bookId = decodeURIComponent(bookLockMatch[2]);
+      const claimed = claimBookLock(currentUser.id, currentSessionId, projectId, bookId, currentUser.name);
+      if (!claimed.ok) {
+        sendJson(res, 409, {
+          ok: false,
+          code: "BOOK_LOCKED",
+          error: "Bu kitap su anda baska bir kullanici tarafindan duzenleniyor.",
+          lock: claimed.lock,
+        });
+        return;
+      }
+      sendJson(res, 200, { ok: true, lock: claimed.lock });
+      return;
+    }
+
+    const bookUnlockMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/books\/([^/]+)\/unlock$/);
+    if (bookUnlockMatch && req.method === "POST") {
+      const projectId = decodeURIComponent(bookUnlockMatch[1]);
+      const bookId = decodeURIComponent(bookUnlockMatch[2]);
+      releaseBookLock(currentUser.id, currentSessionId, projectId, bookId);
+      sendJson(res, 200, { ok: true });
       return;
     }
 
     const versionsMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/versions$/);
     if (versionsMatch && req.method === "GET") {
       const projectId = decodeURIComponent(versionsMatch[1]);
-      sendJson(res, 200, { versions: listProjectVersions(projectId) });
+      sendJson(res, 200, { versions: listProjectVersions(currentUser.id, projectId) });
       return;
     }
 
     if (versionsMatch && req.method === "POST") {
       const projectId = decodeURIComponent(versionsMatch[1]);
       const body = await readBody(req);
-      const version = createProjectVersion(projectId, body.label, Boolean(body.publish), body.state ?? null);
+      const version = createProjectVersion(currentUser.id, projectId, body.label, Boolean(body.publish), body.state ?? null);
       sendJson(res, 200, {
         ok: true,
         version,
-        versions: listProjectVersions(projectId),
-        projects: listProjects(),
-        currentProject: getProjectSummary(projectId),
+        versions: listProjectVersions(currentUser.id, projectId),
+        projects: listProjects(currentUser.id),
+        currentProject: getProjectSummary(projectId, currentUser.id),
+      });
+      return;
+    }
+
+    const versionDeleteMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)$/);
+    if (versionDeleteMatch && req.method === "DELETE") {
+      const projectId = decodeURIComponent(versionDeleteMatch[1]);
+      const versionId = decodeURIComponent(versionDeleteMatch[2]);
+      deleteProjectVersion(currentUser.id, projectId, versionId);
+      sendJson(res, 200, {
+        ok: true,
+        versions: listProjectVersions(currentUser.id, projectId),
+        currentProject: getProjectSummary(projectId, currentUser.id),
       });
       return;
     }
@@ -596,12 +1036,12 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, error: "Version id required" });
         return;
       }
-      publishProjectVersion(projectId, versionId);
+      publishProjectVersion(currentUser.id, projectId, versionId);
       sendJson(res, 200, {
         ok: true,
-        versions: listProjectVersions(projectId),
-        projects: listProjects(),
-        currentProject: getProjectSummary(projectId),
+        versions: listProjectVersions(currentUser.id, projectId),
+        projects: listProjects(currentUser.id),
+        currentProject: getProjectSummary(projectId, currentUser.id),
       });
       return;
     }
@@ -615,9 +1055,18 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, error: "Version id required" });
         return;
       }
-      restoreProjectVersion(projectId, versionId);
-      saveWorkspaceMeta(projectId);
-      sendJson(res, 200, ensureWorkspace());
+      restoreProjectVersion(currentUser.id, projectId, versionId);
+      saveWorkspaceMeta(currentUser.id, projectId);
+      sendJson(res, 200, ensureWorkspace(currentUser.id));
+      return;
+    }
+
+    const duplicateMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/duplicate$/);
+    if (duplicateMatch && req.method === "POST") {
+      const projectId = decodeURIComponent(duplicateMatch[1]);
+      const project = duplicateProject(currentUser.id, projectId);
+      saveWorkspaceMeta(currentUser.id, project.id);
+      sendJson(res, 200, ensureWorkspace(currentUser.id));
       return;
     }
 

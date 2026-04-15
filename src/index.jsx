@@ -39,7 +39,7 @@ class AppErrorBoundary extends React.Component {
             justifyContent: "center",
             padding: 24,
             background:
-              "radial-gradient(circle at top, rgba(56,189,248,.12), transparent 32%), linear-gradient(180deg, #111a33 0%, #0b1020 100%)",
+              "radial-gradient(circle at top, rgba(56,189,248,.2), transparent 34%), linear-gradient(180deg, #0a1220 0%, #09111f 48%, #050b14 100%)",
             color: "#f8fafc",
             fontFamily: '"Segoe UI", Arial, sans-serif',
           }}
@@ -49,7 +49,7 @@ class AppErrorBoundary extends React.Component {
               width: "min(680px, 100%)",
               borderRadius: 24,
               border: "1px solid rgba(248, 113, 113, 0.26)",
-              background: "rgba(15, 23, 42, 0.92)",
+              background: "rgba(16, 26, 47, 0.94)",
               boxShadow: "0 24px 80px rgba(0, 0, 0, 0.45)",
               padding: 28,
             }}
@@ -60,7 +60,7 @@ class AppErrorBoundary extends React.Component {
             <div style={{ marginTop: 14, fontSize: 30, lineHeight: 1.1, fontWeight: 800 }}>
               Uygulama acilirken durdu
             </div>
-            <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6, color: "#cbd5e1" }}>
+            <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6, color: "#d3deef" }}>
               Bu, siyah bos ekran yerine hatayi gorebilmen icin gosterilen yedek ekran.
             </div>
             <pre
@@ -68,7 +68,7 @@ class AppErrorBoundary extends React.Component {
                 marginTop: 16,
                 padding: 16,
                 borderRadius: 16,
-                background: "rgba(15, 23, 42, 0.96)",
+                background: "rgba(10, 18, 32, 0.92)",
                 border: "1px solid rgba(248, 113, 113, 0.3)",
                 color: "#fecaca",
                 font: '12px/1.6 Consolas, "Courier New", monospace',
