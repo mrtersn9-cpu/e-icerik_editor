@@ -11873,31 +11873,6 @@ export default function EIcerikEditor() {
     };
   }, [activeSessionId, activeUserId, authState?.sessionLabel, forceLogoutToLogin, loginForm.password]);
 
-  useEffect(() => {
-    if (!activeUserId || !activeSessionId) return undefined;
-    const releaseSession = () => {
-      const payload = JSON.stringify({ userId: activeUserId, sessionId: activeSessionId });
-      if (navigator.sendBeacon) {
-        const blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon(`${getApiBase()}/auth/logout`, blob);
-        return;
-      }
-      fetch(`${getApiBase()}/auth/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-        keepalive: true,
-      }).catch(() => {});
-    };
-
-    window.addEventListener("beforeunload", releaseSession);
-    window.addEventListener("pagehide", releaseSession);
-    return () => {
-      window.removeEventListener("beforeunload", releaseSession);
-      window.removeEventListener("pagehide", releaseSession);
-    };
-  }, [activeSessionId, activeUserId]);
-
   // Kick countdown: when another device requests this session
   useEffect(() => {
     if (!kickRequested || !activeUserId) return undefined;

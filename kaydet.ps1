@@ -35,11 +35,16 @@ function Get-GitOutput {
         [string[]]$Args
     )
 
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $output = & git @Args 2>&1
+    $ErrorActionPreference = $prev
+
     if ($LASTEXITCODE -ne 0) {
         throw ($output | Out-String).Trim()
     }
-    return ($output | Out-String).TrimEnd()
+    # Sadece stdout satırlarını döndür (ErrorRecord nesnelerini atla)
+    return (($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }) | Out-String).TrimEnd()
 }
 
 function Get-ChangedStatusLines {
@@ -164,8 +169,8 @@ try {
     exit 1
 }
 
-$changedFiles = Get-ChangedFiles
-if (-not $changedFiles -or $changedFiles.Count -eq 0) {
+$changedFiles = @(Get-ChangedFiles)
+if ($changedFiles.Count -eq 0) {
     Write-Host "Kaydedilecek degisiklik yok." -ForegroundColor Green
     exit 0
 }
@@ -176,7 +181,7 @@ Get-ChangedStatusLines | ForEach-Object { Write-Host $_ }
 Write-Host ""
 
 Invoke-FtpPrepareIfNeeded -SkipPrepare:$NoPrepare
-$changedFiles = Get-ChangedFiles
+$changedFiles = @(Get-ChangedFiles)
 
 if (-not $Mesaj) {
     if ($Auto) {

@@ -1,5 +1,25 @@
 ﻿# Changelog
 
+## 2026-04-15 14:36 - kaydet.ps1 strict mode ve git uyari duzeltmesi
+
+- Dal: master
+- Commit hazirlandi.
+- CHANGELOG.md
+- kaydet.ps1
+- src/EIcerikEditor.jsx
+## 2026-04-15 14:36 - kaydet.ps1 strict mode ve git uyari duzeltmesi
+
+- Dal: master
+- Commit hazirlandi.
+- CHANGELOG.md
+- kaydet.ps1
+- src/EIcerikEditor.jsx
+## 2026-04-15 14:34 - kaydet.ps1 strict mode dizi duzeltmesi
+
+- Dal: master
+- Commit hazirlandi.
+- kaydet.ps1
+- src/EIcerikEditor.jsx
 ## 2026-04-14 13:51 - .\hazirla-ftp.ps1
 
 - Dal: master
@@ -97,6 +117,9 @@ Bu dosya, proje icin alinan git kayitlarini ve surum notlarini tutar.
 ## 2026-04-14 - kaydet.ps1 eklendi â€” tek komutla GitHub'a push
 
 - Tek komutla git add / commit / push akisi eklendi.
+
+
+
 
 
 
