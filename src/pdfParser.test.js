@@ -36,12 +36,16 @@ describe('PDF Parser Utility Functions', () => {
     });
 
     it('detects sequence kind correctly', () => {
-      expect(detectPdfDraftKind([{ text: 'Karışık olan beytlerini sıraya koyunuz' }])).toBe('sequence');
+      expect(detectPdfDraftKind([{ text: 'Karışık olan beytlerini sıraya koyunuz' }])).toBe(
+        'sequence'
+      );
       expect(detectPdfDraftKind([{ text: 'Olayları sıralayınız.' }])).toBe('sequence');
     });
 
     it('detects selection kind', () => {
-      expect(detectPdfDraftKind([{ text: 'Doğru ise D, yanlış ise Y kutucuğunu işaretleyiniz' }])).toBe('selection');
+      expect(
+        detectPdfDraftKind([{ text: 'Doğru ise D, yanlış ise Y kutucuğunu işaretleyiniz' }])
+      ).toBe('selection');
     });
 
     it('detects reading kind if multiple pages', () => {
@@ -55,46 +59,31 @@ describe('PDF Parser Utility Functions', () => {
 
   describe('extractPdfAnswerTerms', () => {
     it('extracts terms with standard numbering format', () => {
-      const lines = [
-        { text: 'Doğru eşleştirme' },
-        { text: '1. Elma 2. Armut 3. Çilek' }
-      ];
+      const lines = [{ text: 'Doğru eşleştirme' }, { text: '1. Elma 2. Armut 3. Çilek' }];
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual(['Elma', 'Armut', 'Çilek']);
     });
 
     it('handles list items without commas', () => {
-      const lines = [
-        { text: 'DOĞRU EŞLEŞTİRME' },
-        { text: '1. Aslan 2. Kaplan 3. Leopar' }
-      ];
+      const lines = [{ text: 'DOĞRU EŞLEŞTİRME' }, { text: '1. Aslan 2. Kaplan 3. Leopar' }];
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual(['Aslan', 'Kaplan', 'Leopar']);
     });
 
     it('returns empty array if marker not found', () => {
-      const lines = [
-        { text: 'Normal metin' },
-        { text: '1. Aslan 2. Kaplan' }
-      ];
+      const lines = [{ text: 'Normal metin' }, { text: '1. Aslan 2. Kaplan' }];
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual([]);
     });
 
     it('handles alternative list formats', () => {
-      const lines = [
-        { text: 'Doğru eşleştirme' },
-        { text: 'a) Muz b) Kivi' }
-      ];
+      const lines = [{ text: 'Doğru eşleştirme' }, { text: 'a) Muz b) Kivi' }];
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual(['Muz', 'Kivi']);
     });
 
     it('keeps two digit numbering together in answer keys', () => {
-      const lines = [
-        { text: 'Doğru eşleştirme' },
-        { text: '9. Şarkı 10. Tuyuğ' }
-      ];
+      const lines = [{ text: 'Doğru eşleştirme' }, { text: '9. Şarkı 10. Tuyuğ' }];
       const terms = extractPdfAnswerTerms(lines);
       expect(terms).toEqual(['Şarkı', 'Tuyuğ']);
     });
@@ -107,7 +96,7 @@ describe('PDF Parser Utility Functions', () => {
         { text: '1) Elma' },
         { text: '2- Armut' },
         { text: 'a) Çilek' },
-        { text: 'Doğru Eşleştirme' }
+        { text: 'Doğru Eşleştirme' },
       ];
 
       expect(extractPdfDragTerms(lines)).toEqual(['Elma', 'Armut', 'Çilek']);
@@ -118,12 +107,12 @@ describe('PDF Parser Utility Functions', () => {
         { text: 'Sürüklenebilir Öğeler' },
         { text: 'e-İçerik' },
         { text: 'Ulusal Kimlik ve Kültürü Yansıtması' },
-        { text: 'Toplumu Etkileyen Olaylara Dayanması' }
+        { text: 'Toplumu Etkileyen Olaylara Dayanması' },
       ];
 
       expect(extractPdfDragTerms(lines)).toEqual([
         'Ulusal Kimlik ve Kültürü Yansıtması',
-        'Toplumu Etkileyen Olaylara Dayanması'
+        'Toplumu Etkileyen Olaylara Dayanması',
       ]);
     });
   });
@@ -132,12 +121,12 @@ describe('PDF Parser Utility Functions', () => {
     it('detects question anchors with alternative numbering', () => {
       const lines = [
         { text: '1) İlk ifade', x: 120, y: 140, height: 24, width: 180 },
-        { text: '2- İkinci ifade', x: 120, y: 220, height: 24, width: 200 }
+        { text: '2- İkinci ifade', x: 120, y: 220, height: 24, width: 200 },
       ];
 
       expect(extractPdfQuestionAnchors(lines, 1080)).toEqual([
         expect.objectContaining({ text: '1) İlk ifade', x: 120, y: 140, order: 1 }),
-        expect.objectContaining({ text: '2- İkinci ifade', x: 120, y: 220, order: 2 })
+        expect.objectContaining({ text: '2- İkinci ifade', x: 120, y: 220, order: 2 }),
       ]);
     });
   });
@@ -147,7 +136,9 @@ describe('PDF Parser Utility Functions', () => {
       expect(detectPdfInteractionType([{ text: 'Yargılar D Y' }])).toBe('TrueFalse');
       expect(detectPdfInteractionType([{ text: 'Sürüklenebilir Ögeler' }])).toBe('DragDrop');
       expect(detectPdfInteractionType([{ text: 'Kutucuğu işaretleyiniz' }])).toBe('Checkbox');
-      expect(detectPdfInteractionType([{ text: 'Numaralandırınız ve sıralayınız' }])).toBe('Ordering');
+      expect(detectPdfInteractionType([{ text: 'Numaralandırınız ve sıralayınız' }])).toBe(
+        'Ordering'
+      );
     });
 
     it('extracts developer notes from page text', () => {
@@ -168,8 +159,14 @@ describe('PDF Parser Utility Functions', () => {
         { text: 'Y' },
       ]);
       expect(items).toEqual([
-        expect.objectContaining({ statement: 'Destanlar sözlü gelenekte oluşur.', correctAnswer: 'D' }),
-        expect.objectContaining({ statement: 'Mesneviler tek dörtlükten oluşur.', correctAnswer: 'Y' }),
+        expect.objectContaining({
+          statement: 'Destanlar sözlü gelenekte oluşur.',
+          correctAnswer: 'D',
+        }),
+        expect.objectContaining({
+          statement: 'Mesneviler tek dörtlükten oluşur.',
+          correctAnswer: 'Y',
+        }),
       ]);
     });
 
@@ -206,30 +203,37 @@ describe('PDF Parser Utility Functions', () => {
     });
 
     it('extracts checkbox and ordering items', () => {
-      expect(extractCheckboxItems([
-        { text: 'Yanındaki kutucuğu işaretleyiniz.' },
-        { text: '☑ Doğru bilgi' },
-        { text: '☐ Yanlış bilgi' },
-      ])).toEqual([
+      expect(
+        extractCheckboxItems([
+          { text: 'Yanındaki kutucuğu işaretleyiniz.' },
+          { text: '☑ Doğru bilgi' },
+          { text: '☐ Yanlış bilgi' },
+        ])
+      ).toEqual([
         expect.objectContaining({ text: 'Doğru bilgi', correctAnswer: true }),
         expect.objectContaining({ text: 'Yanlış bilgi', correctAnswer: false }),
       ]);
 
-      expect(extractOrderingItems([
-        { text: '1. İlk olay' },
-        { text: '2. İkinci olay' },
-      ])).toEqual([
+      expect(extractOrderingItems([{ text: '1. İlk olay' }, { text: '2. İkinci olay' }])).toEqual([
         expect.objectContaining({ text: 'İlk olay', correctOrder: 1 }),
         expect.objectContaining({ text: 'İkinci olay', correctOrder: 2 }),
       ]);
     });
 
     it('extracts checkbox rows with trailing checks after the instruction line', () => {
-      expect(extractCheckboxItems([
-        { text: 'Bu ifadelerden doğru olanları işaretleyiniz.' },
-        { text: 'Doğru bilgi ✔', tokens: [{ text: 'Doğru bilgi', x: 20, width: 140 }, { text: '✔', x: 280, width: 20 }] },
-        { text: 'Yanlış bilgi' },
-      ])).toEqual([
+      expect(
+        extractCheckboxItems([
+          { text: 'Bu ifadelerden doğru olanları işaretleyiniz.' },
+          {
+            text: 'Doğru bilgi ✔',
+            tokens: [
+              { text: 'Doğru bilgi', x: 20, width: 140 },
+              { text: '✔', x: 280, width: 20 },
+            ],
+          },
+          { text: 'Yanlış bilgi' },
+        ])
+      ).toEqual([
         expect.objectContaining({ text: 'Doğru bilgi', correctAnswer: true }),
         expect.objectContaining({ text: 'Yanlış bilgi', correctAnswer: false }),
       ]);
@@ -239,52 +243,66 @@ describe('PDF Parser Utility Functions', () => {
       const segments = findDottedBlankSegments([
         { text: '1. Gazelin en yaygın nazım şekli .....', x: 100, y: 200, width: 400, height: 18 },
       ]);
-      expect(segments[0]).toEqual(expect.objectContaining({ x: expect.any(Number), y: 200, width: expect.any(Number) }));
+      expect(segments[0]).toEqual(
+        expect.objectContaining({ x: expect.any(Number), y: 200, width: expect.any(Number) })
+      );
     });
 
     it('builds storyboard json pages for drag-drop and notes', () => {
       const config = buildStoryboardConfig({
         document: 'output_cleaned.pdf',
-        pages: [{
-          pageNumber: 9,
-          lines: [
-            { text: 'YAZILIMCIYA NOT: Seslendirme ile açılacak.' },
-            { text: 'Divan edebiyatıyla ilgili verilen ifadelerin sonundaki boş bırakılan yerlere uygun kavramları sürükleyiniz.' },
-            { text: '1. Divan şiirinin en yaygın nazım şeklidir .....' },
-            { text: 'Sürüklenebilir Ögeler' },
-            { text: 'Gazel' },
-            { text: 'Şarkı' },
-            { text: 'Doğru eşleştirme: 1. Gazel' },
-          ],
-        }],
+        pages: [
+          {
+            pageNumber: 9,
+            lines: [
+              { text: 'YAZILIMCIYA NOT: Seslendirme ile açılacak.' },
+              {
+                text: 'Divan edebiyatıyla ilgili verilen ifadelerin sonundaki boş bırakılan yerlere uygun kavramları sürükleyiniz.',
+              },
+              { text: '1. Divan şiirinin en yaygın nazım şeklidir .....' },
+              { text: 'Sürüklenebilir Ögeler' },
+              { text: 'Gazel' },
+              { text: 'Şarkı' },
+              { text: 'Doğru eşleştirme: 1. Gazel' },
+            ],
+          },
+        ],
       });
 
-      expect(config.pages[0]).toEqual(expect.objectContaining({
-        interactionType: 'DragDrop',
-        developerNote: expect.stringContaining('Seslendirme ile açılacak'),
-      }));
+      expect(config.pages[0]).toEqual(
+        expect.objectContaining({
+          interactionType: 'DragDrop',
+          developerNote: expect.stringContaining('Seslendirme ile açılacak'),
+        })
+      );
       expect(config.pages[0].draggableItems).toContain('Gazel');
-      expect(config.pages[0].dropZones[0]).toEqual(expect.objectContaining({ correctAnswer: 'Gazel' }));
+      expect(config.pages[0].dropZones[0]).toEqual(
+        expect.objectContaining({ correctAnswer: 'Gazel' })
+      );
     });
 
     it('does not turn the answer key line into an extra drag-drop zone', () => {
       const config = buildStoryboardConfig({
-        pages: [{
-          pageNumber: 1,
-          lines: [
-            { text: 'Boşluklara uygun kavramları sürükleyiniz.' },
-            { text: '1. İlk ifade .....' },
-            { text: '2. İkinci ifade .....' },
-            { text: 'Sürüklenebilir Ögeler' },
-            { text: 'Elma' },
-            { text: 'Armut' },
-            { text: 'Doğru eşleştirme: 1. Elma 2. Armut' },
-          ],
-        }],
+        pages: [
+          {
+            pageNumber: 1,
+            lines: [
+              { text: 'Boşluklara uygun kavramları sürükleyiniz.' },
+              { text: '1. İlk ifade .....' },
+              { text: '2. İkinci ifade .....' },
+              { text: 'Sürüklenebilir Ögeler' },
+              { text: 'Elma' },
+              { text: 'Armut' },
+              { text: 'Doğru eşleştirme: 1. Elma 2. Armut' },
+            ],
+          },
+        ],
       });
 
       expect(config.pages[0].dropZones).toHaveLength(2);
-      expect(config.pages[0].dropZones[1]).toEqual(expect.objectContaining({ correctAnswer: 'Armut' }));
+      expect(config.pages[0].dropZones[1]).toEqual(
+        expect.objectContaining({ correctAnswer: 'Armut' })
+      );
     });
   });
 });

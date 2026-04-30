@@ -1,0 +1,790 @@
+import {
+  findRuntimeLayerByKeys,
+  getRuntimeButtonAction,
+  normalizeRuntimeActionLabel,
+} from './storylineRuntime';
+
+const DEFAULT_STORYLINE_DRAG_DROP_SETTINGS = {
+  isolateScopes: true,
+  allowCrossScope: false,
+  allowMultipleItemsPerDrop: false,
+  allowMultipleTargetsPerDrag: false,
+};
+
+export function getStorylineRuntimeKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+export function isStorylineRuntimeDropTargetLikeObject(object = {}) {
+  if (!object) return false;
+  if (object.type === 'dropzone') return true;
+  if (
+    object.type === 'draggable' ||
+    object.isPdfBackground ||
+    object.isPdfMask ||
+    object.visible === false
+  )
+    return false;
+  if (
+    object.isCheckButton ||
+    object.selectionQuestionId ||
+    object.type === 'video' ||
+    object.type === 'audio' ||
+    object.type === 'embed'
+  )
+    return false;
+
+  const label = String(object.label || '').trim();
+  const labelKey = getStorylineRuntimeKey(label);
+  const width = Number(object.width) || 0;
+  const height = Number(object.height) || 0;
+  const style = object.style || {};
+  const colorText =
+    `${style.background || ''} ${style.borderColor || ''} ${style.color || ''}`.toLowerCase();
+  const isBlankAnswerShape = !label && width >= 90 && height >= 20 && height <= 90;
+  const isNamedAnswerShape = ['bosluk', 'birak', 'drop', 'cevap'].some((term) =>
+    labelKey.includes(term)
+  );
+  const looksOrange = /#ea5b0c|#f97316|#fb923c|orange|rgb\(234,\s*91,\s*12\)/i.test(colorText);
+  return (isBlankAnswerShape || isNamedAnswerShape) && looksOrange;
+}
+
+export function getStorylineRuntimeObjectKey(object = {}) {
+  return String(object?.__runtimeId || object?.__previewId || object?.id || '');
+}
+
+export function withStorylineRuntimeObjectKeys(objects = []) {
+  const seen = {};
+  const usedRuntimeIds = new Set();
+  return (objects || []).map((object, index) => {
+    if (!object) return object;
+    const existingRuntimeId = String(object.__runtimeId || '').trim();
+    if (existingRuntimeId && !usedRuntimeIds.has(existingRuntimeId)) {
+      usedRuntimeIds.add(existingRuntimeId);
+      return { ...object, __runtimeId: existingRuntimeId };
+    }
+    const base = String(object.__previewId || object.id || object.type || 'obj');
+    seen[base] = (seen[base] || 0) + 1;
+    let runtimeId = seen[base] === 1 ? base : `${base}__runtime_${seen[base]}_${index}`;
+    while (usedRuntimeIds.has(runtimeId)) {
+      seen[base] += 1;
+      runtimeId = `${base}__runtime_${seen[base]}_${index}`;
+    }
+    usedRuntimeIds.add(runtimeId);
+    return { ...object, __runtimeId: runtimeId };
+  });
+}
+
+export function normalizeStorylineDragDropMatchValue(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
+  }
+  const raw = String(value || '').trim();
+  return raw ? [raw] : [];
+}
+
+export function getStorylineDragDropPairKey(dragId = '', dropId = '') {
+  return `${dragId}__${dropId}`;
+}
+
+export function getStorylineDragDropPairsFromMatches(matches = {}) {
+  const seen = new Set();
+  return Object.entries(matches || {}).flatMap(([dragId, raw]) =>
+    normalizeStorylineDragDropMatchValue(raw).flatMap((dropId) => {
+      const pairKey = getStorylineDragDropPairKey(dragId, dropId);
+      if (seen.has(pairKey)) return [];
+      seen.add(pairKey);
+      return [{ dragId, dropId }];
+    })
+  );
+}
+
+function getDragDropSettings(slide = {}) {
+  return {
+    ...DEFAULT_STORYLINE_DRAG_DROP_SETTINGS,
+    ...(slide?.dragDropSettings || {}),
+  };
+}
+
+function areScopesCompatible(slide = {}, drag = {}, drop = {}) {
+  const settings = getDragDropSettings(slide);
+  if (!settings.isolateScopes || settings.allowCrossScope) return true;
+  const dragScope = getStorylineRuntimeKey(drag?.scope || '');
+  const dropScope = getStorylineRuntimeKey(drop?.scope || '');
+  if (!dragScope && !dropScope) return true;
+  return !!dragScope && !!dropScope && dragScope === dropScope;
+}
+
+function isDragReusable(slide = {}, drag = {}) {
+  const settings = getDragDropSettings(slide);
+  return !!(drag?.allowMultipleTargets || settings.allowMultipleTargetsPerDrag);
+}
+
+function getDropCapacityLimit(slide = {}, drop = {}) {
+  const settings = getDragDropSettings(slide);
+  const explicit = Number(drop?.capacity);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.round(explicit));
+  return settings.allowMultipleItemsPerDrop ? 0 : 1;
+}
+
+function getBaseRuntimeObjects(slide = {}, objects = null) {
+  return withStorylineRuntimeObjectKeys(objects || slide?.objects || [])
+    .filter(
+      (object) => object && object.visible !== false && !object.isPdfBackground && !object.isPdfMask
+    )
+    .filter((object) => (object.layerId || 'base') === 'base');
+}
+
+export function buildStorylineRuntimeAutoDragMatches({ slide = {}, objects = null } = {}) {
+  const baseObjects = getBaseRuntimeObjects(slide, objects);
+  const drags = baseObjects.filter((object) => object.type === 'draggable');
+  const drops = baseObjects.filter(isStorylineRuntimeDropTargetLikeObject);
+  const preferArrays = drags.some((drag) => isDragReusable(slide, drag));
+  const usedDropCounts = {};
+  const grouped = {};
+
+  drags.forEach((drag, index) => {
+    const scopeFiltered = drops.filter((drop) => areScopesCompatible(slide, drag, drop));
+    if (!scopeFiltered.length) return;
+
+    const sameGroup = drag.group
+      ? scopeFiltered.filter(
+          (drop) =>
+            getStorylineRuntimeKey(drop.group || '') === getStorylineRuntimeKey(drag.group || '')
+        )
+      : [];
+    const sameLabel = drag.label
+      ? scopeFiltered.filter(
+          (drop) =>
+            getStorylineRuntimeKey(drop.label || '') === getStorylineRuntimeKey(drag.label || '')
+        )
+      : [];
+    const basePool = sameGroup.length ? sameGroup : sameLabel.length ? sameLabel : scopeFiltered;
+    const reusable = isDragReusable(slide, drag);
+    const acceptedDropIds = [];
+
+    basePool.forEach((drop, candidateIndex) => {
+      const capacity = getDropCapacityLimit(slide, drop);
+      const currentCount = usedDropCounts[drop.id] || 0;
+      const canUseDrop = capacity === 0 || currentCount < capacity;
+      const isFallbackCandidate = !sameGroup.length && !sameLabel.length;
+      if (!canUseDrop) return;
+      if (!reusable && candidateIndex > 0) return;
+      if (reusable && isFallbackCandidate && candidateIndex > 0) return;
+      acceptedDropIds.push(drop.id);
+      usedDropCounts[drop.id] = currentCount + 1;
+    });
+
+    if (!acceptedDropIds.length) {
+      const fallback = scopeFiltered[index] || scopeFiltered[0];
+      if (!fallback) return;
+      const capacity = getDropCapacityLimit(slide, fallback);
+      const currentCount = usedDropCounts[fallback.id] || 0;
+      if (capacity !== 0 && currentCount >= capacity) return;
+      acceptedDropIds.push(fallback.id);
+      usedDropCounts[fallback.id] = currentCount + 1;
+    }
+
+    acceptedDropIds.forEach((dropId) => {
+      grouped[drag.id] = grouped[drag.id] || [];
+      if (!grouped[drag.id].includes(dropId)) grouped[drag.id].push(dropId);
+    });
+  });
+
+  return Object.fromEntries(
+    Object.entries(grouped).map(([dragId, dropIds]) => [
+      dragId,
+      preferArrays || dropIds.length > 1 ? dropIds : dropIds[0],
+    ])
+  );
+}
+
+export function getStorylineRuntimeCorrectDragMatches({ slide = {}, objects = null } = {}) {
+  const explicit = slide?.dragDropMatches || {};
+  const drags = getBaseRuntimeObjects(slide, objects).filter(
+    (object) => object.type === 'draggable'
+  );
+  const hasExplicit = drags.some(
+    (drag) => normalizeStorylineDragDropMatchValue(explicit[drag.id]).length
+  );
+  return hasExplicit ? explicit : buildStorylineRuntimeAutoDragMatches({ slide, objects });
+}
+
+export function getStorylineRuntimeSnapPosition({
+  drag = {},
+  drop = {},
+  stageWidth = 1920,
+  stageHeight = 1080,
+} = {}) {
+  const objW = Number(drag.width) || 1;
+  const objH = Number(drag.height) || 1;
+  const x = (Number(drop.x) || 0) + ((Number(drop.width) || 1) - objW) / 2;
+  const y = (Number(drop.y) || 0) + ((Number(drop.height) || 1) - objH) / 2;
+  return {
+    x: Math.max(0, Math.min(x, (Number(stageWidth) || 1920) - objW)),
+    y: Math.max(0, Math.min(y, (Number(stageHeight) || 1080) - objH)),
+  };
+}
+
+export function findStorylineRuntimeDropTarget({
+  drag = {},
+  drops = [],
+  x = 0,
+  y = 0,
+  pointerX = null,
+  pointerY = null,
+} = {}) {
+  const dragW = Number(drag.width) || 1;
+  const dragH = Number(drag.height) || 1;
+  const compatibleDrops = (drops || []).filter(isStorylineRuntimeDropTargetLikeObject);
+
+  if (Number.isFinite(pointerX) && Number.isFinite(pointerY)) {
+    const pointerDrop = compatibleDrops.find(
+      (drop) =>
+        pointerX >= (Number(drop.x) || 0) - dragW * 0.45 &&
+        pointerX <= (Number(drop.x) || 0) + (Number(drop.width) || 0) + dragW * 0.45 &&
+        pointerY >= (Number(drop.y) || 0) - dragH * 0.45 &&
+        pointerY <= (Number(drop.y) || 0) + (Number(drop.height) || 0) + dragH * 0.45
+    );
+    if (pointerDrop) return pointerDrop;
+  }
+
+  const dragCenterX = x + dragW / 2;
+  const dragCenterY = y + dragH / 2;
+  const containing = compatibleDrops.find(
+    (drop) =>
+      dragCenterX >= (Number(drop.x) || 0) &&
+      dragCenterX <= (Number(drop.x) || 0) + (Number(drop.width) || 0) &&
+      dragCenterY >= (Number(drop.y) || 0) &&
+      dragCenterY <= (Number(drop.y) || 0) + (Number(drop.height) || 0)
+  );
+  if (containing) return containing;
+
+  let bestDrop = null;
+  let bestOverlap = 0;
+  compatibleDrops.forEach((drop) => {
+    const left = Math.max(x, Number(drop.x) || 0);
+    const top = Math.max(y, Number(drop.y) || 0);
+    const right = Math.min(x + dragW, (Number(drop.x) || 0) + (Number(drop.width) || 0));
+    const bottom = Math.min(y + dragH, (Number(drop.y) || 0) + (Number(drop.height) || 0));
+    const overlap = Math.max(0, right - left) * Math.max(0, bottom - top);
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestDrop = drop;
+    }
+  });
+  if (bestOverlap > 0) return bestDrop;
+
+  if (Number.isFinite(pointerX) && Number.isFinite(pointerY)) {
+    let nearestDrop = null;
+    let nearestDistance = Infinity;
+    compatibleDrops.forEach((drop) => {
+      const dropCenterX = (Number(drop.x) || 0) + (Number(drop.width) || 0) / 2;
+      const dropCenterY = (Number(drop.y) || 0) + (Number(drop.height) || 0) / 2;
+      const distance = Math.hypot(pointerX - dropCenterX, pointerY - dropCenterY);
+      const threshold = Math.max(
+        80,
+        Math.min(
+          260,
+          Math.max(Number(drop.width) || 0, Number(drop.height) || 0, dragW, dragH) * 0.75
+        )
+      );
+      if (distance <= threshold && distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestDrop = drop;
+      }
+    });
+    if (nearestDrop) return nearestDrop;
+  }
+
+  return null;
+}
+
+export function evaluateStorylineRuntimeDragDrop({
+  slide = {},
+  objects = null,
+  state = {},
+  dropAssignments = null,
+  expectedMatches = null,
+} = {}) {
+  const baseObjects = getBaseRuntimeObjects(slide, objects);
+  const byKey = Object.fromEntries(
+    baseObjects.map((object) => [getStorylineRuntimeObjectKey(object), object])
+  );
+  const byId = {};
+  baseObjects.forEach((object) => {
+    byId[object.id] = byId[object.id] || object;
+  });
+  const expected = getStorylineDragDropPairsFromMatches(
+    expectedMatches || getStorylineRuntimeCorrectDragMatches({ slide, objects: baseObjects })
+  );
+  const expectedCounts = {};
+  expected.forEach(({ dragId, dropId }) => {
+    const key = getStorylineDragDropPairKey(dragId, dropId);
+    expectedCounts[key] = (expectedCounts[key] || 0) + 1;
+  });
+
+  const assignments = dropAssignments || state.dropAssignments || {};
+  const placements = Object.entries(assignments)
+    .filter(([dragKey, dropKey]) => dragKey && dropKey)
+    .map(([dragKey, dropKey]) => {
+      const drag = byKey[dragKey] || byId[dragKey] || null;
+      const drop = byKey[dropKey] || byId[dropKey] || null;
+      return {
+        id: getStorylineDragDropPairKey(dragKey, dropKey),
+        dragKey,
+        dropKey,
+        dragId: drag?.id || dragKey,
+        dropId: drop?.id || dropKey,
+      };
+    });
+
+  const placementResult = {};
+  placements.forEach((entry) => {
+    const key = getStorylineDragDropPairKey(entry.dragId, entry.dropId);
+    if (expectedCounts[key] > 0) {
+      placementResult[entry.id] = true;
+      expectedCounts[key] -= 1;
+    } else {
+      placementResult[entry.id] = false;
+    }
+  });
+
+  const allExpectedUsed = Object.values(expectedCounts).every((count) => count === 0);
+  const allPlacedCorrect = placements.every((entry) => placementResult[entry.id] === true);
+  return {
+    success: expected.length > 0 && allExpectedUsed && allPlacedCorrect,
+    placements,
+    placementResult,
+    expectedCount: expected.length,
+  };
+}
+
+export function getStorylineRuntimeDropResultStates(result = {}) {
+  return (result.placements || []).reduce((states, entry) => {
+    const correct = !!result.placementResult?.[entry.id];
+    states[entry.dragKey] = {
+      ...(states[entry.dragKey] || {}),
+      dropCorrect: correct,
+      dropIncorrect: !correct,
+    };
+    states[entry.dropKey] = {
+      ...(states[entry.dropKey] || {}),
+      dropCorrect: correct,
+      dropIncorrect: !correct,
+    };
+    return states;
+  }, {});
+}
+
+export function castStorylineRuntimeValue(type = 'text', value = '') {
+  if (type === 'number') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+  if (type === 'boolean') {
+    if (typeof value === 'boolean') return value;
+    const normalized = String(value).trim().toLowerCase();
+    return ['true', '1', 'evet', 'yes', 'on'].includes(normalized);
+  }
+  return String(value ?? '');
+}
+
+export function buildStorylineRuntimeVariableMap(variableDefinitions = []) {
+  return Object.fromEntries(
+    (variableDefinitions || []).map((variable) => [
+      variable.id,
+      castStorylineRuntimeValue(variable.type, variable.value),
+    ])
+  );
+}
+
+export function normalizeStorylineRuntimeValue(value) {
+  if (typeof value === 'boolean' || typeof value === 'number') return value;
+  const raw = String(value ?? '').trim();
+  if (raw === '') return '';
+  const lowered = raw.toLowerCase();
+  if (['true', 'false'].includes(lowered)) return lowered === 'true';
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) && raw !== '' ? numeric : raw;
+}
+
+export function getStorylineTriggerSourceMatches(trigger = {}, objectId = '') {
+  const source = trigger?.target || '';
+  const sourceKey = normalizeRuntimeActionLabel(source);
+  if (objectId === '__activity__') {
+    return source === '__activity__' || sourceKey === 'sahne' || sourceKey === 'secilinesne';
+  }
+  return (
+    source === objectId ||
+    sourceKey === 'secilinesne' ||
+    sourceKey === 'tiklanannesne' ||
+    sourceKey === 'selected'
+  );
+}
+
+function getStorylineDropTriggerSourceMatches(trigger = {}, objectId = '') {
+  const source = trigger?.target || '';
+  if (!objectId || !source) return false;
+  return source === objectId;
+}
+
+function isHidden(runtimeState = {}, objectId = '') {
+  const hiddenObjectIds = runtimeState.hiddenObjectIds;
+  if (hiddenObjectIds?.has?.(objectId)) return true;
+  return !!runtimeState.hidden?.[objectId];
+}
+
+export function getStorylineRuntimeObjectStateValue(
+  runtimeState = {},
+  objectId = '',
+  stateKey = 'visited'
+) {
+  if (!objectId) return null;
+  if (stateKey === 'hidden') return isHidden(runtimeState, objectId);
+  return runtimeState.objectStates?.[objectId]?.[stateKey] ?? false;
+}
+
+function getVariableDefinition(variableDefinitions = [], variableId = '') {
+  return (variableDefinitions || []).find((variable) => variable.id === variableId) || null;
+}
+
+export function evaluateStorylineTriggerCondition(condition = {}, context = {}) {
+  const {
+    variables = {},
+    variableDefinitions = [],
+    objectStates = {},
+    hiddenObjectIds = new Set(),
+    hidden = {},
+  } = context;
+  const sourceType = condition?.sourceType || 'variable';
+  const operator = condition?.operator || 'eq';
+  let left = '';
+
+  if (sourceType === 'objectState') {
+    left = getStorylineRuntimeObjectStateValue(
+      { objectStates, hiddenObjectIds, hidden },
+      condition?.sourceId || '',
+      condition?.stateKey || 'visited'
+    );
+  } else {
+    const variable = getVariableDefinition(variableDefinitions, condition?.sourceId || '');
+    left = variable
+      ? castStorylineRuntimeValue(variable.type, variables?.[variable.id])
+      : (variables?.[condition?.sourceId || ''] ?? '');
+  }
+
+  const right = normalizeStorylineRuntimeValue(condition?.value ?? '');
+
+  if (operator === 'truthy') return !!left;
+  if (operator === 'falsy') return !left;
+  if (operator === 'contains')
+    return String(left ?? '')
+      .toLowerCase()
+      .includes(String(right ?? '').toLowerCase());
+  if (operator === 'eq') return left === right;
+  if (operator === 'neq') return left !== right;
+
+  const leftNum = Number(left);
+  const rightNum = Number(right);
+  if (!Number.isFinite(leftNum) || !Number.isFinite(rightNum)) return false;
+  if (operator === 'gt') return leftNum > rightNum;
+  if (operator === 'gte') return leftNum >= rightNum;
+  if (operator === 'lt') return leftNum < rightNum;
+  if (operator === 'lte') return leftNum <= rightNum;
+  return false;
+}
+
+export function evaluateStorylineTriggerConditions(trigger = {}, context = {}) {
+  const conditions = Array.isArray(trigger?.conditions) ? trigger.conditions : [];
+  if (conditions.length === 0) return true;
+  const mode = trigger?.conditionMode === 'any' ? 'any' : 'all';
+  return mode === 'any'
+    ? conditions.some((condition) => evaluateStorylineTriggerCondition(condition, context))
+    : conditions.every((condition) => evaluateStorylineTriggerCondition(condition, context));
+}
+
+function isStorylineCheckButton(object = {}) {
+  if (
+    object?.generatedBy === 'scene-template' &&
+    object?.sceneTemplateId === 'button-intro' &&
+    !isButtonIntroRuntimeControl(object)
+  )
+    return false;
+  const labelKey = normalizeRuntimeActionLabel(object?.label || object?.text || '');
+  return !!(object?.isCheckButton || labelKey.includes('kontrol'));
+}
+
+function isButtonIntroRuntimeControl(object = {}) {
+  const slotId = String(object?.sceneTemplateSlotId || '');
+  return (
+    slotId.endsWith(':start-button') ||
+    slotId.endsWith(':start-icon') ||
+    slotId.endsWith(':close-button')
+  );
+}
+
+function isButtonIntroPlayPauseDemoButton(object = {}) {
+  if (!object || (object.type && object.type !== 'button')) return false;
+  if (object.sceneTemplateDemoAction === 'toggle-play-pause') return true;
+  if (object.sceneTemplateId !== 'button-intro') return false;
+  const raw = String(object.label || object.text || '');
+  const labelKey = normalizeRuntimeActionLabel(raw);
+  return (
+    raw.includes('❚❚') ||
+    labelKey.includes('play') ||
+    labelKey.includes('pause') ||
+    labelKey.includes('oynat') ||
+    labelKey.includes('duraklat')
+  );
+}
+
+function getButtonIntroDemoStateTargetId(sourceId = '', object = {}) {
+  const linkedTargetId = String(object?.linkedActionTargetId || '').trim();
+  return linkedTargetId || sourceId;
+}
+
+export function getStorylineRuntimeCommandsForAction(
+  action = '',
+  { slide = {}, reasonPrefix = 'runtime' } = {}
+) {
+  if (action === 'restart' || action === 'home')
+    return [{ type: 'restart', reason: `${reasonPrefix}-${action}-button` }];
+  if (action === 'answer') {
+    const layer = findRuntimeLayerByKeys(slide.layers || [], ['cevap', 'answer']);
+    return layer
+      ? [
+          { type: 'resetAttempt', reason: `${reasonPrefix}-answer-button` },
+          { type: 'setLayer', layerId: layer.id },
+        ]
+      : [{ type: 'log', action, message: "Cevap layer'ı bulunamadı.", data: { action } }];
+  }
+  if (action === 'help') {
+    const layer = findRuntimeLayerByKeys(slide.layers || [], [
+      'explanation',
+      'aciklama',
+      'help',
+      'yardim',
+      'kilavuz',
+      'kullanimkilavuzu',
+      'menu',
+    ]);
+    return layer
+      ? [{ type: 'setLayer', layerId: layer.id }]
+      : [
+          {
+            type: 'log',
+            action,
+            message: "Kullanım kılavuzu/help layer'ı bulunamadı.",
+            data: { action },
+          },
+        ];
+  }
+  if (action === 'mute') return [{ type: 'toggleMute' }];
+  if (action === 'playback') return [{ type: 'togglePlayback' }];
+  if (action === 'complete') return [{ type: 'complete' }];
+  return [];
+}
+
+function getCommandsForTrigger(trigger = {}, slide = {}) {
+  if (trigger.action === 'YenidenBaslat') return [{ type: 'restart', reason: 'trigger-restart' }];
+  if (trigger.action === 'KatmanaGec' && trigger.value) {
+    const answerLayer = findRuntimeLayerByKeys(slide.layers || [], ['cevap', 'answer']);
+    return [
+      ...(answerLayer?.id === trigger.value
+        ? [{ type: 'resetAttempt', reason: 'trigger-answer-layer' }]
+        : []),
+      { type: 'setLayer', layerId: trigger.value },
+    ];
+  }
+  if (trigger.action === 'SliderGec') {
+    if (trigger.value === '__next__') return [{ type: 'goRelative', direction: 1 }];
+    if (trigger.value === '__prev__') return [{ type: 'goRelative', direction: -1 }];
+    return trigger.value ? [{ type: 'goToSlide', slideId: trigger.value }] : [];
+  }
+  if (trigger.action === 'SayfaGec') {
+    if (trigger.value === '__next__') return [{ type: 'goRelative', direction: 1 }];
+    if (trigger.value === '__prev__') return [{ type: 'goRelative', direction: -1 }];
+    return trigger.value ? [{ type: 'goToActivity', activityId: trigger.value }] : [];
+  }
+  if (trigger.action === 'Goster' && trigger.value)
+    return [{ type: 'show', objectId: trigger.value }];
+  if (trigger.action === 'Gizle' && trigger.value)
+    return [{ type: 'hide', objectId: trigger.value }];
+  if ((trigger.action === 'SesCal' || trigger.action === 'VideoCal') && trigger.value)
+    return [{ type: 'playMedia', objectId: trigger.value }];
+  if ((trigger.action === 'SesDurdur' || trigger.action === 'VideoDurdur') && trigger.value)
+    return [{ type: 'pauseMedia', objectId: trigger.value }];
+  if (trigger.action === 'NesneToggle' && trigger.value)
+    return [{ type: 'toggleHidden', objectId: trigger.value }];
+  if (trigger.action === 'NesneDurumuAyarla' && trigger.value) {
+    return [
+      {
+        type: 'setObjectState',
+        objectId: trigger.value,
+        stateKey: trigger.stateKey || 'visited',
+        value: castStorylineRuntimeValue('boolean', trigger.stateValue ?? 'true'),
+      },
+    ];
+  }
+  if (trigger.action === 'DegiskenAta' && trigger.value)
+    return [
+      {
+        type: 'setVariable',
+        variableId: trigger.value,
+        value: normalizeStorylineRuntimeValue(trigger.extra),
+      },
+    ];
+  if (
+    (trigger.action === 'DegiskenArttir' || trigger.action === 'DegiskenAzalt') &&
+    trigger.value
+  ) {
+    return [
+      {
+        type: 'addVariable',
+        variableId: trigger.value,
+        delta: (trigger.action === 'DegiskenArttir' ? 1 : -1) * (Number(trigger.extra || 1) || 1),
+      },
+    ];
+  }
+  if (trigger.action === 'TamamlaGonder' || trigger.action === 'SonucGonder')
+    return [{ type: 'complete' }];
+  return [];
+}
+
+function collapseStorylineNavigationCommands(commands = []) {
+  const list = Array.isArray(commands) ? commands : [];
+  const navigationPriority = (command) => {
+    if (command?.type === 'goToSlide' || command?.type === 'goToActivity') return 4;
+    if (command?.type === 'goRelative') return 3;
+    if (command?.type === 'complete') return 2;
+    return 0;
+  };
+  let selectedNavigationIndex = -1;
+  let selectedNavigationPriority = 0;
+  list.forEach((command, index) => {
+    const priority = navigationPriority(command);
+    if (priority && priority >= selectedNavigationPriority) {
+      selectedNavigationIndex = index;
+      selectedNavigationPriority = priority;
+    }
+  });
+  if (selectedNavigationIndex < 0) return list;
+  return list.filter(
+    (command, index) => !navigationPriority(command) || index === selectedNavigationIndex
+  );
+}
+
+export function getStorylineRuntimeCommandsForObject({
+  slide = {},
+  sourceId = '',
+  sourceObject = null,
+  when = 'onClick',
+  state = {},
+  variableDefinitions = [],
+} = {}) {
+  if (!slide) return [];
+
+  if (when === 'onClick') {
+    if (sourceObject?.selectionQuestionId) return [{ type: 'toggleSelection', objectId: sourceId }];
+    if (isStorylineCheckButton(sourceObject)) return [{ type: 'checkAnswer' }];
+    if (
+      sourceObject?.generatedBy === 'scene-template' &&
+      sourceObject?.sceneTemplateId === 'button-intro' &&
+      !isButtonIntroRuntimeControl(sourceObject)
+    ) {
+      if (sourceObject?.sceneTemplateDemoAction || isButtonIntroPlayPauseDemoButton(sourceObject)) {
+        return [
+          {
+            type: 'toggleDemoButtonState',
+            objectId: getButtonIntroDemoStateTargetId(sourceId, sourceObject),
+          },
+        ];
+      }
+      return [];
+    }
+  }
+
+  const context = {
+    variables: state.variables || {},
+    variableDefinitions,
+    objectStates: state.objectStates || {},
+    hiddenObjectIds: state.hiddenObjectIds || new Set(),
+    hidden: state.hidden || {},
+  };
+
+  const matchingTriggers = (slide.triggers || [])
+    .filter(
+      (trigger) =>
+        (trigger?.when || 'onClick') === when && getStorylineTriggerSourceMatches(trigger, sourceId)
+    )
+    .filter((trigger) => evaluateStorylineTriggerConditions(trigger, context));
+  const manualTriggers = matchingTriggers.filter((trigger) => !trigger.generatedBy);
+  const triggerCommands = collapseStorylineNavigationCommands(
+    (manualTriggers.length ? manualTriggers : matchingTriggers).flatMap((trigger) =>
+      getCommandsForTrigger(trigger, slide)
+    )
+  );
+  if (triggerCommands.length) return triggerCommands;
+
+  if (when === 'onClick') {
+    const sourceRuntimeAction = getRuntimeButtonAction(sourceObject || {});
+    const actionCommands = getStorylineRuntimeCommandsForAction(sourceRuntimeAction, { slide });
+    if (actionCommands.length) return actionCommands;
+  }
+
+  return [];
+}
+
+export function getStorylineRuntimeCommandsForDrop({
+  slide = {},
+  dragObject = null,
+  dropObject = null,
+  state = {},
+  variableDefinitions = [],
+  objects = null,
+} = {}) {
+  if (!slide || !dragObject || !dropObject) return [];
+
+  const context = {
+    variables: state.variables || {},
+    variableDefinitions,
+    objectStates: state.objectStates || {},
+    hiddenObjectIds: state.hiddenObjectIds || new Set(),
+    hidden: state.hidden || {},
+  };
+
+  const sourceIds = [dragObject?.id, dropObject?.id].filter(Boolean);
+  const result = evaluateStorylineRuntimeDragDrop({ slide, objects, state });
+  const dragKey = getStorylineRuntimeObjectKey(dragObject);
+  const activePlacement = (result.placements || []).find(
+    (entry) => entry.dragId === dragObject?.id || entry.dragKey === dragKey
+  );
+  const isCorrectDrop = !!(activePlacement && result.placementResult?.[activePlacement.id]);
+  const dropWhen = !dropObject ? null : isCorrectDrop ? 'onDropCorrect' : 'onDropIncorrect';
+
+  return (slide.triggers || [])
+    .filter((trigger) => {
+      const when = trigger?.when || 'onClick';
+      if (when === 'onDrop')
+        return sourceIds.some((sourceId) =>
+          getStorylineDropTriggerSourceMatches(trigger, sourceId)
+        );
+      if (dropWhen && when === dropWhen)
+        return sourceIds.some((sourceId) =>
+          getStorylineDropTriggerSourceMatches(trigger, sourceId)
+        );
+      return false;
+    })
+    .filter((trigger) => evaluateStorylineTriggerConditions(trigger, context))
+    .flatMap((trigger) => getCommandsForTrigger(trigger, slide));
+}

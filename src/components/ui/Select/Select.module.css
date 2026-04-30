@@ -1,0 +1,29 @@
+.field {
+  width: 100%;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--eic-type-xs);
+  color: var(--eic-shell-muted);
+  font-weight: 700;
+}
+
+.select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--eic-radius-md);
+  border: 1px solid var(--eic-shell-input-border);
+  background: var(--eic-shell-input-bg);
+  color: var(--eic-shell-text);
+  font-size: var(--eic-type-sm);
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.select:focus {
+  border-color: var(--eic-shell-accent);
+}

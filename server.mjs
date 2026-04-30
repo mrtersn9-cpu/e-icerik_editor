@@ -2,22 +2,56 @@ import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHmac, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 4001);
-const DATA_DIR = path.join(__dirname, "data");
+const DATA_DIR = path.resolve(process.env.EICERIK_DATA_DIR || path.join(__dirname, "data"));
 const DB_PATH = path.join(DATA_DIR, "e-icerik-editor.sqlite");
+const SECURITY_LOG_PATH = path.join(DATA_DIR, "security-events.log");
 const BUILD_DIR = path.join(__dirname, "build");
 const PDF_ANALYSIS_MODE = "offline";
-const FIXED_USERS = [
-  { id: "kullanici1", name: "Kullanici 1", password: "1234" },
-  { id: "kullanici2", name: "Kullanici 2", password: "1234" },
+const SEEDED_USERS = [
+  { id: "kullanici1", name: process.env.EICERIK_USER1_NAME || "Kullanici 1", password: process.env.EICERIK_USER1_PASSWORD || "1234" },
+  { id: "kullanici2", name: process.env.EICERIK_USER2_NAME || "Kullanici 2", password: process.env.EICERIK_USER2_PASSWORD || "1234" },
 ];
-const DEFAULT_USER_ID = FIXED_USERS[0].id;
-const SESSION_TTL_MS = 20_000;
+const DEFAULT_USER_ID = SEEDED_USERS[0].id;
+const SESSION_TTL_MS = Number(process.env.EICERIK_SESSION_TTL_MS || 60_000);
+const SESSION_TOKEN_TTL_MS = Number(process.env.EICERIK_SESSION_TOKEN_TTL_MS || 8 * 60 * 60_000);
+const SESSION_TOKEN_SECRET = process.env.EICERIK_SESSION_TOKEN_SECRET || `dev-${DB_PATH}`;
+const ADMIN_TOKEN = String(process.env.EICERIK_ADMIN_TOKEN || "").trim();
+const PASSWORD_HASH_ITERATIONS = Number(process.env.EICERIK_PASSWORD_ITERATIONS || 120_000);
+const LOGIN_RATE_WINDOW_MS = Number(process.env.EICERIK_LOGIN_RATE_WINDOW_MS || 5 * 60_000);
+const LOGIN_RATE_MAX_ATTEMPTS = Number(process.env.EICERIK_LOGIN_RATE_MAX_ATTEMPTS || 5);
+const LOGIN_RATE_LOCK_MS = Number(process.env.EICERIK_LOGIN_RATE_LOCK_MS || 10 * 60_000);
+const FORCE_KICK_GRACE_MS = Number(process.env.EICERIK_FORCE_KICK_GRACE_MS || 30_000);
+const loginAttemptBuckets = new Map();
+const pendingKickRequests = new Map();
+const SENSITIVE_LMS_KEYS = ["xapiKey", "xapiSecret", "ltiConsumerKey", "ltiSharedSecret"];
+const REDACTED_SECRET_VALUE = "__REDACTED_SECRET__";
+const DEFAULT_ALLOWED_ORIGINS = [
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+const ALLOWED_ORIGINS = new Set(
+  String(process.env.EICERIK_ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(","))
+    .split(",")
+    .map(origin => origin.trim())
+    .filter(Boolean),
+);
+const BODY_LIMIT_BYTES = Number(process.env.EICERIK_BODY_LIMIT_BYTES || 10_000_000);
+
+if (!process.env.EICERIK_USER1_PASSWORD || !process.env.EICERIK_USER2_PASSWORD) {
+  console.warn("Uyari: Varsayilan gelistirme sifreleri aktif. Canli ortamda EICERIK_USER1_PASSWORD ve EICERIK_USER2_PASSWORD tanimlayin.");
+}
+
+if (!process.env.EICERIK_SESSION_TOKEN_SECRET) {
+  console.warn("Uyari: Gelistirme session token secret'i aktif. Canli ortamda EICERIK_SESSION_TOKEN_SECRET tanimlayin.");
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -64,13 +98,37 @@ db.exec(`
     last_seen_at TEXT NOT NULL,
     PRIMARY KEY (project_id, book_id)
   );
+
+  CREATE TABLE IF NOT EXISTS editor_users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS review_threads (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    slide_ref TEXT,
+    user_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    parent_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 ensureProjectColumn("created_at", "ALTER TABLE projects ADD COLUMN created_at TEXT");
 ensureProjectColumn("published_version_id", "ALTER TABLE projects ADD COLUMN published_version_id TEXT");
 ensureProjectColumn("user_id", "ALTER TABLE projects ADD COLUMN user_id TEXT");
+ensureEditorUserColumn("active", "ALTER TABLE editor_users ADD COLUMN active INTEGER NOT NULL DEFAULT 1");
+ensureSeedUsers();
 db.exec(`UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ''`);
 db.prepare("UPDATE projects SET user_id = ? WHERE user_id IS NULL OR user_id = ''").run(DEFAULT_USER_ID);
+scrubStoredSecrets();
 
 function ensureProjectColumn(columnName, sql) {
   const columns = db.prepare("PRAGMA table_info(projects)").all();
@@ -79,22 +137,278 @@ function ensureProjectColumn(columnName, sql) {
   }
 }
 
-function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-User-Id, X-Session-Id",
+function ensureEditorUserColumn(columnName, sql) {
+  const columns = db.prepare("PRAGMA table_info(editor_users)").all();
+  if (!columns.some(column => column.name === columnName)) {
+    db.exec(sql);
+  }
+}
+
+function createPasswordRecord(password) {
+  const salt = randomBytes(16).toString("hex");
+  const hash = pbkdf2Sync(String(password || ""), salt, PASSWORD_HASH_ITERATIONS, 32, "sha256").toString("hex");
+  return { hash, salt };
+}
+
+function verifyPassword(user, suppliedPassword) {
+  if (!user?.passwordHash || !user?.passwordSalt) return false;
+  const suppliedHash = pbkdf2Sync(String(suppliedPassword || ""), user.passwordSalt, PASSWORD_HASH_ITERATIONS, 32, "sha256");
+  const storedHash = Buffer.from(user.passwordHash, "hex");
+  return storedHash.length === suppliedHash.length && timingSafeEqual(storedHash, suppliedHash);
+}
+
+function ensureSeedUsers() {
+  const now = new Date().toISOString();
+  SEEDED_USERS.forEach((seedUser, index) => {
+    const envPasswordProvided = Boolean(process.env[`EICERIK_USER${index + 1}_PASSWORD`]);
+    const existing = db.prepare("SELECT id FROM editor_users WHERE id = ?").get(seedUser.id);
+    if (existing && !envPasswordProvided) {
+      db.prepare("UPDATE editor_users SET name = ?, active = 1, updated_at = ? WHERE id = ?").run(seedUser.name, now, seedUser.id);
+      return;
+    }
+    const passwordRecord = createPasswordRecord(seedUser.password);
+    db.prepare(`
+      INSERT INTO editor_users (id, name, password_hash, password_salt, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        password_hash = excluded.password_hash,
+        password_salt = excluded.password_salt,
+        active = excluded.active,
+        updated_at = excluded.updated_at
+    `).run(seedUser.id, seedUser.name, passwordRecord.hash, passwordRecord.salt, now, now);
   });
+}
+
+function logSecurityEvent(type, details = {}) {
+  const entry = {
+    time: new Date().toISOString(),
+    type,
+    ...details,
+  };
+  try {
+    fs.appendFileSync(SECURITY_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
+  } catch {}
+}
+
+function parseSecurityFilterTime(value = "", endOfDay = false) {
+  const cleanValue = String(value || "").trim();
+  if (!cleanValue) return null;
+  const normalized = cleanValue.includes("T") ? cleanValue : `${cleanValue}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`;
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function eventMatchesSecurityFilters(event = {}, filters = {}) {
+  const type = String(filters.type || "").trim().toLowerCase();
+  const userId = String(filters.userId || "").trim().toLowerCase();
+  const from = parseSecurityFilterTime(filters.from);
+  const to = parseSecurityFilterTime(filters.to, true);
+  if (type && !String(event.type || "").toLowerCase().includes(type)) return false;
+  if (userId && !String(event.userId || event.user_id || "").toLowerCase().includes(userId)) return false;
+  const eventTime = Date.parse(event.time || "");
+  if (from != null && (!Number.isFinite(eventTime) || eventTime < from)) return false;
+  if (to != null && (!Number.isFinite(eventTime) || eventTime > to)) return false;
+  return true;
+}
+
+function listSecurityEvents(limit = 100, filters = {}) {
+  const resolvedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+  try {
+    if (!fs.existsSync(SECURITY_LOG_PATH)) return [];
+    return fs.readFileSync(SECURITY_LOG_PATH, "utf8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return { time: "", type: "unparsed_log_line" };
+        }
+      })
+      .filter(event => eventMatchesSecurityFilters(event, filters))
+      .slice(-resolvedLimit)
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+function getRequestIp(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || req.socket?.remoteAddress || "unknown";
+}
+
+function getLoginRateKey(req, userId) {
+  return `${getRequestIp(req)}:${String(userId || "unknown").trim() || "unknown"}`;
+}
+
+function getLoginRateStatus(req, userId) {
+  const key = getLoginRateKey(req, userId);
+  const now = Date.now();
+  const bucket = loginAttemptBuckets.get(key);
+  if (!bucket) return { limited: false, key, waitSeconds: 0 };
+  if (bucket.lockUntil && bucket.lockUntil > now) {
+    return { limited: true, key, waitSeconds: Math.ceil((bucket.lockUntil - now) / 1000) };
+  }
+  if (bucket.windowStart + LOGIN_RATE_WINDOW_MS <= now) {
+    loginAttemptBuckets.delete(key);
+    return { limited: false, key, waitSeconds: 0 };
+  }
+  return { limited: false, key, waitSeconds: 0 };
+}
+
+function recordFailedLogin(rateKey) {
+  const now = Date.now();
+  const current = loginAttemptBuckets.get(rateKey);
+  const bucket = current && current.windowStart + LOGIN_RATE_WINDOW_MS > now
+    ? current
+    : { count: 0, windowStart: now, lockUntil: 0 };
+  bucket.count += 1;
+  if (bucket.count >= LOGIN_RATE_MAX_ATTEMPTS) {
+    bucket.lockUntil = now + LOGIN_RATE_LOCK_MS;
+  }
+  loginAttemptBuckets.set(rateKey, bucket);
+  return bucket.lockUntil > now ? Math.ceil((bucket.lockUntil - now) / 1000) : 0;
+}
+
+function clearLoginFailures(req, userId) {
+  loginAttemptBuckets.delete(getLoginRateKey(req, userId));
+}
+
+function base64UrlJson(payload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function signTokenPayload(payloadPart) {
+  return createHmac("sha256", SESSION_TOKEN_SECRET).update(payloadPart).digest("base64url");
+}
+
+function createSessionToken(userId, sessionId) {
+  const expiresAt = Date.now() + SESSION_TOKEN_TTL_MS;
+  const payloadPart = base64UrlJson({ userId, sessionId, exp: expiresAt });
+  return {
+    token: `${payloadPart}.${signTokenPayload(payloadPart)}`,
+    expiresAt,
+  };
+}
+
+function verifySessionToken(token = "") {
+  const [payloadPart, signature] = String(token || "").split(".");
+  if (!payloadPart || !signature) return null;
+  try {
+    const expected = signTokenPayload(payloadPart);
+    const supplied = Buffer.from(signature, "base64url");
+    const expectedBuffer = Buffer.from(expected, "base64url");
+    if (supplied.length !== expectedBuffer.length || !timingSafeEqual(supplied, expectedBuffer)) return null;
+    const payload = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"));
+    if (!payload?.userId || !payload?.sessionId || Number(payload.exp || 0) <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getBearerToken(req) {
+  const header = String(req.headers.authorization || "").trim();
+  if (!header.toLowerCase().startsWith("bearer ")) return "";
+  return header.slice(7).trim();
+}
+
+function resolveRequestSession(req) {
+  const token = getBearerToken(req);
+  if (token) {
+    const payload = verifySessionToken(token);
+    if (!payload) return { userId: "", sessionId: "", tokenInvalid: true };
+    return { userId: payload.userId, sessionId: payload.sessionId, tokenValid: true };
+  }
+  return {
+    userId: req.headers["x-user-id"],
+    sessionId: req.headers["x-session-id"],
+    tokenValid: false,
+  };
+}
+
+function createKickRequest(userId, requesterSessionId, sessionLabel = "") {
+  const current = pendingKickRequests.get(userId);
+  const now = Date.now();
+  if (current && current.requesterSessionId === requesterSessionId && current.expiresAt > now) {
+    return current;
+  }
+  const request = {
+    requesterSessionId,
+    sessionLabel,
+    requestedAt: now,
+    expiresAt: now + Math.max(FORCE_KICK_GRACE_MS * 3, FORCE_KICK_GRACE_MS + 30_000),
+  };
+  pendingKickRequests.set(userId, request);
+  return request;
+}
+
+function getActiveKickRequest(userId) {
+  const request = pendingKickRequests.get(userId);
+  if (!request) return null;
+  if (request.expiresAt <= Date.now()) {
+    pendingKickRequests.delete(userId);
+    return null;
+  }
+  return request;
+}
+
+function getKickWaitSeconds(request) {
+  if (!request) return 0;
+  return Math.max(0, Math.ceil((request.requestedAt + FORCE_KICK_GRACE_MS - Date.now()) / 1000));
+}
+
+function resolveCorsOrigin(req) {
+  const origin = String(req?.headers?.origin || "").trim();
+  if (!origin) return "";
+  return ALLOWED_ORIGINS.has(origin) ? origin : "";
+}
+
+function securityHeaders(res, contentType) {
+  return {
+    "Content-Type": contentType,
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    ...(res.__corsOrigin ? {
+      "Access-Control-Allow-Origin": res.__corsOrigin,
+      "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token, X-User-Id, X-Session-Id",
+      "Access-Control-Max-Age": "600",
+      "Vary": "Origin",
+    } : {}),
+  };
+}
+
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, securityHeaders(res, "application/json; charset=utf-8"));
   res.end(JSON.stringify(data));
 }
 
 function sendText(res, statusCode, text, contentType = "text/plain; charset=utf-8") {
-  res.writeHead(statusCode, {
-    "Content-Type": contentType,
-    "Access-Control-Allow-Origin": "*",
-  });
+  res.writeHead(statusCode, securityHeaders(res, contentType));
   res.end(text);
+}
+
+function sendError(res, statusCode, message, code = "") {
+  sendJson(res, statusCode, { ok: false, error: message, ...(code ? { code } : {}) });
+}
+
+function ensureAllowedOrigin(req, res) {
+  res.__corsOrigin = resolveCorsOrigin(req);
+  if (req.headers.origin && !res.__corsOrigin) {
+    logSecurityEvent("origin_denied", {
+      origin: String(req.headers.origin || ""),
+      path: String(req.url || ""),
+      ip: getRequestIp(req),
+    });
+    sendError(res, 403, "Origin not allowed", "ORIGIN_NOT_ALLOWED");
+    return false;
+  }
+  return true;
 }
 
 function readBody(req) {
@@ -102,8 +416,10 @@ function readBody(req) {
     let data = "";
     req.on("data", chunk => {
       data += chunk;
-      if (data.length > 10_000_000) {
-        reject(new Error("Body too large"));
+      if (Buffer.byteLength(data, "utf8") > BODY_LIMIT_BYTES) {
+        const error = new Error("Body too large");
+        error.statusCode = 413;
+        reject(error);
         req.destroy();
       }
     });
@@ -113,10 +429,18 @@ function readBody(req) {
         return;
       }
 
+      const contentType = String(req.headers["content-type"] || "");
+      if (contentType && !contentType.includes("application/json")) {
+        reject(new Error("Unsupported Content-Type, expected application/json"));
+        return;
+      }
+
       try {
         resolve(JSON.parse(data));
-      } catch {
-        reject(new Error("Invalid JSON"));
+      } catch (err) {
+        const error = new SyntaxError("Invalid JSON");
+        error.statusCode = 400;
+        reject(error);
       }
     });
     req.on("error", reject);
@@ -157,6 +481,94 @@ function parseJson(text, fallback = null) {
     return JSON.parse(text);
   } catch {
     return fallback;
+  }
+}
+
+function scrubLmsConfig(config = null) {
+  if (!config || typeof config !== "object") return { value: config, changed: false };
+  let changed = false;
+  const next = { ...config };
+  SENSITIVE_LMS_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(next, key) && next[key] !== "") {
+      next[key] = "";
+      changed = true;
+    }
+    if (next[key] === REDACTED_SECRET_VALUE) {
+      next[key] = "";
+      changed = true;
+    }
+  });
+  return { value: next, changed };
+}
+
+function scrubEditorPayloadSecrets(payload = null) {
+  if (!payload || typeof payload !== "object") return { value: payload, changed: false };
+  let changed = false;
+  const next = Array.isArray(payload) ? [...payload] : { ...payload };
+
+  if (next.lmsConfig && typeof next.lmsConfig === "object") {
+    const scrubbed = scrubLmsConfig(next.lmsConfig);
+    if (scrubbed.changed) {
+      next.lmsConfig = scrubbed.value;
+      changed = true;
+    }
+  }
+
+  if (Array.isArray(next.activities)) {
+    next.activities = next.activities.map((activity) => {
+      if (!activity?.lmsConfig || typeof activity.lmsConfig !== "object") return activity;
+      const scrubbed = scrubLmsConfig(activity.lmsConfig);
+      if (!scrubbed.changed) return activity;
+      changed = true;
+      return { ...activity, lmsConfig: scrubbed.value };
+    });
+  }
+
+  if (next.workspaceVersion === 2 && next.users && typeof next.users === "object") {
+    const scrubbedUsers = {};
+    Object.entries(next.users).forEach(([userId, userPayload]) => {
+      const scrubbed = scrubEditorPayloadSecrets(userPayload);
+      scrubbedUsers[userId] = scrubbed.value;
+      if (scrubbed.changed) changed = true;
+    });
+    next.users = scrubbedUsers;
+  }
+
+  return { value: next, changed };
+}
+
+function scrubStoredSecrets() {
+  let scrubbedCount = 0;
+  const appState = db.prepare("SELECT id, payload FROM app_state WHERE id = 1").get();
+  if (appState?.payload) {
+    const parsed = parseJson(appState.payload, null);
+    const scrubbed = scrubEditorPayloadSecrets(parsed);
+    if (scrubbed.changed) {
+      db.prepare("UPDATE app_state SET payload = ?, updated_at = ? WHERE id = 1").run(JSON.stringify(scrubbed.value), new Date().toISOString());
+      scrubbedCount += 1;
+    }
+  }
+
+  db.prepare("SELECT id, payload FROM projects").all().forEach((row) => {
+    const parsed = parseJson(row.payload, null);
+    const scrubbed = scrubEditorPayloadSecrets(parsed);
+    if (scrubbed.changed) {
+      db.prepare("UPDATE projects SET payload = ? WHERE id = ?").run(JSON.stringify(scrubbed.value), row.id);
+      scrubbedCount += 1;
+    }
+  });
+
+  db.prepare("SELECT id, payload FROM project_versions").all().forEach((row) => {
+    const parsed = parseJson(row.payload, null);
+    const scrubbed = scrubEditorPayloadSecrets(parsed);
+    if (scrubbed.changed) {
+      db.prepare("UPDATE project_versions SET payload = ? WHERE id = ?").run(JSON.stringify(scrubbed.value), row.id);
+      scrubbedCount += 1;
+    }
+  });
+
+  if (scrubbedCount) {
+    console.log(`Guvenlik migrasyonu: ${scrubbedCount} kayittan LMS/xAPI gizli alanlari temizlendi.`);
   }
 }
 
@@ -284,7 +696,82 @@ function getAppState() {
 }
 
 function resolveFixedUser(userId) {
-  return FIXED_USERS.find(user => user.id === String(userId || "").trim()) || null;
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  const row = db.prepare("SELECT id, name, password_hash, password_salt, active FROM editor_users WHERE id = ?").get(id);
+  if (!row || Number(row.active) !== 1) return null;
+  return row ? {
+    id: row.id,
+    name: row.name,
+    passwordHash: row.password_hash,
+    passwordSalt: row.password_salt,
+  } : null;
+}
+
+function normalizeAdminUserId(userId) {
+  const id = String(userId || "").trim();
+  return /^[A-Za-z0-9_.@-]{2,64}$/.test(id) ? id : "";
+}
+
+function normalizeUserName(name, fallback = "") {
+  const value = String(name ?? "").trim();
+  return (value || fallback || "Kullanici").slice(0, 120);
+}
+
+function getEditorUserRecord(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  const row = db.prepare(`
+    SELECT id, name, active, created_at, updated_at
+    FROM editor_users
+    WHERE id = ?
+  `).get(id);
+  return row ? {
+    id: row.id,
+    name: row.name,
+    active: Number(row.active) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } : null;
+}
+
+function listEditorUsers() {
+  return db.prepare(`
+    SELECT id, name, active, created_at, updated_at
+    FROM editor_users
+    ORDER BY id COLLATE NOCASE
+  `).all().map(row => ({
+    id: row.id,
+    name: row.name,
+    active: Number(row.active) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+function revokeUserSessions(userId) {
+  db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(userId);
+  db.prepare("DELETE FROM book_locks WHERE user_id = ?").run(userId);
+  pendingKickRequests.delete(userId);
+}
+
+function constantTimeStringEquals(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""), "utf8");
+  const rightBuffer = Buffer.from(String(right || ""), "utf8");
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isAdminRequestAuthorized(req) {
+  if (!ADMIN_TOKEN) return false;
+  return constantTimeStringEquals(req.headers["x-admin-token"], ADMIN_TOKEN);
+}
+
+function decodePathSegment(segment) {
+  try {
+    return decodeURIComponent(String(segment || ""));
+  } catch {
+    return "";
+  }
 }
 
 function nowIso() {
@@ -295,6 +782,11 @@ function cleanupExpiredSessions() {
   const threshold = new Date(Date.now() - SESSION_TTL_MS).toISOString();
   db.prepare("DELETE FROM user_sessions WHERE last_seen_at < ?").run(threshold);
   db.prepare("DELETE FROM book_locks WHERE last_seen_at < ?").run(threshold);
+  [...pendingKickRequests.keys()].forEach((userId) => {
+    if (!db.prepare("SELECT 1 FROM user_sessions WHERE user_id = ? LIMIT 1").get(userId)) {
+      pendingKickRequests.delete(userId);
+    }
+  });
 }
 
 function getUserSession(userId) {
@@ -380,6 +872,7 @@ function touchUserSession(userId, sessionId) {
 function releaseUserSession(userId, sessionId) {
   db.prepare("DELETE FROM user_sessions WHERE user_id = ? AND session_id = ?").run(userId, String(sessionId || "").trim());
   db.prepare("DELETE FROM book_locks WHERE user_id = ? AND session_id = ?").run(userId, String(sessionId || "").trim());
+  pendingKickRequests.delete(userId);
 }
 
 function buildBookLockPayload(row) {
@@ -517,15 +1010,15 @@ function getWorkspaceMeta(userId) {
 
 function listProjects(userId) {
   return db
-    .prepare("SELECT id, user_id, name, saved_at, created_at, published_version_id FROM projects ORDER BY saved_at DESC")
-    .all()
+    .prepare("SELECT id, user_id, name, saved_at, created_at, published_version_id FROM projects WHERE user_id = ? ORDER BY saved_at DESC")
+    .all(userId)
     .map(projectSummaryFromRow);
 }
 
 function getProject(projectId, userId) {
   const row = db
-    .prepare("SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ?")
-    .get(projectId);
+    .prepare("SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ? AND user_id = ?")
+    .get(projectId, userId);
   if (!row) return null;
   return {
     id: row.id,
@@ -551,7 +1044,7 @@ function getProjectSummary(projectId, userId) {
 }
 
 function projectExists(projectId, userId) {
-  return Boolean(db.prepare("SELECT 1 FROM projects WHERE id = ? LIMIT 1").get(projectId));
+  return Boolean(db.prepare("SELECT 1 FROM projects WHERE id = ? AND user_id = ? LIMIT 1").get(projectId, userId));
 }
 
 function createProject(userId, name, state) {
@@ -573,8 +1066,8 @@ function saveProjectDraft(userId, projectId, state, name = null) {
   db.prepare(`
     UPDATE projects
     SET name = ?, payload = ?, saved_at = ?
-    WHERE id = ?
-  `).run(projectName, JSON.stringify(state || {}), timestamp, projectId);
+    WHERE id = ? AND user_id = ?
+  `).run(projectName, JSON.stringify(state || {}), timestamp, projectId, userId);
   return getProject(projectId, userId);
 }
 
@@ -616,7 +1109,7 @@ function createProjectVersion(userId, projectId, label, publish = false, stateOv
   `).run(versionId, projectId, versionNo, versionLabel, JSON.stringify(payload), createdAt, publish ? 1 : 0);
 
   if (publish) {
-    db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(versionId, projectId);
+    db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(versionId, projectId, userId);
   }
 
   return {
@@ -634,7 +1127,7 @@ function restoreProjectVersion(userId, projectId, versionId) {
   const row = db.prepare("SELECT payload FROM project_versions WHERE id = ? AND project_id = ?").get(versionId, projectId);
   if (!row) throw new Error("Version not found");
   const savedAt = new Date().toISOString();
-  db.prepare("UPDATE projects SET payload = ?, saved_at = ? WHERE id = ?").run(row.payload, savedAt, projectId);
+  db.prepare("UPDATE projects SET payload = ?, saved_at = ? WHERE id = ? AND user_id = ?").run(row.payload, savedAt, projectId, userId);
 }
 
 function publishProjectVersion(userId, projectId, versionId) {
@@ -643,13 +1136,13 @@ function publishProjectVersion(userId, projectId, versionId) {
   if (!row) throw new Error("Version not found");
   db.prepare("UPDATE project_versions SET is_published = 0 WHERE project_id = ?").run(projectId);
   db.prepare("UPDATE project_versions SET is_published = 1 WHERE id = ?").run(versionId);
-  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(versionId, projectId);
+  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(versionId, projectId, userId);
 }
 
 function deleteProject(userId, projectId) {
   if (!projectExists(projectId, userId)) throw new Error("Project not found");
   db.prepare("DELETE FROM project_versions WHERE project_id = ?").run(projectId);
-  db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+  db.prepare("DELETE FROM projects WHERE id = ? AND user_id = ?").run(projectId, userId);
   db.prepare("DELETE FROM book_locks WHERE project_id = ?").run(projectId);
 }
 
@@ -657,7 +1150,7 @@ function deleteProjectVersion(userId, projectId, versionId) {
   if (!projectExists(projectId, userId)) throw new Error("Project not found");
   db.prepare("DELETE FROM project_versions WHERE id = ? AND project_id = ?").run(versionId, projectId);
   const remainingPublished = db.prepare("SELECT id FROM project_versions WHERE project_id = ? AND is_published = 1 LIMIT 1").get(projectId);
-  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(remainingPublished?.id || null, projectId);
+  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(remainingPublished?.id || null, projectId, userId);
 }
 
 function duplicateProject(userId, projectId) {
@@ -705,9 +1198,23 @@ function ensureWorkspace(userId) {
 }
 
 function serveStatic(req, res) {
-  const requestPath = req.url === "/" ? "/index.html" : req.url;
-  const safePath = path.normalize(requestPath).replace(/^(\.\.[/\\])+/, "");
-  const filePath = path.join(BUILD_DIR, safePath);
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const requestPath = parsedUrl.pathname === "/" ? "/index.html" : parsedUrl.pathname;
+  let decodedPath = "";
+  try {
+    decodedPath = decodeURIComponent(requestPath);
+  } catch {
+    sendError(res, 400, "Invalid path");
+    return true;
+  }
+  const safePath = path.normalize(decodedPath).replace(/^[/\\]+/, "");
+  const filePath = path.resolve(BUILD_DIR, safePath);
+  const buildRoot = path.resolve(BUILD_DIR);
+
+  if (filePath !== buildRoot && !filePath.startsWith(`${buildRoot}${path.sep}`)) {
+    sendError(res, 403, "Forbidden");
+    return true;
+  }
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     const ext = path.extname(filePath).toLowerCase();
@@ -732,24 +1239,142 @@ function serveStatic(req, res) {
   return false;
 }
 
+async function handleAdminRequest(req, res, url) {
+  if (!ADMIN_TOKEN) {
+    logSecurityEvent("admin_disabled_request", { path: url.pathname, ip: getRequestIp(req) });
+    sendJson(res, 503, { ok: false, code: "ADMIN_DISABLED", error: "Admin API devre disi" });
+    return;
+  }
+
+  if (!isAdminRequestAuthorized(req)) {
+    logSecurityEvent("admin_auth_failed", { path: url.pathname, ip: getRequestIp(req) });
+    sendJson(res, 403, { ok: false, code: "ADMIN_FORBIDDEN", error: "Admin yetkisi gerekli" });
+    return;
+  }
+
+  if (url.pathname === "/api/admin/users" && req.method === "GET") {
+    sendJson(res, 200, { ok: true, users: listEditorUsers() });
+    return;
+  }
+
+  if (url.pathname === "/api/admin/security-events" && req.method === "GET") {
+    const limit = Number(url.searchParams.get("limit") || 100);
+    const filters = {
+      type: url.searchParams.get("type") || "",
+      userId: url.searchParams.get("userId") || "",
+      from: url.searchParams.get("from") || "",
+      to: url.searchParams.get("to") || "",
+    };
+    sendJson(res, 200, { ok: true, events: listSecurityEvents(limit, filters) });
+    return;
+  }
+
+  if (url.pathname === "/api/admin/users" && req.method === "POST") {
+    const body = await readBody(req);
+    const userId = normalizeAdminUserId(body.id);
+    const password = String(body.password || "");
+    if (!userId) {
+      sendJson(res, 400, { ok: false, code: "INVALID_USER_ID", error: "Gecerli bir kullanici id girin" });
+      return;
+    }
+    if (password.length < 4) {
+      sendJson(res, 400, { ok: false, code: "INVALID_PASSWORD", error: "Sifre en az 4 karakter olmali" });
+      return;
+    }
+    if (getEditorUserRecord(userId)) {
+      sendJson(res, 409, { ok: false, code: "USER_EXISTS", error: "Kullanici zaten var" });
+      return;
+    }
+
+    const now = nowIso();
+    const passwordRecord = createPasswordRecord(password);
+    const active = body.active === false ? 0 : 1;
+    const name = normalizeUserName(body.name, userId);
+    db.prepare(`
+      INSERT INTO editor_users (id, name, password_hash, password_salt, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, name, passwordRecord.hash, passwordRecord.salt, active, now, now);
+    logSecurityEvent("admin_user_created", { userId, active: Boolean(active), ip: getRequestIp(req) });
+    sendJson(res, 201, { ok: true, user: getEditorUserRecord(userId) });
+    return;
+  }
+
+  const passwordMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/password$/);
+  if (passwordMatch && req.method === "PUT") {
+    const userId = normalizeAdminUserId(decodePathSegment(passwordMatch[1]));
+    const existing = getEditorUserRecord(userId);
+    const body = await readBody(req);
+    const password = String(body.password || "");
+    if (!existing) {
+      sendJson(res, 404, { ok: false, code: "USER_NOT_FOUND", error: "Kullanici bulunamadi" });
+      return;
+    }
+    if (password.length < 4) {
+      sendJson(res, 400, { ok: false, code: "INVALID_PASSWORD", error: "Sifre en az 4 karakter olmali" });
+      return;
+    }
+    const passwordRecord = createPasswordRecord(password);
+    db.prepare(`
+      UPDATE editor_users
+      SET password_hash = ?, password_salt = ?, updated_at = ?
+      WHERE id = ?
+    `).run(passwordRecord.hash, passwordRecord.salt, nowIso(), userId);
+    revokeUserSessions(userId);
+    logSecurityEvent("admin_password_changed", { userId, ip: getRequestIp(req) });
+    sendJson(res, 200, { ok: true, user: getEditorUserRecord(userId) });
+    return;
+  }
+
+  const userMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (userMatch && req.method === "PATCH") {
+    const userId = normalizeAdminUserId(decodePathSegment(userMatch[1]));
+    const existing = getEditorUserRecord(userId);
+    if (!existing) {
+      sendJson(res, 404, { ok: false, code: "USER_NOT_FOUND", error: "Kullanici bulunamadi" });
+      return;
+    }
+    const body = await readBody(req);
+    const nextName = Object.hasOwn(body, "name") ? normalizeUserName(body.name, existing.name) : existing.name;
+    const nextActive = Object.hasOwn(body, "active") ? (body.active === false ? 0 : 1) : (existing.active ? 1 : 0);
+    db.prepare(`
+      UPDATE editor_users
+      SET name = ?, active = ?, updated_at = ?
+      WHERE id = ?
+    `).run(nextName, nextActive, nowIso(), userId);
+    if (!nextActive) revokeUserSessions(userId);
+    logSecurityEvent("admin_user_updated", { userId, active: Boolean(nextActive), ip: getRequestIp(req) });
+    sendJson(res, 200, { ok: true, user: getEditorUserRecord(userId) });
+    return;
+  }
+
+  sendJson(res, 404, { ok: false, error: "Admin endpoint not found" });
+}
+
 const server = http.createServer(async (req, res) => {
   try {
+    if (!ensureAllowedOrigin(req, res)) return;
+
     if (req.method === "OPTIONS") {
       sendJson(res, 200, { ok: true });
       return;
     }
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
     if (url.pathname === "/api/health") {
-      sendJson(res, 200, { ok: true, dbPath: DB_PATH });
+      sendJson(res, 200, { ok: true });
       return;
     }
 
     if (url.pathname === "/api/auth/status" && req.method === "POST") {
       const body = await readBody(req);
-      const userId = String(body.userId || "").trim();
-      const sessionId = String(body.sessionId || "").trim();
+      const requestSession = resolveRequestSession(req);
+      if (requestSession.tokenInvalid) {
+        sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
+        return;
+      }
+      const userId = String(body.userId || requestSession.userId || "").trim();
+      const sessionId = String(body.sessionId || requestSession.sessionId || "").trim();
       const user = resolveFixedUser(userId);
       if (!user) {
         sendJson(res, 404, { ok: false, error: "Kullanici bulunamadi" });
@@ -774,33 +1399,104 @@ const server = http.createServer(async (req, res) => {
       const password = String(body.password || "");
       const sessionId = String(body.sessionId || "").trim();
       const sessionLabel = String(body.sessionLabel || "").trim();
-      const user = resolveFixedUser(userId);
-      if (!user || user.password !== password) {
-        sendJson(res, 401, { ok: false, error: "Kullanici bilgileri hatali" });
-        return;
-      }
-      const claimed = claimUserSession(user.id, sessionId, sessionLabel);
-      if (!claimed.ok) {
-        sendJson(res, 409, {
+      const force = body.force === true;
+      const rateStatus = getLoginRateStatus(req, userId);
+      if (rateStatus.limited) {
+        logSecurityEvent("login_rate_limited", { userId, ip: getRequestIp(req), waitSeconds: rateStatus.waitSeconds });
+        sendJson(res, 429, {
           ok: false,
-          code: "USER_LOCKED",
-          error: "Bu kullanici baska bir cihazda acik. Cikis yapilana kadar beklenmeli.",
-          session: claimed.session,
+          code: "LOGIN_RATE_LIMITED",
+          error: `Cok fazla hatali giris denemesi. ${rateStatus.waitSeconds} saniye sonra tekrar deneyin.`,
+          waitSeconds: rateStatus.waitSeconds,
         });
         return;
       }
+      const user = resolveFixedUser(userId);
+      if (!user || !verifyPassword(user, password)) {
+        const waitSeconds = recordFailedLogin(rateStatus.key);
+        logSecurityEvent(waitSeconds ? "login_rate_limited" : "login_failed", {
+          userId,
+          ip: getRequestIp(req),
+          ...(waitSeconds ? { waitSeconds } : {}),
+        });
+        sendJson(res, waitSeconds ? 429 : 401, {
+          ok: false,
+          code: waitSeconds ? "LOGIN_RATE_LIMITED" : "INVALID_LOGIN",
+          error: waitSeconds
+            ? `Cok fazla hatali giris denemesi. ${waitSeconds} saniye sonra tekrar deneyin.`
+            : "Kullanici bilgileri hatali",
+          ...(waitSeconds ? { waitSeconds } : {}),
+        });
+        return;
+      }
+
+      clearLoginFailures(req, user.id);
+      const currentSession = getUserSession(user.id);
+      if (currentSession && currentSession.session_id !== sessionId) {
+        const kickRequest = createKickRequest(user.id, sessionId, sessionLabel);
+        const waitSeconds = getKickWaitSeconds(kickRequest);
+        if (!force || waitSeconds > 0) {
+          logSecurityEvent("session_kick_requested", {
+            userId: user.id,
+            ip: getRequestIp(req),
+            waitSeconds,
+          });
+          sendJson(res, 409, {
+            ok: false,
+            code: "USER_LOCKED",
+            error: force && waitSeconds > 0
+              ? `Cikis istegi gonderildi. ${waitSeconds} saniye sonra zorla devralabilirsiniz.`
+              : "Bu kullanici baska bir cihazda acik. Diger oturuma cikis istegi gonderildi.",
+            session: buildSessionPayload(currentSession),
+            kickPending: true,
+            waitSeconds,
+          });
+          return;
+        }
+        releaseUserSession(user.id, currentSession.session_id);
+        logSecurityEvent("session_force_takeover", { userId: user.id, ip: getRequestIp(req) });
+      }
+
+      const claimed = claimUserSession(user.id, sessionId, sessionLabel);
+      if (!claimed.ok) {
+        const kickRequest = createKickRequest(user.id, sessionId, sessionLabel);
+        logSecurityEvent("session_kick_requested", {
+          userId: user.id,
+          ip: getRequestIp(req),
+          waitSeconds: getKickWaitSeconds(kickRequest),
+        });
+        sendJson(res, 409, {
+          ok: false,
+          code: "USER_LOCKED",
+          error: "Bu kullanici baska bir cihazda acik. Diger oturuma cikis istegi gonderildi.",
+          session: claimed.session,
+          kickPending: true,
+          waitSeconds: getKickWaitSeconds(kickRequest),
+        });
+        return;
+      }
+      pendingKickRequests.delete(user.id);
+      const sessionToken = createSessionToken(user.id, sessionId);
+      logSecurityEvent("login_success", { userId: user.id, ip: getRequestIp(req) });
       sendJson(res, 200, {
         ok: true,
         user: { id: user.id, name: user.name },
         session: claimed.session,
+        token: sessionToken.token,
+        tokenExpiresAt: sessionToken.expiresAt,
       });
       return;
     }
 
     if (url.pathname === "/api/auth/heartbeat" && req.method === "POST") {
       const body = await readBody(req);
-      const userId = String(body.userId || "").trim();
-      const sessionId = String(body.sessionId || "").trim();
+      const requestSession = resolveRequestSession(req);
+      if (requestSession.tokenInvalid) {
+        sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
+        return;
+      }
+      const userId = String(body.userId || requestSession.userId || "").trim();
+      const sessionId = String(body.sessionId || requestSession.sessionId || "").trim();
       const user = resolveFixedUser(userId);
       if (!user) {
         sendJson(res, 404, { ok: false, error: "Kullanici bulunamadi" });
@@ -819,27 +1515,50 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       touchBookLocksBySession(user.id, sessionId);
-      sendJson(res, 200, { ok: true, session: touched.session });
+      const kickRequest = getActiveKickRequest(user.id);
+      const kickRequested = !!kickRequest && kickRequest.requesterSessionId !== sessionId;
+      sendJson(res, 200, {
+        ok: true,
+        session: touched.session,
+        kickRequested,
+        ...(kickRequested ? { waitSeconds: getKickWaitSeconds(kickRequest) } : {}),
+      });
       return;
     }
 
     if (url.pathname === "/api/auth/logout" && req.method === "POST") {
       const body = await readBody(req);
-      const userId = String(body.userId || "").trim();
-      const sessionId = String(body.sessionId || "").trim();
+      const requestSession = resolveRequestSession(req);
+      if (requestSession.tokenInvalid) {
+        sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
+        return;
+      }
+      const userId = String(body.userId || requestSession.userId || "").trim();
+      const sessionId = String(body.sessionId || requestSession.sessionId || "").trim();
       const user = resolveFixedUser(userId);
       if (user && sessionId) {
         releaseUserSession(user.id, sessionId);
+        logSecurityEvent("logout", { userId: user.id, ip: getRequestIp(req) });
       }
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/admin/")) {
+      await handleAdminRequest(req, res, url);
       return;
     }
 
     let currentUser = null;
     let currentSessionId = "";
     if (url.pathname.startsWith("/api/")) {
-      currentUser = resolveFixedUser(req.headers["x-user-id"]);
-      currentSessionId = String(req.headers["x-session-id"] || "").trim();
+      const requestSession = resolveRequestSession(req);
+      currentUser = resolveFixedUser(requestSession.userId);
+      currentSessionId = String(requestSession.sessionId || "").trim();
+      if (requestSession.tokenInvalid) {
+        sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
+        return;
+      }
       if (!currentUser || !currentSessionId) {
         sendJson(res, 401, { ok: false, error: "Kullanici secimi gerekli" });
         return;
@@ -1070,12 +1789,67 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ─── Review Threads ─────────────────────────────────────────────────────────
+    const threadsListMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads$/);
+    if (threadsListMatch && req.method === "GET") {
+      const projectId = decodeURIComponent(threadsListMatch[1]);
+      const slideRef = url.searchParams.get("slideRef") || null;
+      const rows = slideRef
+        ? db.prepare("SELECT * FROM review_threads WHERE project_id = ? AND slide_ref = ? ORDER BY created_at ASC").all(projectId, slideRef)
+        : db.prepare("SELECT * FROM review_threads WHERE project_id = ? ORDER BY created_at ASC").all(projectId);
+      sendJson(res, 200, { ok: true, threads: rows });
+      return;
+    }
+
+    if (threadsListMatch && req.method === "POST") {
+      const projectId = decodeURIComponent(threadsListMatch[1]);
+      const body = await readBody(req);
+      const message = String(body.message || "").trim();
+      if (!message) { sendJson(res, 400, { ok: false, error: "Message required" }); return; }
+      const threadId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const now = new Date().toISOString();
+      db.prepare("INSERT INTO review_threads (id, project_id, slide_ref, user_id, message, resolved, parent_id, created_at) VALUES (?,?,?,?,?,0,?,?)")
+        .run(threadId, projectId, body.slideRef || null, currentUser.id, message, body.parentId || null, now);
+      const thread = db.prepare("SELECT * FROM review_threads WHERE id = ?").get(threadId);
+      sendJson(res, 200, { ok: true, thread });
+      return;
+    }
+
+    const threadMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads\/([^/]+)$/);
+    if (threadMatch && req.method === "PATCH") {
+      const tId = decodeURIComponent(threadMatch[2]);
+      const body = await readBody(req);
+      const thread = db.prepare("SELECT * FROM review_threads WHERE id = ?").get(tId);
+      if (!thread) { sendJson(res, 404, { ok: false, error: "Thread not found" }); return; }
+      const resolvedVal = typeof body.resolved === "boolean" ? (body.resolved ? 1 : 0) : thread.resolved;
+      const messageVal = body.message !== undefined ? String(body.message).trim() : thread.message;
+      db.prepare("UPDATE review_threads SET resolved = ?, message = ? WHERE id = ?").run(resolvedVal, messageVal, tId);
+      const updated = db.prepare("SELECT * FROM review_threads WHERE id = ?").get(tId);
+      sendJson(res, 200, { ok: true, thread: updated });
+      return;
+    }
+
+    if (threadMatch && req.method === "DELETE") {
+      const tId = decodeURIComponent(threadMatch[2]);
+      db.prepare("DELETE FROM review_threads WHERE id = ? OR parent_id = ?").run(tId, tId);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
     if (req.method === "GET" && serveStatic(req, res)) {
       return;
     }
 
     sendJson(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
+    if (Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500) {
+      sendJson(res, error.statusCode, { ok: false, error: error.message || "Invalid request" });
+      return;
+    }
+    if (error instanceof SyntaxError || error.statusCode === 400) {
+      sendJson(res, 400, { ok: false, error: error.message || "Invalid request payload" });
+      return;
+    }
     sendJson(res, 500, { ok: false, error: error.message || "Server error" });
   }
 });

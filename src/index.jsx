@@ -1,10 +1,16 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import EIcerikEditor from "./EIcerikEditor";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+
+import './styles/tokens.css';
+import './styles/utilities.css';
+
+import EIcerikEditor from './EIcerikEditor';
+
+window.__EIC_BUILD_MARK__ = 'button-packages-21-2026-04-29';
 
 function formatBootError(error) {
-  if (!error) return "Bilinmeyen hata";
-  if (typeof error === "string") return error;
+  if (!error) return 'Bilinmeyen hata';
+  if (typeof error === 'string') return error;
   return error.stack || error.message || JSON.stringify(error);
 }
 
@@ -25,7 +31,7 @@ class AppErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error) {
-    reportBootError("React acilis hatasi", error);
+    reportBootError('React acilis hatasi', error);
   }
 
   render() {
@@ -33,34 +39,42 @@ class AppErrorBoundary extends React.Component {
       return (
         <div
           style={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             padding: 24,
             background:
-              "radial-gradient(circle at top, rgba(56,189,248,.2), transparent 34%), linear-gradient(180deg, #0a1220 0%, #09111f 48%, #050b14 100%)",
-            color: "#f8fafc",
+              'radial-gradient(circle at top, rgba(56,189,248,.2), transparent 34%), linear-gradient(180deg, #0a1220 0%, #09111f 48%, #050b14 100%)',
+            color: '#f8fafc',
             fontFamily: '"Segoe UI", Arial, sans-serif',
           }}
         >
           <div
             style={{
-              width: "min(680px, 100%)",
+              width: 'min(680px, 100%)',
               borderRadius: 24,
-              border: "1px solid rgba(248, 113, 113, 0.26)",
-              background: "rgba(16, 26, 47, 0.94)",
-              boxShadow: "0 24px 80px rgba(0, 0, 0, 0.45)",
+              border: '1px solid rgba(248, 113, 113, 0.26)',
+              background: 'rgba(16, 26, 47, 0.94)',
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.45)',
               padding: 28,
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#fca5a5" }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '.04em',
+                textTransform: 'uppercase',
+                color: '#fca5a5',
+              }}
+            >
               React Hata Siniri
             </div>
             <div style={{ marginTop: 14, fontSize: 30, lineHeight: 1.1, fontWeight: 800 }}>
               Uygulama acilirken durdu
             </div>
-            <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6, color: "#d3deef" }}>
+            <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6, color: '#d3deef' }}>
               Bu, siyah bos ekran yerine hatayi gorebilmen icin gosterilen yedek ekran.
             </div>
             <pre
@@ -68,12 +82,12 @@ class AppErrorBoundary extends React.Component {
                 marginTop: 16,
                 padding: 16,
                 borderRadius: 16,
-                background: "rgba(10, 18, 32, 0.92)",
-                border: "1px solid rgba(248, 113, 113, 0.3)",
-                color: "#fecaca",
+                background: 'rgba(10, 18, 32, 0.92)',
+                border: '1px solid rgba(248, 113, 113, 0.3)',
+                color: '#fecaca',
                 font: '12px/1.6 Consolas, "Courier New", monospace',
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
               {formatBootError(this.state.error)}
@@ -94,7 +108,7 @@ function BootReady() {
 }
 
 try {
-  ReactDOM.createRoot(document.getElementById("root")).render(
+  ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <AppErrorBoundary>
         <BootReady />
@@ -102,6 +116,6 @@ try {
     </React.StrictMode>
   );
 } catch (error) {
-  reportBootError("Render baslatilamadi", error);
+  reportBootError('Render baslatilamadi', error);
   throw error;
 }

@@ -225,10 +225,8 @@ try {
             send_json(404, ['ok' => false, 'error' => 'Kaynak proje bulunamadi']);
         }
         $newName = trim((string) ($body['name'] ?? '')) ?: ($srcProject['name'] . ' (Kopya)');
-        $newId = bin2hex(random_bytes(16));
-        $stmt = $pdo->prepare('INSERT INTO projects (id, name, state, draft_updated_at, created_at) VALUES (:id, :name, :state, NOW(), NOW())');
-        $stmt->execute([':id' => $newId, ':name' => $newName, ':state' => json_encode($srcProject['state'])]);
-        set_workspace_current_project($pdo, $newId);
+        $project = create_project($pdo, $newName, $srcProject['state']);
+        set_workspace_current_project($pdo, $project['id']);
         send_json(200, ensure_workspace($pdo));
     }
 
@@ -242,21 +240,34 @@ try {
         }
 
         $file = $_FILES['file'];
-        $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'];
+        $mimeToExt = [
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/gif'  => 'gif',
+            'image/webp' => 'webp',
+            'video/mp4'  => 'mp4',
+            'video/webm' => 'webm',
+            'video/ogg'  => 'ogv',
+            'audio/mpeg' => 'mp3',
+            'audio/mp3'  => 'mp3',
+            'audio/wav'  => 'wav',
+            'audio/x-wav' => 'wav',
+            'audio/ogg'  => 'ogg',
+        ];
 
         $finfo = new finfo(FILEINFO_MIME_TYPE);
         $realType = $finfo->file($file['tmp_name']);
 
-        if (!in_array($realType, $allowedTypes, true)) {
-            send_json(400, ['ok' => false, 'error' => 'Sadece JPG, PNG, GIF, WEBP veya MP4 yukleyebilirsiniz.']);
+        if (!array_key_exists($realType, $mimeToExt)) {
+            send_json(400, ['ok' => false, 'error' => 'Sadece gorsel, ses veya video dosyasi yukleyebilirsiniz.']);
         }
 
-        $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $extension = $mimeToExt[$realType];
         $newName = bin2hex(random_bytes(8)) . '.' . $extension;
 
         $uploadDir = __DIR__ . '/../static/uploads';
         if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0777, true);
+            mkdir($uploadDir, 0755, true);
         }
 
         $destination = $uploadDir . '/' . $newName;
@@ -497,6 +508,15 @@ try {
 
 function get_api_path(): string
 {
+    $route = trim((string) ($_GET['route'] ?? ''));
+    if ($route !== '') {
+        $routePath = parse_url($route, PHP_URL_PATH) ?? '/';
+        if ($routePath === '' || $routePath === false) {
+            return '/';
+        }
+        return '/' . ltrim($routePath, '/');
+    }
+
     $uriPath = parse_url($_SERVER['REQUEST_URI'] ?? '/api', PHP_URL_PATH) ?? '/api';
     $scriptName = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/api'));
     $basePath = rtrim($scriptName, '/');
@@ -505,7 +525,7 @@ function get_api_path(): string
         $uriPath = substr($uriPath, strlen($basePath));
     }
 
-    if ($uriPath === '' || $uriPath === false) {
+    if ($uriPath === '' || $uriPath === false || $uriPath === '/index.php') {
         return '/';
     }
 
@@ -757,6 +777,26 @@ function request_pdf_ai_layout(array $config, array $payload): array
 function ensure_workspace_schema(PDO $pdo): void
 {
     $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS app_state (
+            id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+            payload LONGTEXT NOT NULL,
+            updated_at VARCHAR(40) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS projects (
+            id VARCHAR(64) NOT NULL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            payload LONGTEXT NOT NULL,
+            saved_at VARCHAR(40) NOT NULL,
+            created_at VARCHAR(40) NULL,
+            published_version_id VARCHAR(64) NULL,
+            INDEX idx_projects_saved_at (saved_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $pdo->exec(
         'CREATE TABLE IF NOT EXISTS book_locks (
             project_id VARCHAR(64)  NOT NULL,
             book_id    VARCHAR(64)  NOT NULL,
@@ -799,18 +839,40 @@ function ensure_workspace_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
 
+    $hasLegacyState = column_exists($pdo, 'projects', 'state');
+    $hasLegacyDraftUpdatedAt = column_exists($pdo, 'projects', 'draft_updated_at');
+
+    ensure_projects_column($pdo, 'payload', 'ALTER TABLE projects ADD COLUMN payload LONGTEXT NULL AFTER name');
+    ensure_projects_column($pdo, 'saved_at', 'ALTER TABLE projects ADD COLUMN saved_at VARCHAR(40) NULL AFTER payload');
     ensure_projects_column($pdo, 'created_at', 'ALTER TABLE projects ADD COLUMN created_at VARCHAR(40) NULL AFTER saved_at');
     ensure_projects_column($pdo, 'published_version_id', 'ALTER TABLE projects ADD COLUMN published_version_id VARCHAR(64) NULL AFTER created_at');
 
+    if ($hasLegacyState) {
+        $pdo->exec('UPDATE projects SET payload = state WHERE (payload IS NULL OR payload = "") AND state IS NOT NULL AND state != ""');
+    }
+    if ($hasLegacyDraftUpdatedAt) {
+        $pdo->exec('UPDATE projects SET saved_at = draft_updated_at WHERE (saved_at IS NULL OR saved_at = "") AND draft_updated_at IS NOT NULL AND draft_updated_at != ""');
+    }
+    $emptyState = encode_json(empty_editor_state());
+    $stmt = $pdo->prepare('UPDATE projects SET payload = :payload WHERE payload IS NULL OR payload = ""');
+    $stmt->execute([':payload' => $emptyState]);
+    $pdo->exec('UPDATE projects SET saved_at = UTC_TIMESTAMP() WHERE saved_at IS NULL OR saved_at = ""');
     $pdo->exec('UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ""');
+}
+
+function column_exists(PDO $pdo, string $tableName, string $columnName): bool
+{
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $tableName)) {
+        throw new InvalidArgumentException('Invalid table name');
+    }
+    $stmt = $pdo->prepare("SHOW COLUMNS FROM `$tableName` LIKE :column_name");
+    $stmt->execute([':column_name' => $columnName]);
+    return (bool) $stmt->fetch();
 }
 
 function ensure_projects_column(PDO $pdo, string $columnName, string $sql): void
 {
-    $stmt = $pdo->prepare('SHOW COLUMNS FROM projects LIKE :column_name');
-    $stmt->execute([':column_name' => $columnName]);
-
-    if (!$stmt->fetch()) {
+    if (!column_exists($pdo, 'projects', $columnName)) {
         $pdo->exec($sql);
     }
 }

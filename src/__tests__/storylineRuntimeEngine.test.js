@@ -1,0 +1,455 @@
+import { getRuntimeButtonAction } from '../utils/storylineRuntime';
+import {
+  evaluateStorylineRuntimeDragDrop,
+  findStorylineRuntimeDropTarget,
+  getStorylineRuntimeCommandsForObject,
+  getStorylineRuntimeCommandsForDrop,
+  getStorylineRuntimeCorrectDragMatches,
+  getStorylineRuntimeSnapPosition,
+} from '../utils/storylineRuntimeEngine';
+
+describe('storyline runtime engine', () => {
+  const slide = {
+    layers: [
+      { id: 'base', name: 'Base Layer', kind: 'base' },
+      { id: 'answer-layer', name: 'cevap', kind: 'overlay' },
+      { id: 'help-layer', name: 'help', kind: 'overlay' },
+    ],
+    triggers: [
+      { when: 'onClick', target: 'nextBtn', action: 'SliderGec', value: '__next__' },
+      { when: 'onClick', target: 'hideMe', action: 'Gizle', value: 'targetObj' },
+      { when: 'onClick', target: 'score', action: 'DegiskenArttir', value: 'points', extra: 2 },
+    ],
+  };
+
+  test('maps runtime action buttons to shared commands', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'answerBtn',
+        sourceObject: { id: 'answerBtn', type: 'button', runtimeAction: 'answer' },
+        state: {},
+      })
+    ).toEqual([
+      { type: 'resetAttempt', reason: 'runtime-answer-button' },
+      { type: 'setLayer', layerId: 'answer-layer' },
+    ]);
+  });
+
+  test('maps trigger actions to shared commands', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'nextBtn',
+        sourceObject: { id: 'nextBtn', type: 'button' },
+        state: {},
+      })
+    ).toEqual([{ type: 'goRelative', direction: 1 }]);
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'score',
+        sourceObject: { id: 'score', type: 'button' },
+        state: { variables: { points: 1 } },
+      })
+    ).toEqual([{ type: 'addVariable', variableId: 'points', delta: 2 }]);
+  });
+
+  test('manual click triggers override inferred button label actions', () => {
+    const menuSlide = {
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'guide-layer', name: 'yardim', kind: 'overlay' },
+        { id: 'menu-layer', name: 'menu', kind: 'overlay' },
+      ],
+      triggers: [{ when: 'onClick', target: 'menuBtn', action: 'KatmanaGec', value: 'menu-layer' }],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: menuSlide,
+        sourceId: 'menuBtn',
+        sourceObject: { id: 'menuBtn', type: 'button', label: 'KULLANIM KILAVUZU' },
+        state: {},
+      })
+    ).toEqual([{ type: 'setLayer', layerId: 'menu-layer' }]);
+  });
+
+  test('runtimeAction none disables inferred demo button actions', () => {
+    expect(
+      getRuntimeButtonAction({
+        id: 'guideDemo',
+        type: 'button',
+        label: 'KULLANIM KILAVUZU',
+        runtimeAction: 'none',
+      })
+    ).toBe('');
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'guideDemo',
+        sourceObject: {
+          id: 'guideDemo',
+          type: 'button',
+          label: 'KULLANIM KILAVUZU',
+          runtimeAction: 'none',
+        },
+        state: {},
+      })
+    ).toEqual([]);
+  });
+
+  test('explicit runtime actions work on launch template objects', () => {
+    expect(
+      getRuntimeButtonAction({
+        id: 'customLaunchButton',
+        type: 'button',
+        label: 'Ozel Buton',
+        generatedBy: 'scene-template',
+        sceneTemplateId: 'launch-page',
+        sceneTemplateSlotId: 'launch-page:custom-button',
+        runtimeAction: 'restart',
+      })
+    ).toBe('restart');
+  });
+
+  test('button intro template demo buttons stay decorative for existing pages', () => {
+    expect(
+      getRuntimeButtonAction({
+        id: 'oldGuideDemo',
+        type: 'button',
+        label: 'KULLANIM KILAVUZU',
+        generatedBy: 'scene-template',
+        sceneTemplateId: 'button-intro',
+        sceneTemplateSlotId: 'button-intro:slot-8',
+      })
+    ).toBe('');
+  });
+
+  test('button intro check demo button does not run answer checking', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'checkDemo',
+        sourceObject: {
+          id: 'checkDemo',
+          type: 'button',
+          label: 'Kontrol Et',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:slot-1',
+        },
+        state: {},
+      })
+    ).toEqual([]);
+  });
+
+  test('button intro media demo buttons only toggle their visual state', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'muteDemo',
+        sourceObject: {
+          id: 'muteDemo',
+          type: 'button',
+          label: 'Sesi Kapat',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:slot-12',
+          sceneTemplateDemoAction: 'toggle-mute',
+        },
+        state: {},
+      })
+    ).toEqual([{ type: 'toggleDemoButtonState', objectId: 'muteDemo' }]);
+  });
+
+  test('button intro grouped demo icon toggles the shared label state', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'muteIcon',
+        sourceObject: {
+          id: 'muteIcon',
+          type: 'button',
+          label: '🔊',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:menu-demo-2-icon',
+          sceneTemplateDemoAction: 'toggle-mute',
+          linkedActionTargetId: 'muteLabel',
+        },
+        state: {},
+      })
+    ).toEqual([{ type: 'toggleDemoButtonState', objectId: 'muteLabel' }]);
+  });
+
+  test('button intro demo buttons ignore manual click triggers and runtime actions', () => {
+    const introSlide = {
+      ...slide,
+      triggers: [
+        { when: 'onClick', target: 'guideDemo', action: 'SliderGec', value: '__next__' },
+        { when: 'onClick', target: 'muteDemo', action: 'SliderGec', value: '__next__' },
+      ],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: introSlide,
+        sourceId: 'guideDemo',
+        sourceObject: {
+          id: 'guideDemo',
+          type: 'button',
+          label: 'KULLANIM KILAVUZU',
+          runtimeAction: 'restart',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:menu-demo-0-label',
+        },
+        state: {},
+      })
+    ).toEqual([]);
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: introSlide,
+        sourceId: 'muteDemo',
+        sourceObject: {
+          id: 'muteDemo',
+          type: 'button',
+          label: 'Sesi Kapat',
+          runtimeAction: 'restart',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:menu-demo-2-label',
+          sceneTemplateDemoAction: 'toggle-mute',
+        },
+        state: {},
+      })
+    ).toEqual([{ type: 'toggleDemoButtonState', objectId: 'muteDemo' }]);
+  });
+
+  test('button intro start and close controls can still run navigation triggers', () => {
+    const introSlide = {
+      ...slide,
+      triggers: [
+        { when: 'onClick', target: 'startIcon', action: 'SliderGec', value: '__next__' },
+        { when: 'onClick', target: 'closeButton', action: 'SliderGec', value: '__next__' },
+      ],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: introSlide,
+        sourceId: 'startIcon',
+        sourceObject: {
+          id: 'startIcon',
+          type: 'button',
+          label: '▶',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:start-icon',
+        },
+        state: {},
+      })
+    ).toEqual([{ type: 'goRelative', direction: 1 }]);
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: introSlide,
+        sourceId: 'closeButton',
+        sourceObject: {
+          id: 'closeButton',
+          type: 'button',
+          label: '×',
+          generatedBy: 'scene-template',
+          sceneTemplateId: 'button-intro',
+          sceneTemplateSlotId: 'button-intro:close-button',
+        },
+        state: {},
+      })
+    ).toEqual([{ type: 'goRelative', direction: 1 }]);
+  });
+
+  test('check buttons use the shared checkAnswer command', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'check',
+        sourceObject: { id: 'check', type: 'button', label: 'Kontrol Et' },
+        state: {},
+      })
+    ).toEqual([{ type: 'checkAnswer' }]);
+  });
+
+  test('selection overlays use the shared toggleSelection command', () => {
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'choice-1',
+        sourceObject: { id: 'choice-1', type: 'shape', selectionQuestionId: 'soru-1' },
+        state: {},
+      })
+    ).toEqual([{ type: 'toggleSelection', objectId: 'choice-1' }]);
+  });
+
+  test('evaluates drag-drop answers in the shared engine', () => {
+    const dragDropSlide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      dragDropMatches: { drag1: 'drop1' },
+      objects: [
+        { id: 'drag1', type: 'draggable', label: 'A', x: 20, y: 20, width: 90, height: 40 },
+        { id: 'drop1', type: 'dropzone', label: 'A', x: 300, y: 80, width: 120, height: 52 },
+        { id: 'drop2', type: 'dropzone', label: 'B', x: 300, y: 160, width: 120, height: 52 },
+      ],
+    };
+
+    expect(
+      evaluateStorylineRuntimeDragDrop({
+        slide: dragDropSlide,
+        state: { dropAssignments: { drag1: 'drop1' } },
+      })
+    ).toMatchObject({
+      success: true,
+      expectedCount: 1,
+      placementResult: { drag1__drop1: true },
+    });
+
+    expect(
+      evaluateStorylineRuntimeDragDrop({
+        slide: dragDropSlide,
+        state: { dropAssignments: { drag1: 'drop2' } },
+      })
+    ).toMatchObject({
+      success: false,
+      placementResult: { drag1__drop2: false },
+    });
+  });
+
+  test('shares drop target inference and snap math', () => {
+    const drag = { id: 'drag1', type: 'draggable', x: 10, y: 10, width: 80, height: 32 };
+    const inferredDrop = {
+      id: 'blank1',
+      type: 'shape',
+      label: '',
+      x: 240,
+      y: 90,
+      width: 160,
+      height: 42,
+      style: { background: '#ea5b0c' },
+    };
+    const slide = { objects: [drag, inferredDrop] };
+
+    expect(getStorylineRuntimeCorrectDragMatches({ slide })).toEqual({ drag1: 'blank1' });
+    expect(
+      findStorylineRuntimeDropTarget({
+        drag,
+        drops: [inferredDrop],
+        x: 250,
+        y: 94,
+        pointerX: 280,
+        pointerY: 108,
+      })?.id
+    ).toBe('blank1');
+    expect(
+      getStorylineRuntimeSnapPosition({
+        drag,
+        drop: inferredDrop,
+        stageWidth: 800,
+        stageHeight: 450,
+      })
+    ).toEqual({ x: 280, y: 95 });
+  });
+
+  test('maps onDrop correctness triggers without coercing them into click triggers', () => {
+    const dragDropSlide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'correct-layer', name: 'Correct', kind: 'overlay' },
+        { id: 'incorrect-layer', name: 'Incorrect', kind: 'overlay' },
+      ],
+      dragDropMatches: { drag1: 'drop1' },
+      triggers: [
+        { when: 'onClick', target: 'drag1', action: 'KatmanaGec', value: 'click-layer' },
+        { when: 'onDropCorrect', target: 'drag1', action: 'KatmanaGec', value: 'correct-layer' },
+        {
+          when: 'onDropIncorrect',
+          target: 'drag1',
+          action: 'KatmanaGec',
+          value: 'incorrect-layer',
+        },
+      ],
+      objects: [
+        { id: 'drag1', type: 'draggable', label: 'A', x: 20, y: 20, width: 90, height: 40 },
+        { id: 'drop1', type: 'dropzone', label: 'A', x: 300, y: 80, width: 120, height: 52 },
+        { id: 'drop2', type: 'dropzone', label: 'B', x: 300, y: 160, width: 120, height: 52 },
+      ],
+    };
+    const [drag1, drop1, drop2] = dragDropSlide.objects;
+
+    expect(
+      getStorylineRuntimeCommandsForDrop({
+        slide: dragDropSlide,
+        dragObject: drag1,
+        dropObject: drop1,
+        state: { dropAssignments: { drag1: 'drop1' } },
+      })
+    ).toEqual([{ type: 'setLayer', layerId: 'correct-layer' }]);
+
+    expect(
+      getStorylineRuntimeCommandsForDrop({
+        slide: dragDropSlide,
+        dragObject: drag1,
+        dropObject: drop2,
+        state: { dropAssignments: { drag1: 'drop2' } },
+      })
+    ).toEqual([{ type: 'setLayer', layerId: 'incorrect-layer' }]);
+
+    expect(
+      getStorylineRuntimeCommandsForDrop({
+        slide: dragDropSlide,
+        dragObject: drag1,
+        dropObject: null,
+        state: { dropAssignments: {} },
+      })
+    ).toEqual([]);
+  });
+
+  test('does not fire generic selected-object drop triggers', () => {
+    const dragDropSlide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'incorrect-layer', name: 'Incorrect', kind: 'overlay' },
+      ],
+      dragDropMatches: { drag1: 'drop1' },
+      triggers: [
+        {
+          when: 'onDropIncorrect',
+          target: 'Secili Nesne',
+          action: 'KatmanaGec',
+          value: 'incorrect-layer',
+        },
+      ],
+      objects: [
+        { id: 'drag1', type: 'draggable', label: 'A', x: 20, y: 20, width: 90, height: 40 },
+        { id: 'drop2', type: 'dropzone', label: 'B', x: 300, y: 160, width: 120, height: 52 },
+      ],
+    };
+    const [drag1, drop2] = dragDropSlide.objects;
+
+    expect(
+      getStorylineRuntimeCommandsForDrop({
+        slide: dragDropSlide,
+        dragObject: drag1,
+        dropObject: drop2,
+        state: { dropAssignments: { drag1: 'drop2' } },
+      })
+    ).toEqual([]);
+  });
+});

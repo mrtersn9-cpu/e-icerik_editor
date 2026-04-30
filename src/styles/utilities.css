@@ -1,0 +1,64 @@
+/* ─── E-İçerik Editörü — Minimal Utility Classes ─────────────────────────── */
+/* Amaç: çok basit layout'lar için inline style yerine class kullanmak.      */
+/* Bu sistem Tailwind değildir; sadece editörde en sık tekrar eden           */
+/* layout pattern'leri için kısa class'lar sağlar.                           */
+
+/* Flex */
+.eic-flex { display: flex; }
+.eic-inline-flex { display: inline-flex; }
+.eic-flex-col { flex-direction: column; }
+.eic-flex-row { flex-direction: row; }
+.eic-flex-wrap { flex-wrap: wrap; }
+.eic-items-center { align-items: center; }
+.eic-items-start { align-items: flex-start; }
+.eic-items-end { align-items: flex-end; }
+.eic-justify-center { justify-content: center; }
+.eic-justify-between { justify-content: space-between; }
+.eic-justify-end { justify-content: flex-end; }
+.eic-flex-1 { flex: 1 1 0%; }
+.eic-flex-shrink-0 { flex-shrink: 0; }
+
+/* Gap */
+.eic-gap-xs { gap: var(--eic-space-xs); }
+.eic-gap-sm { gap: var(--eic-space-sm); }
+.eic-gap-md { gap: var(--eic-space-md); }
+.eic-gap-lg { gap: var(--eic-space-lg); }
+.eic-gap-xl { gap: var(--eic-space-xl); }
+
+/* Text align */
+.eic-text-left { text-align: left; }
+.eic-text-center { text-align: center; }
+.eic-text-right { text-align: right; }
+
+/* Font weight */
+.eic-font-medium { font-weight: 500; }
+.eic-font-semibold { font-weight: 600; }
+.eic-font-bold { font-weight: 700; }
+.eic-font-extrabold { font-weight: 800; }
+
+/* Overflow */
+.eic-overflow-hidden { overflow: hidden; }
+.eic-overflow-auto { overflow: auto; }
+.eic-overflow-y-auto { overflow-y: auto; }
+
+/* Position */
+.eic-relative { position: relative; }
+.eic-absolute { position: absolute; }
+.eic-fixed { position: fixed; }
+
+/* Box sizing */
+.eic-box-border { box-sizing: border-box; }
+
+/* Cursor */
+.eic-cursor-pointer { cursor: pointer; }
+.eic-cursor-default { cursor: default; }
+
+/* Pointer events */
+.eic-pointer-events-none { pointer-events: none; }
+
+/* Whitespace */
+.eic-whitespace-nowrap { white-space: nowrap; }
+.eic-whitespace-pre-line { white-space: pre-line; }
+
+/* User select */
+.eic-select-none { user-select: none; }

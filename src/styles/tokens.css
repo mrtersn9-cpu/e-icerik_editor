@@ -1,0 +1,79 @@
+/* ─── E-İçerik Editörü — Design Tokens ───────────────────────────────────── */
+/* Bu dosya EDITOR_THEME JS objesinin CSS Custom Properties karşılığıdır.    */
+/* Renk, tipografi, boşluk, gölge ve radius değerleri burada merkezilenir.   */
+
+:root {
+  /* Shell (koyu tema) */
+  --eic-shell-bg: #0f172a;
+  --eic-shell-panel: #1e293b;
+  --eic-shell-panel-alt: #0f172a;
+  --eic-shell-panel-elevated: #334155;
+  --eic-shell-panel-soft: #1e293b;
+  --eic-shell-inset: #020617;
+  --eic-shell-border: #334155;
+  --eic-shell-border-strong: #475569;
+  --eic-shell-border-soft: rgba(148, 163, 184, 0.15);
+  --eic-shell-text: #f8fafc;
+  --eic-shell-muted: #94a3b8;
+  --eic-shell-muted-soft: #64748b;
+
+  /* Accent */
+  --eic-shell-accent: #0284c7;
+  --eic-shell-accent-strong: #0369a1;
+  --eic-shell-accent-soft: rgba(2, 132, 199, 0.15);
+  --eic-shell-accent-soft-strong: rgba(2, 132, 199, 0.25);
+  --eic-shell-accent-border: rgba(2, 132, 199, 0.4);
+
+  /* Semantic */
+  --eic-shell-success: #16a34a;
+  --eic-shell-warning: #d97706;
+  --eic-shell-danger: #dc2626;
+
+  /* Badge */
+  --eic-shell-badge-bg: #0f172a;
+  --eic-shell-badge-border: #334155;
+  --eic-shell-badge-text: #bae6fd;
+
+  /* App */
+  --eic-app-canvas: #cbd5e1;
+  --eic-app-footer: #0f172a;
+  --eic-app-footer-text: #64748b;
+
+  /* Light (açık tema alanları) */
+  --eic-light-bg: #f8fafc;
+  --eic-light-panel: #ffffff;
+  --eic-light-panel-alt: #f1f5f9;
+  --eic-light-border: #cbd5e1;
+  --eic-light-border-strong: #94a3b8;
+  --eic-light-text: #0f172a;
+  --eic-light-muted: #475569;
+
+  /* Input */
+  --eic-shell-input-bg: #0f172a;
+  --eic-shell-input-border: #334155;
+
+  /* Radius */
+  --eic-radius-sm: 4px;
+  --eic-radius-md: 6px;
+  --eic-radius-lg: 8px;
+  --eic-radius-xl: 12px;
+  --eic-radius-round: 999px;
+
+  /* Spacing */
+  --eic-space-xs: 4px;
+  --eic-space-sm: 8px;
+  --eic-space-md: 12px;
+  --eic-space-lg: 16px;
+  --eic-space-xl: 24px;
+
+  /* Typography */
+  --eic-type-xs: 10px;
+  --eic-type-sm: 12px;
+  --eic-type-md: 14px;
+  --eic-type-lg: 18px;
+  --eic-type-xl: 24px;
+
+  /* Shadows */
+  --eic-shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.25);
+  --eic-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+}

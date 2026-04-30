@@ -1,0 +1,28 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--eic-space-sm);
+  padding: 8px 12px;
+  background: var(--eic-shell-panel);
+  border-bottom: 1px solid var(--eic-shell-border);
+  min-height: 44px;
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: var(--eic-space-xs);
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: var(--eic-shell-border);
+  margin: 0 4px;
+}

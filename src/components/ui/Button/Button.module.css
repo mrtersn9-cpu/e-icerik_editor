@@ -1,0 +1,33 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--eic-radius-sm);
+  border: 1px solid var(--eic-shell-accent-strong);
+  background: rgba(3, 105, 161, 0.13);
+  color: var(--eic-shell-accent-strong);
+  font-size: var(--eic-type-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(3, 105, 161, 0.22);
+}
+
+.btn:disabled {
+  background: var(--eic-shell-inset);
+  color: var(--eic-shell-muted-soft);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--eic-type-xs);
+}

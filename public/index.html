@@ -120,6 +120,7 @@
       (function () {
         var panel = document.getElementById("boot-status");
         if (!panel) return;
+        window.__EIC_ASSET_BASE__ = new URL("./", window.location.href).href;
 
         function escapeHtml(value) {
           return String(value || "")
@@ -135,13 +136,18 @@
         };
 
         window.__EIC_BOOT_REPORT__ = function (title, details) {
+          var context = [
+            "URL: " + window.location.href,
+            "Asset Base: " + (window.__EIC_ASSET_BASE__ || ""),
+          ].join("\n");
+          var fullDetails = details ? (String(details) + "\n\n" + context) : context;
           panel.setAttribute("data-state", "error");
           panel.innerHTML =
             '<div class="boot-card">' +
             '<div class="boot-badge">Açılış Hatası</div>' +
             '<div class="boot-title">' + escapeHtml(title || "Uygulama baslarken bir hata olustu") + "</div>" +
             '<div class="boot-body">Bu ekran siyah bos sayfa yerine hatayi gormek icin gosteriliyor. Asagidaki metni bana aynen atarsan daha hizli cozeriz.</div>' +
-            (details ? '<div class="boot-detail">' + escapeHtml(details) + "</div>" : "") +
+            (fullDetails ? '<div class="boot-detail">' + escapeHtml(fullDetails) + "</div>" : "") +
             '<div class="boot-actions">' +
             '<button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>' +
             "</div>" +
@@ -149,18 +155,16 @@
         };
 
         window.addEventListener("error", function (event) {
-          var message = event && event.error && event.error.stack
-            ? event.error.stack
-            : ((event && event.message) || "Bilinmeyen JavaScript hatasi");
-          window.__EIC_BOOT_REPORT__("JavaScript calisma hatasi", message);
+          var stack = event && event.error && event.error.stack ? String(event.error.stack) : "";
+          var firstLine = stack.split("\n")[0] || ((event && event.message) || "Bilinmeyen JavaScript hatasi");
+          window.__EIC_BOOT_REPORT__("JavaScript calisma hatasi", firstLine);
         });
 
         window.addEventListener("unhandledrejection", function (event) {
           var reason = event && event.reason;
-          var message = reason && reason.stack
-            ? reason.stack
-            : (typeof reason === "string" ? reason : JSON.stringify(reason || "Bilinmeyen promise hatasi"));
-          window.__EIC_BOOT_REPORT__("Promise hatasi", message);
+          var stack = reason && reason.stack ? String(reason.stack) : "";
+          var firstLine = stack.split("\n")[0] || (typeof reason === "string" ? reason : "Bilinmeyen promise hatasi");
+          window.__EIC_BOOT_REPORT__("Promise hatasi", firstLine);
         });
       })();
     </script>
