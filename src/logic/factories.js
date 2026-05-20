@@ -11,7 +11,7 @@ import {
   DEFAULT_ACTIVITY_SETTINGS,
   ACCESSIBILITY_DEFAULTS,
 } from '../constants';
-import { uid, clamp } from '../utils/editorHelpers';
+import { uid, clamp } from '../utils/editorHelpers'; // eslint-disable-line
 
 const AUTO_LAYER_NAME_PRESETS = ['menu', 'explanation', 'normal', 'Correct', 'Incorrect', 'cevap'];
 
@@ -183,12 +183,10 @@ function ensureSlideDefaultLayers(layers = [], activity = {}) {
   const resolvedNames = buildResolvedLayerNameMap(normalizedLayers, activity);
   const baseLayer =
     normalizedLayers.find((layer) => layer?.kind === 'base' || layer?.id === 'base') ||
-    createLayer('', 0);
-  const overlayLayers = normalizedLayers.filter((layer) => {
-    if (layer?.id === baseLayer.id || layer?.kind === 'base') return false;
-    const effectiveName = resolvedNames[layer.id] || layer.name || '';
-    return normalizeLayerNameKey(effectiveName) !== 'try again';
-  });
+    createLayer('', 0); // prettier-ignore
+  const overlayLayers = normalizedLayers.filter(
+    (layer) => layer?.id !== baseLayer.id && layer?.kind !== 'base'
+  );
   const claimedIds = new Set();
   const orderedDefaultLayers = AUTO_LAYER_NAME_PRESETS.map((presetName) => {
     const existing = overlayLayers.find((layer) => {
@@ -662,6 +660,23 @@ function createActivity(name, type = 'selection') {
     ];
   }
 
+  if (type === 'puzzle') {
+    base.puzzleType = 'crossword';
+    base.puzzleQuestions = [];
+    base.puzzleGrid = { rows: 10, cols: 10, cells: [] };
+    base.puzzleSettings = {
+      showClues: true,
+      showNumbers: true,
+      allowHints: true,
+      timeLimitEnabled: false,
+      timeLimitMinutes: 5,
+      maxAttempts: 0,
+      shuffleQuestions: false,
+    };
+    base.settings.showFeedback = true;
+    base.settings.allowRetry = true;
+  }
+
   if (type === 'survey') {
     base.surveyQuestions = [
       {
@@ -748,6 +763,45 @@ function createSlide(name = 'Slider 1', index = 0) {
   };
 }
 
+function createCanvasPuzzleCellObject(label, x, y, width, height, style = {}) {
+  const object = createObject('puzzle-cell');
+  return {
+    ...object,
+    label,
+    x,
+    y,
+    width: width || 36,
+    height: height || 36,
+    style: { ...object.style, ...style },
+  };
+}
+
+function createCanvasPuzzleInputObject(label, x, y, width, height, style = {}) {
+  const object = createObject('puzzle-input');
+  return {
+    ...object,
+    label,
+    x,
+    y,
+    width: width || 36,
+    height: height || 36,
+    style: { ...object.style, ...style },
+  };
+}
+
+function createCanvasPuzzleClueObject(label, x, y, width, height, style = {}) {
+  const object = createObject('puzzle-clue');
+  return {
+    ...object,
+    label,
+    x,
+    y,
+    width: width || 200,
+    height: height || 28,
+    style: { ...object.style, ...style },
+  };
+}
+
 export {
   createDefaultThemePackageItems,
   resolveThemePackageItems,
@@ -777,6 +831,8 @@ export {
   createCanvasTextObject,
   createCanvasButtonObject,
   createCanvasShapeObject,
+  createCanvasPuzzleCellObject,
+  createCanvasPuzzleInputObject,
+  createCanvasPuzzleClueObject,
   createSlide,
 };
-

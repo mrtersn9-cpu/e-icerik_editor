@@ -3,6 +3,8 @@ import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEn
 import { getSharedStorylineRendererRuntimeApi } from '../utils/storylineRenderer';
 
 function loadRuntimeRenderer() {
+  // Runtime bundles are generated as script strings; this test evaluates that generated runtime API.
+  // eslint-disable-next-line no-new-func
   return new Function(`
     ${STORYLINE_RUNTIME_ENGINE_SCRIPT}
     ${STORYLINE_RENDERER_CORE_SCRIPT}

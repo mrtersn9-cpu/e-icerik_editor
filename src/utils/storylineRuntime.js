@@ -133,10 +133,15 @@ function pickSlideState(source = {}) {
     'audioName',
     'audioAutoPlay',
     'audioLoop',
+    'dragDropMode',
+    'dragDropSettings',
     'slideTransitionEffect',
     'slideTransitionDirection',
     'slideTransitionDuration',
     'dragDropMatches',
+    'mcOptions',
+    'selectionSlots',
+    'selectionUi',
   ];
   const picked = {};
   keys.forEach((key) => {
@@ -194,6 +199,26 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     audioName: merged.audioName || '',
     audioAutoPlay: merged.audioAutoPlay !== false,
     audioLoop: !!merged.audioLoop,
+    dragDropMode: merged.dragDropMode || activity.dragDropMode || 'single',
+    dragDropSettings: {
+      ...(activity.dragDropSettings || {}),
+      ...(merged.dragDropSettings || {}),
+    },
+    dragDropMatches:
+      merged.dragDropMatches && typeof merged.dragDropMatches === 'object'
+        ? merged.dragDropMatches
+        : activity.dragDropMatches || {},
+    mcOptions: Array.isArray(merged.mcOptions)
+      ? merged.mcOptions
+      : Array.isArray(activity.mcOptions)
+        ? activity.mcOptions
+        : [],
+    selectionSlots: Array.isArray(merged.selectionSlots)
+      ? merged.selectionSlots
+      : Array.isArray(activity.selectionSlots)
+        ? activity.selectionSlots
+        : [],
+    selectionUi: { ...(activity.selectionUi || {}), ...(merged.selectionUi || {}) },
   };
 }
 

@@ -1,5 +1,3 @@
-import { EDITOR_THEME } from '../theme';
-
 // ─── Sınıf Grupları ve Ders Kategorileri ───────────────────────────────────────
 
 export const GRADE_GROUPS = [

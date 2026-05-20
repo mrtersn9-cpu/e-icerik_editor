@@ -80,7 +80,7 @@ const useEditorStore = create((set, get) => ({
       leftPanelWidth: typeof value === 'function' ? value(state.leftPanelWidth) : value,
     })),
 
-  rightPanelWidth: 380,
+  rightPanelWidth: 320,
   setRightPanelWidth: (value) =>
     set((state) => ({
       rightPanelWidth: typeof value === 'function' ? value(state.rightPanelWidth) : value,
@@ -118,7 +118,7 @@ const useEditorStore = create((set, get) => ({
       showReviewThreads: false,
       editorPreviewState: 'normal',
       leftPanelWidth: 180,
-      rightPanelWidth: 380,
+      rightPanelWidth: 320,
       isSlidePanelCollapsed: false,
       toasts: [],
     }),

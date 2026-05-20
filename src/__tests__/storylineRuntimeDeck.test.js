@@ -60,4 +60,30 @@ describe('storyline runtime deck', () => {
       'slide-1__drop-a__1__2',
     ]);
   });
+
+  test('carries drag-drop answer mode into runtime slides', () => {
+    const deck = buildStorylineRuntimeDeck({
+      activities: [
+        {
+          id: 'activity-1',
+          type: 'drag-drop',
+          dragDropMode: 'multi-group',
+          dragDropSettings: { allowMultipleItemsPerDrop: true },
+          dragDropMatches: { drag1: 'drop1', drag2: 'drop1' },
+          objects: [
+            { id: 'drag1', type: 'draggable', label: 'A', group: 'A' },
+            { id: 'drag2', type: 'draggable', label: 'A', group: 'A' },
+            { id: 'drop1', type: 'dropzone', label: 'Hedef', group: 'A' },
+          ],
+        },
+      ],
+      selActId: 'activity-1',
+    });
+
+    expect(deck[0]).toMatchObject({
+      dragDropMode: 'multi-group',
+      dragDropSettings: { allowMultipleItemsPerDrop: true },
+      dragDropMatches: { drag1: 'drop1', drag2: 'drop1' },
+    });
+  });
 });

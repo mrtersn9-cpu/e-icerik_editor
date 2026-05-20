@@ -1,4 +1,5 @@
 import { DEFAULT_SELECTION_UI } from '../constants';
+
 import { castVariableValue } from './factories';
 import {
   getActivityLayers,

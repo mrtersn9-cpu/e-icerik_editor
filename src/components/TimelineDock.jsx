@@ -66,9 +66,9 @@ export default function TimelineDock({
   isObjectTimelineActive,
   createTimelineKeyframe,
 }) {
-  const safeActivity = activity || { objects: [], timeline: [] };
+  const safeActivity = useMemo(() => activity || { objects: [], timeline: [] }, [activity]);
   const timeline = getActivityTimeline(safeActivity);
-  const objects = safeActivity.objects || [];
+  const objects = useMemo(() => safeActivity.objects || [], [safeActivity]);
 
   const patchAct = (p) => {
     if (!activity) return;
@@ -1201,7 +1201,6 @@ export default function TimelineDock({
             {/* Trigger Track */}
             {activity?.triggers && activity.triggers.length > 0 && (
               <div
-                onClick={() => console.log('Triggers:', activity.triggers)}
                 style={{
                   display: 'flex',
                   alignItems: 'stretch',

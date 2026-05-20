@@ -148,6 +148,45 @@ export const OBJ_PRESETS = {
       borderRadius: 20,
     },
   },
+  'puzzle-cell': {
+    w: 36,
+    h: 36,
+    label: '',
+    style: {
+      fontSize: 14,
+      color: '#1e293b',
+      background: '#ffffff',
+      borderColor: '#cbd5e1',
+      borderStyle: 'solid',
+      borderRadius: 2,
+    },
+  },
+  'puzzle-input': {
+    w: 36,
+    h: 36,
+    label: '',
+    style: {
+      fontSize: 14,
+      color: '#2563eb',
+      background: '#f8fafc',
+      borderColor: '#3b82f6',
+      borderStyle: 'solid',
+      borderRadius: 2,
+    },
+  },
+  'puzzle-clue': {
+    w: 200,
+    h: 28,
+    label: 'Ipucu',
+    style: {
+      fontSize: 11,
+      color: '#475569',
+      background: 'transparent',
+      borderColor: 'transparent',
+      borderStyle: 'solid',
+      borderRadius: 0,
+    },
+  },
 };
 
 // ─── Şerit Şekil Presetleri ───────────────────────────────────────────────────
@@ -854,6 +893,12 @@ export const SLIDE_STATE_KEYS = [
   'audioName',
   'audioAutoPlay',
   'audioLoop',
+  'dragDropMode',
+  'dragDropSettings',
+  'dragDropMatches',
+  'mcOptions',
+  'selectionSlots',
+  'selectionUi',
   'slideTransitionEffect',
   'slideTransitionDirection',
   'slideTransitionDuration',
@@ -889,6 +934,12 @@ export const BOOK_LAYER_PRESET_KEYS = [
   'audioName',
   'audioAutoPlay',
   'audioLoop',
+  'dragDropMode',
+  'dragDropSettings',
+  'dragDropMatches',
+  'mcOptions',
+  'selectionSlots',
+  'selectionUi',
 ];
 
 export const TEXT_STUDIO_SETTING_KEYS = [

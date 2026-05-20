@@ -328,6 +328,110 @@ describe('storyline runtime engine', () => {
     });
   });
 
+  test('accepts equivalent duplicate drags in group mode', () => {
+    const dragDropSlide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      dragDropMode: 'multi-group',
+      dragDropMatches: { drag1: 'drop1', drag2: 'drop1' },
+      objects: [
+        {
+          id: 'drag1',
+          type: 'draggable',
+          label: 'Kahramanların Yüceltilmesi',
+          group: 'Kahramanların Yüceltilmesi',
+          x: 20,
+          y: 20,
+          width: 90,
+          height: 40,
+        },
+        {
+          id: 'drag2',
+          type: 'draggable',
+          label: 'Kahramanların Yüceltilmesi',
+          group: 'Kahramanların Yüceltilmesi',
+          x: 20,
+          y: 80,
+          width: 90,
+          height: 40,
+        },
+        {
+          id: 'drop1',
+          type: 'dropzone',
+          label: 'Hedef 1',
+          group: 'Kahramanların Yüceltilmesi',
+          x: 300,
+          y: 80,
+          width: 120,
+          height: 52,
+        },
+      ],
+    };
+
+    expect(
+      evaluateStorylineRuntimeDragDrop({
+        slide: dragDropSlide,
+        state: { dropAssignments: { drag2: 'drop1' } },
+      })
+    ).toMatchObject({
+      success: true,
+      expectedCount: 1,
+      placementResult: { drag2__drop1: true },
+    });
+  });
+
+  test('accepts selected group answers even when imported group metadata is stale', () => {
+    const dragDropSlide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      dragDropMode: 'multi-group',
+      dragDropMatches: { drag1: 'drop1' },
+      objects: [
+        {
+          id: 'drag1',
+          type: 'draggable',
+          label: 'Kahramanların Yüceltilmesi',
+          group: 'eski-cevap',
+          x: 20,
+          y: 20,
+          width: 90,
+          height: 40,
+        },
+        {
+          id: 'drag2',
+          type: 'draggable',
+          label: 'Kahramanların Yüceltilmesi',
+          group: 'baska-eski-cevap',
+          x: 20,
+          y: 80,
+          width: 90,
+          height: 40,
+        },
+        {
+          id: 'drop1',
+          type: 'dropzone',
+          label: 'Hedef 1',
+          group: 'Kahramanların Yüceltilmesi',
+          x: 300,
+          y: 80,
+          width: 120,
+          height: 52,
+        },
+      ],
+    };
+
+    expect(
+      evaluateStorylineRuntimeDragDrop({
+        slide: dragDropSlide,
+        state: { dropAssignments: { drag2: 'drop1' } },
+      })
+    ).toMatchObject({
+      success: true,
+      expectedCount: 1,
+      placementResult: { drag2__drop1: true },
+    });
+  });
+
   test('shares drop target inference and snap math', () => {
     const drag = { id: 'drag1', type: 'draggable', x: 10, y: 10, width: 80, height: 32 };
     const inferredDrop = {

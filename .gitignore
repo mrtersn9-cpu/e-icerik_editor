@@ -4,6 +4,11 @@ node_modules/
 # Build output
 build/
 deploy-ftp/
+build-check-*/
+build-codex-check-*/
+build-verify*/
+deploy-ftp-guncel/
+backups/
 
 # Environment files
 .env
@@ -27,6 +32,7 @@ Thumbs.db
 
 # Claude Code settings (local)
 .claude/
+.kimi/
 
 # Temp / backup / test files
 tmp-*.png
@@ -37,6 +43,7 @@ video-frames/
 yedekler/
 *.mojibake-backup
 tmp-backup-*.jsx
+tmp_restore/
 
 # Database (kullanıcı verisi)
 data/*.sqlite

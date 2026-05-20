@@ -65,7 +65,6 @@ export function upgradeStorylineDragDropStyle(type, style = {}) {
   const background = normalizeStyleToken(style.background);
   const borderColor = normalizeStyleToken(style.borderColor);
   const color = normalizeStyleToken(style.color);
-  const borderStyle = normalizeStyleToken(style.borderStyle);
   const legacyBackgrounds =
     type === 'draggable'
       ? new Set([
@@ -85,7 +84,6 @@ export function upgradeStorylineDragDropStyle(type, style = {}) {
     type === 'draggable'
       ? new Set(['', '#1e40af', '#ec4899'])
       : new Set(['', '#9a3412', '#f59e0b']);
-  const legacyBorderStyles = new Set(['', 'dashed']);
 
   if (legacyBackgrounds.has(background)) next.background = base.background;
   if (legacyBorderColors.has(borderColor)) next.borderColor = base.borderColor;

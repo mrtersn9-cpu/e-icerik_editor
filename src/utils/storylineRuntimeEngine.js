@@ -219,6 +219,85 @@ export function getStorylineRuntimeCorrectDragMatches({ slide = {}, objects = nu
   return hasExplicit ? explicit : buildStorylineRuntimeAutoDragMatches({ slide, objects });
 }
 
+function getSelectionLetter(index = 0) {
+  return String.fromCharCode(65 + index);
+}
+
+function getCorrectSelectionChoiceKeys(slide = {}) {
+  const correctOptions = (slide.mcOptions || [])
+    .map((option, index) => ({ option, index }))
+    .filter(({ option }) => option?.isCorrect);
+  if (correctOptions.length) {
+    return new Set(
+      correctOptions.flatMap(({ option, index }) =>
+        [
+          option.id,
+          option.label,
+          getSelectionLetter(index),
+          String(index + 1),
+        ].map(getStorylineRuntimeKey)
+      )
+    );
+  }
+
+  const slots = Array.isArray(slide.selectionSlots)
+    ? slide.selectionSlots.filter((slot) => String(slot?.correctChoice || '').trim())
+    : [];
+  if (slots.length) {
+    return new Set(
+      slots.flatMap((slot) =>
+        [slot.id, slot.correctChoice, slot.correctLabel].map(getStorylineRuntimeKey)
+      )
+    );
+  }
+
+  return null;
+}
+
+export function evaluateStorylineRuntimeSelection({ slide = {}, objects = null, state = {} } = {}) {
+  const baseObjects = getBaseRuntimeObjects(slide, objects);
+  const selectionObjects = baseObjects.filter((object) => object?.selectionQuestionId);
+  const correctChoiceKeys = getCorrectSelectionChoiceKeys(slide);
+  const expected = selectionObjects
+    .filter((object, index) => {
+      if (correctChoiceKeys) {
+        const keys = [
+          object.id,
+          object.selectionChoice,
+          object.label,
+          getSelectionLetter(index),
+          String(index + 1),
+        ].map(getStorylineRuntimeKey);
+        return keys.some((key) => correctChoiceKeys.has(key));
+      }
+      return object.selectionCorrect === true;
+    })
+    .map((object) => getStorylineRuntimeObjectKey(object));
+  const expectedSet = new Set(expected);
+  const selected = selectionObjects
+    .filter((object) => {
+      const key = getStorylineRuntimeObjectKey(object);
+      return !!(
+        state.objectStates?.[key]?.selected ||
+        state.objectStates?.[object.id]?.selected
+      );
+    })
+    .map((object) => getStorylineRuntimeObjectKey(object));
+  const selectedSet = new Set(selected);
+  const missing = expected.filter((key) => !selectedSet.has(key));
+  const extra = selected.filter((key) => !expectedSet.has(key));
+  const hasSelectionTask = selectionObjects.length > 0 && expected.length > 0;
+  return {
+    type: 'selection',
+    success: hasSelectionTask && missing.length === 0 && extra.length === 0,
+    expected,
+    selected,
+    missing,
+    extra,
+    expectedCount: expected.length,
+  };
+}
+
 export function getStorylineRuntimeSnapPosition({
   drag = {},
   drop = {},
@@ -236,6 +315,7 @@ export function getStorylineRuntimeSnapPosition({
 }
 
 export function findStorylineRuntimeDropTarget({
+  slide = {},
   drag = {},
   drops = [],
   x = 0,
@@ -291,11 +371,12 @@ export function findStorylineRuntimeDropTarget({
       const dropCenterX = (Number(drop.x) || 0) + (Number(drop.width) || 0) / 2;
       const dropCenterY = (Number(drop.y) || 0) + (Number(drop.height) || 0) / 2;
       const distance = Math.hypot(pointerX - dropCenterX, pointerY - dropCenterY);
+      const settings = getDragDropSettings(slide);
       const threshold = Math.max(
-        80,
+        10,
         Math.min(
-          260,
-          Math.max(Number(drop.width) || 0, Number(drop.height) || 0, dragW, dragH) * 0.75
+          500,
+          (settings.snapTolerance || 20) * 3
         )
       );
       if (distance <= threshold && distance < nearestDistance) {
@@ -327,6 +408,29 @@ export function evaluateStorylineRuntimeDragDrop({
   const expected = getStorylineDragDropPairsFromMatches(
     expectedMatches || getStorylineRuntimeCorrectDragMatches({ slide, objects: baseObjects })
   );
+  const isGroupMode = ['group', 'multi-group'].includes(slide?.dragDropMode);
+  const expectedDropIds = [...new Set(expected.map((entry) => entry.dropId).filter(Boolean))];
+  const objectAnswerTokens = (object = {}) =>
+    [
+      object?.label,
+      object?.name,
+      object?.group,
+      object?.id,
+    ]
+      .map(getStorylineRuntimeKey)
+      .filter(Boolean);
+  const isGroupEquivalentPlacement = (entry) => {
+    if (!isGroupMode) return false;
+    const placedDrag = byKey[entry.dragKey] || byId[entry.dragId] || null;
+    const placedTokens = objectAnswerTokens(placedDrag);
+    if (!placedTokens.length) return false;
+    return expected.some(({ dragId, dropId }) => {
+      if (dropId !== entry.dropId) return false;
+      const expectedDrag = byId[dragId] || byKey[dragId] || null;
+      const expectedTokens = new Set(objectAnswerTokens(expectedDrag));
+      return placedTokens.some((token) => expectedTokens.has(token));
+    });
+  };
   const expectedCounts = {};
   expected.forEach(({ dragId, dropId }) => {
     const key = getStorylineDragDropPairKey(dragId, dropId);
@@ -349,23 +453,30 @@ export function evaluateStorylineRuntimeDragDrop({
     });
 
   const placementResult = {};
+  const correctDropIds = new Set();
   placements.forEach((entry) => {
     const key = getStorylineDragDropPairKey(entry.dragId, entry.dropId);
     if (expectedCounts[key] > 0) {
       placementResult[entry.id] = true;
       expectedCounts[key] -= 1;
+      correctDropIds.add(entry.dropId);
+    } else if (isGroupEquivalentPlacement(entry)) {
+      placementResult[entry.id] = true;
+      correctDropIds.add(entry.dropId);
     } else {
       placementResult[entry.id] = false;
     }
   });
 
-  const allExpectedUsed = Object.values(expectedCounts).every((count) => count === 0);
+  const allExpectedUsed = isGroupMode
+    ? expectedDropIds.length > 0 && expectedDropIds.every((dropId) => correctDropIds.has(dropId))
+    : Object.values(expectedCounts).every((count) => count === 0);
   const allPlacedCorrect = placements.every((entry) => placementResult[entry.id] === true);
   return {
     success: expected.length > 0 && allExpectedUsed && allPlacedCorrect,
     placements,
     placementResult,
-    expectedCount: expected.length,
+    expectedCount: isGroupMode ? expectedDropIds.length : expected.length,
   };
 }
 
@@ -745,6 +856,109 @@ export function getStorylineRuntimeCommandsForObject({
   return [];
 }
 
+export function evaluateStorylineRuntimeMatching({ slide = {}, state = {} } = {}) {
+  const pairs = slide.matchingPairs || [];
+  const selections = state.matchingSelections || {};
+  const expected = pairs.map((pair) => pair.id);
+  let correctCount = 0;
+  expected.forEach((pairId) => {
+    const selected = selections[pairId];
+    const pair = pairs.find((p) => p.id === pairId);
+    if (pair && selected && getStorylineRuntimeKey(selected) === getStorylineRuntimeKey(pair.right)) {
+      correctCount += 1;
+    }
+  });
+  const total = expected.length;
+  return {
+    type: 'matching',
+    success: total > 0 && correctCount === total,
+    correctCount,
+    total,
+    selections,
+  };
+}
+
+export function evaluateStorylineRuntimeSequence({ slide = {}, state = {} } = {}) {
+  const items = slide.sequenceItems || [];
+  const userOrder = state.sequenceOrder || items.map((item) => item.id);
+  const correctOrder = items.map((item) => item.id);
+  const success =
+    userOrder.length === correctOrder.length &&
+    userOrder.every((id, index) => id === correctOrder[index]);
+  return {
+    type: 'sequence',
+    success: success && correctOrder.length > 0,
+    userOrder,
+    correctOrder,
+  };
+}
+
+export function evaluateStorylineRuntimeTextEntry({ slide = {}, state = {} } = {}) {
+  const acceptedAnswers = slide.textEntryAcceptedAnswers || [];
+  const userText = String(state.textEntryValue || '').trim();
+  const caseSensitive = !!slide.textEntryCaseSensitive;
+  const normalize = (text) => {
+    let result = String(text || '').trim();
+    if (!caseSensitive) result = result.toLocaleLowerCase('tr-TR');
+    if (slide.textEntryTurkishTolerance) {
+      result = result
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ş/g, 's')
+        .replace(/ı/g, 'i')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c');
+    }
+    return result;
+  };
+  const normalizedUser = normalize(userText);
+  const matched = acceptedAnswers.some((answer) => normalize(answer) === normalizedUser);
+  return {
+    type: 'text-entry',
+    success: matched && acceptedAnswers.length > 0,
+    userText,
+    matched,
+  };
+}
+
+export function evaluateStorylineRuntimeFillBlank({ slide = {}, state = {} } = {}) {
+  const answers = slide.fillBlankAnswers || [];
+  const userValues = state.fillBlankValues || {};
+  const results = answers.map((answer) => {
+    const userValue = String(userValues[answer.id] || '').trim();
+    const accepted = (answer.acceptedValues || []).map((v) => String(v || '').trim());
+    const caseSensitive = !!answer.caseSensitive;
+    const normalize = (text) => {
+      let result = String(text || '').trim();
+      if (!caseSensitive) result = result.toLocaleLowerCase('tr-TR');
+      if (slide.fillBlankTurkishTolerance) {
+        result = result
+          .replace(/ğ/g, 'g')
+          .replace(/ü/g, 'u')
+          .replace(/ş/g, 's')
+          .replace(/ı/g, 'i')
+          .replace(/ö/g, 'o')
+          .replace(/ç/g, 'c');
+      }
+      if (slide.fillBlankTrim !== false) result = result.replace(/^\s+|\s+$/g, '');
+      return result;
+    };
+    const normalizedUser = normalize(userValue);
+    const matched = accepted.some((val) => normalize(val) === normalizedUser);
+    return { id: answer.id, matched, userValue, points: answer.points || 1 };
+  });
+  const allCorrect = results.every((r) => r.matched);
+  const totalPoints = results.reduce((sum, r) => sum + r.points, 0);
+  const earnedPoints = results.filter((r) => r.matched).reduce((sum, r) => sum + r.points, 0);
+  return {
+    type: 'fill-blank',
+    success: allCorrect && answers.length > 0,
+    results,
+    totalPoints,
+    earnedPoints,
+  };
+}
+
 export function getStorylineRuntimeCommandsForDrop({
   slide = {},
   dragObject = null,
@@ -787,4 +1001,56 @@ export function getStorylineRuntimeCommandsForDrop({
     })
     .filter((trigger) => evaluateStorylineTriggerConditions(trigger, context))
     .flatMap((trigger) => getCommandsForTrigger(trigger, slide));
+}
+
+export function evaluateStorylineRuntimePuzzle({ activity = {}, state = {} } = {}) {
+  const puzzleType = activity.puzzleType || 'crossword';
+  const grid = activity.puzzleGrid?.cells || [];
+  const placed = activity.puzzlePlaced || [];
+
+  if (puzzleType === 'crossword') {
+    let correct = 0;
+    let total = 0;
+    for (let r = 0; r < grid.length; r++) {
+      for (let c = 0; c < (grid[r]?.length || 0); c++) {
+        const cell = grid[r]?.[c];
+        if (cell?.letter) {
+          total++;
+          if (state.puzzleGrid?.[`${r},${c}`] === cell.letter) correct++;
+        }
+      }
+    }
+    return { success: correct === total && total > 0, correct, total };
+  }
+
+  if (puzzleType === 'wordsearch') {
+    const found = state.puzzleFoundWords || [];
+    const total = placed.length;
+    return { success: found.length === total && total > 0, correct: found.length, total };
+  }
+
+  if (puzzleType === 'sudoku') {
+    const solution = activity.puzzleSolution;
+    if (!solution) return { success: false, correct: 0, total: 81 };
+    let correct = 0;
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (Number(state.puzzleGrid?.[`${r},${c}`]) === solution[r][c]) correct++;
+      }
+    }
+    return { success: correct === 81, correct, total: 81 };
+  }
+
+  if (puzzleType === 'maze') {
+    const reachedEnd = state.puzzleMazeReachedEnd || false;
+    return { success: reachedEnd, correct: reachedEnd ? 1 : 0, total: 1 };
+  }
+
+  if (puzzleType === 'memory') {
+    const matched = state.puzzleMemoryMatched || [];
+    const total = (placed.length || 0) / 2;
+    return { success: matched.length === total && total > 0, correct: matched.length, total };
+  }
+
+  return { success: false, correct: 0, total: 0 };
 }

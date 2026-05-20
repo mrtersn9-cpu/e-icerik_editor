@@ -1,5 +1,3 @@
-import { EDITOR_THEME } from '../theme';
-
 // ─── Aktivite Tipleri ─────────────────────────────────────────────────────────
 
 export const ACTIVITY_TYPES = [
@@ -13,6 +11,7 @@ export const ACTIVITY_TYPES = [
   { id: 'fill-blank', label: 'Bosluk Doldurma', icon: '___', desc: 'Cumle ici bosluk' },
   { id: 'survey', label: 'Anket', icon: '◩', desc: 'Puansiz geri bildirim toplama' },
   { id: 'mixed', label: 'Karma', icon: '⊞', desc: 'Birden fazla soru tipi' },
+  { id: 'puzzle', label: 'Bulmaca', icon: '🧩', desc: 'Kare bulmaca, kelime avi, sudoku, labirent, hafiza' },
 ];
 
 export const DRAG_DROP_MODES = [
@@ -33,6 +32,7 @@ export const DEFAULT_DRAG_DROP_SETTINGS = {
   allowMultipleTargetsPerDrag: false,
   answerPlacementLayout: 'stack',
   dragAnimationPreset: 'soft',
+  snapTolerance: 20,
 };
 
 export const DEFAULT_SELECTION_UI = {
