@@ -44,6 +44,10 @@ import {
 } from './components/storyline-preview';
 import TimelineDock from './components/TimelineDock';
 import { Inp, SelectInp, Btn, ShapePreviewIcon } from './components/ui';
+import ActivityMapPanel from './features/editor-workspace/left/ActivityMapPanel';
+import ContextRightPanel from './features/editor-workspace/right/ContextRightPanel';
+import EditorWorkspaceShell from './features/editor-workspace/EditorWorkspaceShell';
+import useWorkspaceChromeController from './features/editor-workspace/useWorkspaceChromeController';
 import VariablesManagerModal from './components/VariablesManagerModal';
 import {
   FIXED_EDITOR_USERS,
@@ -8551,30 +8555,35 @@ export default function EIcerikEditor() {
         ? 'activities'
         : 'editor';
 
+  const rightInspectorPanelProps = {
+    activity: selActivity,
+    onUpdate: updateActivity,
+    selectedIds,
+    onSelectionChange: setSelectedIds,
+    hideTimeline: false,
+    activities: present.activities,
+    variables: present.variables,
+    onVariablesChange: (nextVariables) =>
+      commit((p) => ({ ...p, variables: nextVariables.map(normalizeVariable) })),
+    mobile: false,
+    uiMode,
+    activeTab,
+    onOpenAnswerCenter: () => setAnswerDrawerOpen(true),
+    onOpenTextStudioWindow: openTextStudioWindow,
+    layerPresets: activeLayerPresets,
+    onSaveLayerPreset: handleSaveBookLayerPreset,
+    onApplyLayerPreset: handleApplyBookLayerPreset,
+    showBaseLayer,
+    onShowBaseLayerChange: setShowBaseLayer,
+    bookDefaultStylePresetId: activeBookDefaultStylePresetId,
+    onSetBookDefaultStylePreset: handleSetBookDefaultStylePreset,
+  };
+
   const renderRightInspectorPanel = (panelProps = {}) => (
     <RightInspectorPhase2
-      activity={selActivity}
-      onUpdate={updateActivity}
-      selectedIds={selectedIds}
-      onSelectionChange={setSelectedIds}
+      {...rightInspectorPanelProps}
       hideTimeline={!!panelProps.hideTimeline}
-      activities={present.activities}
-      variables={present.variables}
-      onVariablesChange={(nextVariables) =>
-        commit((p) => ({ ...p, variables: nextVariables.map(normalizeVariable) }))
-      }
       mobile={!!panelProps.mobile}
-      uiMode={uiMode}
-      activeTab={activeTab}
-      onOpenAnswerCenter={() => setAnswerDrawerOpen(true)}
-      onOpenTextStudioWindow={openTextStudioWindow}
-      layerPresets={activeLayerPresets}
-      onSaveLayerPreset={handleSaveBookLayerPreset}
-      onApplyLayerPreset={handleApplyBookLayerPreset}
-      showBaseLayer={showBaseLayer}
-      onShowBaseLayerChange={setShowBaseLayer}
-      bookDefaultStylePresetId={activeBookDefaultStylePresetId}
-      onSetBookDefaultStylePreset={handleSetBookDefaultStylePreset}
     />
   );
 
@@ -8699,6 +8708,20 @@ export default function EIcerikEditor() {
     storyRibbonTab,
     updateActivity,
     zoom,
+  });
+
+  const workspaceChromeController = useWorkspaceChromeController({
+    activity: selActivity,
+    currentBook: selBook,
+    currentPublisher: selPub,
+    onOpenAnswerCenter: () => setAnswerDrawerOpen(true),
+    onSelectActivity: handleSelectAct,
+    onSelectionChange: setSelectedIds,
+    onUpdateActivity: updateActivity,
+    present,
+    ribbonController,
+    selectedIds,
+    showToast,
   });
 
   const renderEditorRibbon = useCallback(
@@ -9583,15 +9606,7 @@ export default function EIcerikEditor() {
       )}
 
       {currentView === 'editor' && (
-        <div
-          ref={editorScrollRef}
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflow: 'auto',
-            background: `linear-gradient(180deg, ${EDITOR_THEME.shellBg}, ${EDITOR_THEME.appFooter})`,
-          }}
-        >
+        <EditorWorkspaceShell editorScrollRef={editorScrollRef}>
           <div
             style={{
               width: `${100 / effectivePanelScale}%`,
@@ -9619,7 +9634,7 @@ export default function EIcerikEditor() {
               {!isMobileViewport && selActivity && !isSlidePanelCollapsed && (
                 <div
                   style={{
-                    width: leftPanelWidth,
+                    width: Math.max(260, leftPanelWidth),
                     flexShrink: 0,
                     border: `1px solid ${EDITOR_THEME.shellBorder}`,
                     borderRadius: 0,
@@ -9631,13 +9646,14 @@ export default function EIcerikEditor() {
                     boxShadow: 'none',
                   }}
                 >
-                  <EditorScenesPanel
+                  <ActivityMapPanel
                     activity={selActivity}
+                    activities={present.activities}
+                    currentBook={selBook}
+                    onSelectActivity={handleSelectAct}
+                    onSelectionChange={setSelectedIds}
                     onUpdateActivity={updateActivity}
-                    getActivitySlides={getActivitySlides}
-                    selectActivitySlide={selectActivitySlide}
-                    createSlide={createSlide}
-                    normalizeSlide={normalizeSlide}
+                    selectedIds={selectedIds}
                   />
                 </div>
               )}
@@ -9677,7 +9693,7 @@ export default function EIcerikEditor() {
                   ) : (
                     <div
                       onPointerDown={(e) => startLayoutResize('left-panel', e)}
-                      onDoubleClick={() => setLeftPanelWidth(180)}
+                      onDoubleClick={() => setLeftPanelWidth(260)}
                       style={{
                         width: 10,
                         height: '100%',
@@ -9864,7 +9880,10 @@ export default function EIcerikEditor() {
                       boxShadow: 'none',
                     }}
                   >
-                    {renderRightInspectorPanel()}
+                    <ContextRightPanel
+                      controller={workspaceChromeController}
+                      inspectorProps={rightInspectorPanelProps}
+                    />
                   </aside>
                 </>
               )}
@@ -9993,7 +10012,7 @@ export default function EIcerikEditor() {
               </div>
             </div>
           )}
-        </div>
+        </EditorWorkspaceShell>
       )}
 
       {/* ─── Tam Ekran Canvas Düzenleme Katmanı ──────────────────────────── */}

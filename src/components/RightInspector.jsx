@@ -2565,6 +2565,11 @@ export function RightInspectorPhase2({
   onShowBaseLayerChange = () => {},
   bookDefaultStylePresetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
   onSetBookDefaultStylePreset = null,
+  forcedInspectorTab = '',
+  hideInspectorTabs = false,
+  hideLayerManagement = false,
+  workspaceTitle = '',
+  scenePanelMode = 'all',
 }) {
   const [presetGradeFilter, setPresetGradeFilter] = useState('all');
   const safeActivity = useMemo(
@@ -3263,12 +3268,13 @@ export function RightInspectorPhase2({
   );
 
   useEffect(() => {
+    if (forcedInspectorTab) return;
     if (sel || multiSel) {
       setInspectorTab((current) => (current === 'object' ? current : 'object'));
       return;
     }
     setInspectorTab((current) => (current === 'object' ? 'scene' : current));
-  }, [multiSel, sel]);
+  }, [forcedInspectorTab, multiSel, sel]);
 
   useEffect(() => {
     if (hideTimeline) {
@@ -3297,11 +3303,12 @@ export function RightInspectorPhase2({
     }
   }, [layerPresets, selectedLayerPresetId]);
 
-  const showScenePanel = inspectorTab === 'scene';
-  const showObjectPanel = inspectorTab === 'object';
-  const showAnswerPanel = inspectorTab === 'answer';
-  const showTimelinePanel = inspectorTab === 'timeline';
-  const showInteractionPanel = inspectorTab === 'interaction';
+  const activeInspectorTab = forcedInspectorTab || inspectorTab;
+  const showScenePanel = activeInspectorTab === 'scene';
+  const showObjectPanel = activeInspectorTab === 'object';
+  const showAnswerPanel = activeInspectorTab === 'answer';
+  const showTimelinePanel = activeInspectorTab === 'timeline';
+  const showInteractionPanel = activeInspectorTab === 'interaction';
   const objectListLayerId = sel?.layerId || safeActivity.activeLayerId || 'base';
   const objectListLayer = layers.find((layer) => layer.id === objectListLayerId) || null;
   const objectListLayerName =
@@ -4571,7 +4578,7 @@ export function RightInspectorPhase2({
       />
     );
   const workspacePanel =
-    activeTab === 'metinler' ? (
+    forcedInspectorTab ? null : activeTab === 'metinler' ? (
       <div
         style={{
           ...card,
@@ -4653,16 +4660,31 @@ export function RightInspectorPhase2({
         paddingBottom: mobile ? 18 : 8,
       }}
     >
-      <div
-        style={{
-          ...card,
-          padding: 12,
-          marginBottom: 10,
-          background: 'linear-gradient(180deg,#ffffff,#f4f9ff)',
-          border: '1px solid #cfe0f5',
-          boxShadow: '0 20px 36px rgba(37,99,235,.08)',
-        }}
-      >
+      {workspaceTitle && (
+        <div
+          style={{
+            color: '#174ea6',
+            fontSize: 12,
+            fontWeight: 950,
+            letterSpacing: 0.2,
+            textTransform: 'uppercase',
+            margin: '2px 2px 9px',
+          }}
+        >
+          {workspaceTitle}
+        </div>
+      )}
+      {!hideInspectorTabs && (
+        <div
+          style={{
+            ...card,
+            padding: 12,
+            marginBottom: 10,
+            background: 'linear-gradient(180deg,#ffffff,#f4f9ff)',
+            border: '1px solid #cfe0f5',
+            boxShadow: '0 20px 36px rgba(37,99,235,.08)',
+          }}
+        >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
           {inspectorTabs.map((tab) => (
             <button
@@ -4672,17 +4694,17 @@ export function RightInspectorPhase2({
                 minHeight: 42,
                 minWidth: 0,
                 borderRadius: 11,
-                border: `1px solid ${inspectorTab === tab.id ? '#93c5fd' : '#dbe7f5'}`,
+                border: `1px solid ${activeInspectorTab === tab.id ? '#93c5fd' : '#dbe7f5'}`,
                 background:
-                  inspectorTab === tab.id
+                  activeInspectorTab === tab.id
                     ? 'linear-gradient(180deg,#e8f4ff,#ffffff)'
                     : 'rgba(255,255,255,.92)',
-                color: inspectorTab === tab.id ? '#0f5d8e' : '#475569',
+                color: activeInspectorTab === tab.id ? '#0f5d8e' : '#475569',
                 fontSize: 10,
                 fontWeight: 800,
                 cursor: 'pointer',
                 boxShadow:
-                  inspectorTab === tab.id
+                  activeInspectorTab === tab.id
                     ? '0 10px 18px rgba(59,130,246,.12)'
                     : 'inset 0 1px 0 rgba(255,255,255,.9)',
                 textAlign: 'left',
@@ -4716,8 +4738,8 @@ export function RightInspectorPhase2({
                     style={{
                       padding: '2px 6px',
                       borderRadius: 999,
-                      background: inspectorTab === tab.id ? '#dbeafe' : '#f1f5f9',
-                      color: inspectorTab === tab.id ? '#1d4ed8' : '#64748b',
+                      background: activeInspectorTab === tab.id ? '#dbeafe' : '#f1f5f9',
+                      color: activeInspectorTab === tab.id ? '#1d4ed8' : '#64748b',
                       fontSize: 10,
                       fontWeight: 900,
                       flexShrink: 0,
@@ -4730,7 +4752,7 @@ export function RightInspectorPhase2({
               <div
                 style={{
                   fontSize: 9,
-                  color: inspectorTab === tab.id ? '#1e40af' : '#64748b',
+                  color: activeInspectorTab === tab.id ? '#1e40af' : '#64748b',
                   marginTop: 3,
                   lineHeight: 1.15,
                   whiteSpace: 'nowrap',
@@ -4743,7 +4765,8 @@ export function RightInspectorPhase2({
             </button>
           ))}
         </div>
-      </div>
+        </div>
+      )}
 
       {workspacePanel}
 
@@ -6134,7 +6157,10 @@ export function RightInspectorPhase2({
 
       {showScenePanel && (
         <>
+          {(!hideLayerManagement || scenePanelMode !== 'settings') && (
           <div style={sectionShell}>
+            {!hideLayerManagement && (
+              <>
             <div style={sectionHeader}>
               <div style={{ minWidth: 0 }}>
                 <div
@@ -6445,6 +6471,9 @@ export function RightInspectorPhase2({
                 );
               })}
             </div>
+              </>
+            )}
+            {scenePanelMode !== 'settings' && (
             <div
               style={{
                 display: 'grid',
@@ -6796,8 +6825,11 @@ export function RightInspectorPhase2({
                 </button>
               </div>
             </div>
+            )}
           </div>
+          )}
 
+          {scenePanelMode !== 'style' && (
           <div style={sectionShell}>
             <details open style={{ padding: 10 }}>
               <summary
@@ -6932,10 +6964,11 @@ export function RightInspectorPhase2({
               </div>
             </details>
           </div>
+          )}
         </>
       )}
 
-      {showObjectPanel && (
+      {showObjectPanel && !hideLayerManagement && (
         <div style={sectionShell}>
           <div style={sectionHeader}>
             <div>

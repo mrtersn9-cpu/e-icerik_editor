@@ -5,6 +5,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  memo,
   forwardRef,
   useImperativeHandle,
 } from 'react';
@@ -1969,4 +1970,4 @@ const StageCanvas = forwardRef(function StageCanvas(
   );
 });
 
-export default React.memo(StageCanvas);
+export default memo(StageCanvas);
