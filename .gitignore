@@ -49,6 +49,20 @@ tmp_restore/
 data/*.sqlite
 data/pdf-output-repro*/
 data/pdf-output-test/
+data/pdf-output-yunus/
+
+# Test tarayıcı profilleri
+tmp-chrome-profile/
+tmp-edge-profile/
+
+# Temp geliştirme verileri
+tmp-dev-data/
+
+# SQLite journal
+data/*.sqlite-journal
+
+# Taslak/temp klasörler
+örnek tasarim/
 
 # FTP credentials (config.php içinde şifre var)
 ftp-hosting/api/config.php

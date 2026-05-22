@@ -1,22 +1,96 @@
-import fs from "fs";
+import fs from 'fs';
 
-// 1. storylineRuntimeCore.js
-const rtLines = fs.readFileSync("src/utils/storylineRuntime.js", "utf8").split("\n");
-const rtContent = rtLines.slice(192, 199).join("\n");
-fs.writeFileSync("src/generated/storylineRuntimeCore.js", rtContent, "utf8");
+function processFile(path, renameMapping) {
+  let code = fs.readFileSync(path, 'utf8');
 
-// 2. storylineRuntimeEngine.js
-const engLines = fs.readFileSync("src/utils/storylineRuntimeEngine.js", "utf8").split("\n");
-const engContent = engLines.slice(614, 649).join("\n");
-fs.writeFileSync("src/generated/storylineRuntimeEngine.js", engContent, "utf8");
+  // Remove multi-line import statements: import { ... } from '...';
+  code = code.replace(/^import\s*\{[\s\S]*?\}\s*from\s*['"][^'"]+['"];\s*/m, '');
+  // Remove single-line import statements
+  code = code.replace(/^import\s+.*?from\s*['"][^'"]+['"];?\s*$/gm, '');
 
-// 3. storylineRendererCore.js — with imports for template literal resolution
-const renLines = fs.readFileSync("src/utils/storylineRenderer.js", "utf8").split("\n");
-const renBody = renLines.slice(427, 467).join("\n");
-const renImports = `import { STORYLINE_RUNTIME_CORE_SCRIPT } from "./storylineRuntimeCore.js";
-import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from "./storylineRuntimeEngine.js";
+  // Remove export { ... } statements
+  code = code.replace(/^export\s*\{[\s\S]*?\};?\s*$/gm, '');
 
-`;
-fs.writeFileSync("src/generated/storylineRendererCore.js", renImports + renBody, "utf8");
+  // Remove export keyword from declarations
+  code = code.replace(/^export\s+(function|const|let|var)\s+/gm, '$1 ');
 
-console.log("Runtime inline scripts extracted to src/generated/");
+  // Apply rename mapping (sort by longest old name first to avoid partial replacements)
+  const entries = Object.entries(renameMapping).sort((a, b) => b[0].length - a[0].length);
+  for (const [oldName, newName] of entries) {
+    const regex = new RegExp('\\b' + oldName + '\\b', 'g');
+    const count = (code.match(regex) || []).length;
+    if (count > 0) {
+      code = code.replace(regex, newName);
+    }
+  }
+
+  // Clean up excessive empty lines
+  code = code.replace(/\n{3,}/g, '\n\n');
+
+  return code;
+}
+
+const runtimeMapping = {
+  normalizeRuntimeActionLabel: 'runtimeKey',
+  findRuntimeLayerByKeys: 'runtimeFindLayerByKeys',
+  isGeneratedAnswerTemplateObject: 'runtimeIsGeneratedAnswerTemplateObject',
+  isLaunchSceneTemplateControl: 'runtimeIsLaunchTemplateControl',
+  getRuntimeButtonAction: 'runtimeButtonAction',
+};
+
+const engineMapping = {
+  getStorylineRuntimeCommandsForObject: 'storylineRuntimeCommandsForObject',
+  getStorylineRuntimeCommandsForDrop: 'storylineRuntimeCommandsForDrop',
+  getStorylineTriggerSourceMatches: 'storylineEngineSourceMatches',
+  getStorylineDropTriggerSourceMatches: 'storylineEngineDropSourceMatches',
+  getStorylineRuntimeObjectStateValue: 'storylineEngineObjectStateValue',
+  getVariableDefinition: 'storylineEngineVariableDef',
+  evaluateStorylineTriggerConditions: 'storylineEngineConditionsPass',
+  evaluateStorylineTriggerCondition: 'storylineEngineConditionPass',
+  collapseStorylineNavigationCommands: 'storylineEngineCollapseNavigation',
+  getStorylineRuntimeCommandsForAction: 'storylineEngineCommandsForAction',
+  getCommandsForTrigger: 'storylineEngineCommandsForTrigger',
+  castStorylineRuntimeValue: 'storylineEngineCastValue',
+  normalizeStorylineRuntimeValue: 'storylineEngineNormalizeValue',
+  getStorylineRuntimeKey: 'storylineEngineKey',
+  normalizeRuntimeActionLabel: 'storylineEngineKey',
+  isStorylineRuntimeDropTargetLikeObject: 'storylineEngineIsDropTargetLike',
+  getStorylineRuntimeObjectKey: 'storylineEngineObjectKey',
+  withStorylineRuntimeObjectKeys: 'storylineEngineWithObjectKeys',
+  normalizeStorylineDragDropMatchValue: 'storylineEngineMatchValues',
+  getStorylineDragDropPairKey: 'storylineEnginePairKey',
+  getStorylineDragDropPairsFromMatches: 'storylineEnginePairsFromMatches',
+  getDragDropSettings: 'storylineEngineDragDropSettings',
+  areScopesCompatible: 'storylineEngineScopesCompatible',
+  isDragReusable: 'storylineEngineDragReusable',
+  getDropCapacityLimit: 'storylineEngineDropCapacity',
+  getBaseRuntimeObjects: 'storylineEngineBaseObjects',
+  buildStorylineRuntimeAutoDragMatches: 'storylineEngineAutoMatches',
+  getStorylineRuntimeCorrectDragMatches: 'storylineEngineCorrectMatches',
+  getStorylineRuntimeSnapPosition: 'storylineEngineSnapPosition',
+  findStorylineRuntimeDropTarget: 'storylineEngineFindDropTarget',
+  evaluateStorylineRuntimeDragDrop: 'storylineEngineEvaluateDragDrop',
+  getStorylineRuntimeDropResultStates: 'storylineEngineDropResultStates',
+  isButtonIntroRuntimeControl: 'storylineEngineIsButtonIntroControl',
+  isStorylineCheckButton: 'storylineEngineIsCheckButton',
+  findRuntimeLayerByKeys: 'runtimeFindLayerByKeys',
+  getRuntimeButtonAction: 'runtimeButtonAction',
+};
+
+const runtimeCode = processFile('src/utils/storylineRuntime.js', runtimeMapping);
+const engineCode = processFile('src/utils/storylineRuntimeEngine.js', engineMapping);
+
+// Escape backticks, backslashes and ${ so the generated file remains a valid JS template literal
+const escapedRuntimeCode = runtimeCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+const escapedEngineCode = engineCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+
+fs.writeFileSync(
+  'src/generated/storylineRuntimeCore.js',
+  'export const STORYLINE_RUNTIME_CORE_SCRIPT = `\n' + escapedRuntimeCode + '\n`;\n'
+);
+fs.writeFileSync(
+  'src/generated/storylineRuntimeEngine.js',
+  'export const STORYLINE_RUNTIME_ENGINE_SCRIPT = `\n' + escapedEngineCode + '\n`;\n'
+);
+
+console.log('Generated files updated successfully.');

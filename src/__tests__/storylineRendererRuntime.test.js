@@ -1,4 +1,5 @@
 import { STORYLINE_RENDERER_CORE_SCRIPT } from '../generated/storylineRendererCore.js';
+import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore.js';
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine.js';
 import { getSharedStorylineRendererRuntimeApi } from '../utils/storylineRenderer';
 
@@ -6,6 +7,7 @@ function loadRuntimeRenderer() {
   // Runtime bundles are generated as script strings; this test evaluates that generated runtime API.
   // eslint-disable-next-line no-new-func
   return new Function(`
+    ${STORYLINE_RUNTIME_CORE_SCRIPT}
     ${STORYLINE_RUNTIME_ENGINE_SCRIPT}
     ${STORYLINE_RENDERER_CORE_SCRIPT}
     return {
@@ -13,6 +15,7 @@ function loadRuntimeRenderer() {
       storylineRendererObjectHtml,
       storylineRendererObjectKey,
       storylineRendererVisibleObjects,
+      storylineRuntimeCommandsForObject,
     };
   `)();
 }
@@ -623,5 +626,23 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(markup).toContain('font-weight:600');
     expect(markup).toContain('padding:0');
     expect(markup).toContain('style="pointer-events:none;padding:0 6px"');
+  });
+
+  test('generated runtime keeps manual linked trigger ahead of icon runtimeAction', () => {
+    const renderer = loadRuntimeRenderer();
+    const slide = {
+      objects: [
+        { id: 'icon', type: 'button', label: '⌂', runtimeAction: 'home', linkedActionTargetId: 'label', linkedHoverGroup: 'row' },
+        { id: 'label', type: 'button', label: 'Çözümü Göster', linkedActionTargetId: 'label', linkedHoverGroup: 'row' },
+      ],
+      layers: [{ id: 'answer-layer', name: 'Cevap' }],
+      triggers: [{ when: 'onClick', target: 'label', action: 'KatmanaGec', value: 'answer-layer' }],
+    };
+    expect(renderer.storylineRuntimeCommandsForObject({
+      slide, sourceId: 'icon', sourceObject: slide.objects[0], state: {}, variableDefinitions: [],
+    })).toEqual([
+      { type: 'resetAttempt', reason: 'trigger-answer-layer' },
+      { type: 'setLayer', layerId: 'answer-layer' },
+    ]);
   });
 });
