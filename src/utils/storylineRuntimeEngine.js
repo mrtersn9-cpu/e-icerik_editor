@@ -533,14 +533,86 @@ export function getStorylineTriggerSourceMatches(trigger = {}, objectId = '') {
   const source = trigger?.target || '';
   const sourceKey = normalizeRuntimeActionLabel(source);
   if (objectId === '__activity__') {
-    return source === '__activity__' || sourceKey === 'sahne' || sourceKey === 'secilinesne';
+    return source === '__activity__' || sourceKey === 'sahne';
   }
   return (
     source === objectId ||
-    sourceKey === 'secilinesne' ||
     sourceKey === 'tiklanannesne' ||
     sourceKey === 'selected'
   );
+}
+
+function getStorylineRuntimeObjectById(objects = [], objectId = '') {
+  if (!objectId) return null;
+  return (
+    (objects || []).find(
+      (object) =>
+        object?.id === objectId ||
+        object?.__runtimeId === objectId ||
+        object?.__previewId === objectId
+    ) || null
+  );
+}
+
+function getStorylineRuntimeSourceCandidates({
+  slide = {},
+  sourceId = '',
+  sourceObject = null,
+  sourceIds = null,
+  sourceObjects = null,
+} = {}) {
+  const slideObjects = Array.isArray(slide?.objects) ? slide.objects : [];
+  const explicitObjects = Array.isArray(sourceObjects)
+    ? sourceObjects
+    : sourceObjects && typeof sourceObjects === 'object'
+      ? Object.values(sourceObjects)
+      : [];
+  const objectPool = [...explicitObjects, ...slideObjects].filter(Boolean);
+  const candidates = [];
+  const seen = new Set();
+  const findObject = (id = '') =>
+    getStorylineRuntimeObjectById(objectPool, id) ||
+    (sourceObject &&
+    (sourceObject.id === id ||
+      sourceObject.__runtimeId === id ||
+      sourceObject.__previewId === id)
+      ? sourceObject
+      : null);
+  const addCandidate = (id = '', object = null) => {
+    const resolvedObject = object || findObject(id);
+    const resolvedId = String(resolvedObject?.id || id || '').trim();
+    if (!resolvedId || seen.has(resolvedId)) return;
+    seen.add(resolvedId);
+    candidates.push({ id: resolvedId, object: resolvedObject || null });
+  };
+
+  const rawSourceIds =
+    Array.isArray(sourceIds) && sourceIds.length ? sourceIds : [sourceId].filter(Boolean);
+  rawSourceIds.forEach((id) => addCandidate(id));
+  if (sourceObject?.id) addCandidate(sourceObject.id, sourceObject);
+  if (sourceObject && sourceId) addCandidate(sourceId, sourceObject);
+
+  for (const candidate of [...candidates]) {
+    const object = candidate.object || findObject(candidate.id);
+    if (!object) continue;
+    const linkedActionTargetId = String(object.linkedActionTargetId || '').trim();
+    if (linkedActionTargetId) addCandidate(linkedActionTargetId);
+
+    const linkedHoverGroup = String(object.linkedHoverGroup || '').trim();
+    if (linkedHoverGroup) {
+      slideObjects.forEach((item) => {
+        if (String(item?.linkedHoverGroup || '').trim() === linkedHoverGroup) {
+          addCandidate(item.id, item);
+        }
+      });
+    }
+  }
+
+  return candidates.length
+    ? candidates
+    : sourceId
+      ? [{ id: sourceId, object: sourceObject || null }]
+      : [];
 }
 
 function getStorylineDropTriggerSourceMatches(trigger = {}, objectId = '') {
@@ -668,8 +740,8 @@ export function getStorylineRuntimeCommandsForAction(
   action = '',
   { slide = {}, reasonPrefix = 'runtime' } = {}
 ) {
-  if (action === 'restart' || action === 'home')
-    return [{ type: 'restart', reason: `${reasonPrefix}-${action}-button` }];
+  if (action === 'restart') return [{ type: 'restart', reason: `${reasonPrefix}-restart-button` }];
+  if (action === 'home') return [{ type: 'goHome', reason: `${reasonPrefix}-home-button` }];
   if (action === 'answer') {
     const layer = findRuntimeLayerByKeys(slide.layers || [], ['cevap', 'answer']);
     return layer
@@ -706,7 +778,23 @@ export function getStorylineRuntimeCommandsForAction(
   return [];
 }
 
+function getRuntimeTriggerAction(action = '') {
+  const value = String(action || '').replace(/^runtime:/i, '').trim().toLowerCase();
+  if (value === 'show-answer') return 'answer';
+  if (value === 'toggle-mute') return 'mute';
+  if (value === 'toggle-play-pause') return 'playback';
+  if (value === 'restart' || value === 'home' || value === 'complete' || value === 'help')
+    return value;
+  return value;
+}
+
 function getCommandsForTrigger(trigger = {}, slide = {}) {
+  if (String(trigger.action || '').startsWith('runtime:')) {
+    return getStorylineRuntimeCommandsForAction(getRuntimeTriggerAction(trigger.action), {
+      slide,
+      reasonPrefix: 'trigger',
+    });
+  }
   if (trigger.action === 'YenidenBaslat') return [{ type: 'restart', reason: 'trigger-restart' }];
   if (trigger.action === 'KatmanaGec' && trigger.value) {
     const answerLayer = findRuntimeLayerByKeys(slide.layers || [], ['cevap', 'answer']);
@@ -769,13 +857,32 @@ function getCommandsForTrigger(trigger = {}, slide = {}) {
   }
   if (trigger.action === 'TamamlaGonder' || trigger.action === 'SonucGonder')
     return [{ type: 'complete' }];
+  if (trigger.action === 'URLAc' && trigger.value)
+    return [{ type: 'openUrl', url: trigger.value }];
+  if (trigger.action === 'Yazdir') return [{ type: 'print' }];
+  if (trigger.action === 'sendWidgetCommand' && trigger.value) {
+    return [
+      {
+        type: 'sendWidgetCommand',
+        widgetId: trigger.value,
+        command: trigger.extra || '',
+        payload: trigger.payload || {},
+      },
+    ];
+  }
   return [];
 }
 
 function collapseStorylineNavigationCommands(commands = []) {
   const list = Array.isArray(commands) ? commands : [];
   const navigationPriority = (command) => {
-    if (command?.type === 'goToSlide' || command?.type === 'goToActivity') return 4;
+    if (
+      command?.type === 'goToSlide' ||
+      command?.type === 'goToActivity' ||
+      command?.type === 'goHome' ||
+      command?.type === 'restart'
+    )
+      return 4;
     if (command?.type === 'goRelative') return 3;
     if (command?.type === 'complete') return 2;
     return 0;
@@ -799,31 +906,23 @@ export function getStorylineRuntimeCommandsForObject({
   slide = {},
   sourceId = '',
   sourceObject = null,
+  sourceIds = null,
+  sourceObjects = null,
   when = 'onClick',
+  eventName = '',
   state = {},
   variableDefinitions = [],
 } = {}) {
   if (!slide) return [];
 
-  if (when === 'onClick') {
-    if (sourceObject?.selectionQuestionId) return [{ type: 'toggleSelection', objectId: sourceId }];
-    if (isStorylineCheckButton(sourceObject)) return [{ type: 'checkAnswer' }];
-    if (
-      sourceObject?.generatedBy === 'scene-template' &&
-      sourceObject?.sceneTemplateId === 'button-intro' &&
-      !isButtonIntroRuntimeControl(sourceObject)
-    ) {
-      if (sourceObject?.sceneTemplateDemoAction || isButtonIntroPlayPauseDemoButton(sourceObject)) {
-        return [
-          {
-            type: 'toggleDemoButtonState',
-            objectId: getButtonIntroDemoStateTargetId(sourceId, sourceObject),
-          },
-        ];
-      }
-      return [];
-    }
-  }
+  const candidates = getStorylineRuntimeSourceCandidates({
+    slide,
+    sourceId,
+    sourceObject,
+    sourceIds,
+    sourceObjects,
+  });
+  const candidateIds = candidates.map((candidate) => candidate.id).filter(Boolean);
 
   const context = {
     variables: state.variables || {},
@@ -833,24 +932,60 @@ export function getStorylineRuntimeCommandsForObject({
     hidden: state.hidden || {},
   };
 
-  const matchingTriggers = (slide.triggers || [])
+  let matchingTriggers = (slide.triggers || [])
     .filter(
       (trigger) =>
-        (trigger?.when || 'onClick') === when && getStorylineTriggerSourceMatches(trigger, sourceId)
+        (trigger?.when || 'onClick') === when &&
+        candidateIds.some((candidateId) => getStorylineTriggerSourceMatches(trigger, candidateId))
     )
     .filter((trigger) => evaluateStorylineTriggerConditions(trigger, context));
+
+  if (when === 'onWidgetEvent' && eventName) {
+    matchingTriggers = matchingTriggers.filter((trigger) => trigger.eventName === eventName);
+  }
   const manualTriggers = matchingTriggers.filter((trigger) => !trigger.generatedBy);
+  const manualTriggerCommands = collapseStorylineNavigationCommands(
+    manualTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide))
+  );
+  if (manualTriggers.length) return manualTriggerCommands;
+
   const triggerCommands = collapseStorylineNavigationCommands(
-    (manualTriggers.length ? manualTriggers : matchingTriggers).flatMap((trigger) =>
-      getCommandsForTrigger(trigger, slide)
-    )
+    matchingTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide))
   );
   if (triggerCommands.length) return triggerCommands;
 
   if (when === 'onClick') {
-    const sourceRuntimeAction = getRuntimeButtonAction(sourceObject || {});
-    const actionCommands = getStorylineRuntimeCommandsForAction(sourceRuntimeAction, { slide });
-    if (actionCommands.length) return actionCommands;
+    const selectionCandidate = candidates.find((candidate) => candidate.object?.selectionQuestionId);
+    if (selectionCandidate)
+      return [{ type: 'toggleSelection', objectId: selectionCandidate.object?.id || selectionCandidate.id }];
+
+    const checkCandidate = candidates.find((candidate) => isStorylineCheckButton(candidate.object));
+    if (checkCandidate) return [{ type: 'checkAnswer' }];
+
+    const buttonIntroCandidate = candidates.find(
+      (candidate) =>
+        candidate.object?.generatedBy === 'scene-template' &&
+        candidate.object?.sceneTemplateId === 'button-intro' &&
+        !isButtonIntroRuntimeControl(candidate.object)
+    );
+    if (buttonIntroCandidate) {
+      const object = buttonIntroCandidate.object;
+      if (object?.sceneTemplateDemoAction || isButtonIntroPlayPauseDemoButton(object)) {
+        return [
+          {
+            type: 'toggleDemoButtonState',
+            objectId: getButtonIntroDemoStateTargetId(buttonIntroCandidate.id, object),
+          },
+        ];
+      }
+      return [];
+    }
+
+    for (const candidate of candidates) {
+      const sourceRuntimeAction = getRuntimeButtonAction(candidate.object || {});
+      const actionCommands = getStorylineRuntimeCommandsForAction(sourceRuntimeAction, { slide });
+      if (actionCommands.length) return actionCommands;
+    }
   }
 
   return [];

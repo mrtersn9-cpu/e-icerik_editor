@@ -67,11 +67,16 @@ const StageCanvas = forwardRef(function StageCanvas(
     selectedIds,
     onSelectionChange,
     timelineTime = 0,
+    timelineVisualization = true,
     showBaseLayer = true,
+    canvasTool,
+    onCanvasToolChange,
   },
   ref
 ) {
   const viewportRef = useRef(null);
+  const panStateRef = useRef(null);
+  const zoomClickCountRef = useRef(0);
   const stageRef = useRef(null);
   const latestRef = useRef(activity);
   const interactRef = useRef(null);
@@ -85,14 +90,27 @@ const StageCanvas = forwardRef(function StageCanvas(
   const rubberStartRef = useRef(null);
   const rubberHandlersRef = useRef(null);
   const dragSnapshotRef = useRef(null);
+  const interactionDraftRef = useRef(null);
   const vectorEditRef = useRef(null);
   const [rubberBand, setRubberBand] = useState(null);
   const [selectedVectorAnchor, setSelectedVectorAnchor] = useState({ objectId: null, indices: [] });
   const [viewportSize, setViewportSize] = useState({ width: 1280, height: 760 });
+  const [interactionDraft, setInteractionDraft] = useState(null);
 
   useEffect(() => {
-    latestRef.current = activity;
+    if (!interactionDraftRef.current) latestRef.current = activity;
   }, [activity]);
+
+  const setLiveInteractionActivity = useCallback((nextActivity) => {
+    interactionDraftRef.current = nextActivity;
+    latestRef.current = nextActivity;
+    setInteractionDraft(nextActivity);
+  }, []);
+
+  const clearLiveInteractionActivity = useCallback(() => {
+    interactionDraftRef.current = null;
+    setInteractionDraft(null);
+  }, []);
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
@@ -150,8 +168,9 @@ const StageCanvas = forwardRef(function StageCanvas(
     return () => observer.disconnect();
   }, []);
 
-  const objects = getCanvasObjects(activity);
-  const hasSvg = !!activity.svgMarkup;
+  const canvasActivity = interactionDraft || activity;
+  const objects = getCanvasObjects(canvasActivity);
+  const hasSvg = !!canvasActivity.svgMarkup;
   const hasObjects = objects.length > 0;
   const pdfBackgroundObject = useMemo(
     () => objects.find((object) => object?.isPdfBackground && object?.imageData) || null,
@@ -161,7 +180,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     () => objects.filter((object) => !pdfBackgroundObject || object.id !== pdfBackgroundObject.id),
     [objects, pdfBackgroundObject]
   );
-  const currentLayerId = activity.activeLayerId || 'base';
+  const currentLayerId = canvasActivity.activeLayerId || 'base';
   const overlayLayerActive = currentLayerId !== 'base';
   const hasExplicitLayerBackdrop = useMemo(() => {
     if (!overlayLayerActive) return false;
@@ -173,8 +192,8 @@ const StageCanvas = forwardRef(function StageCanvas(
       const coversStage =
         (Number(object.x) || 0) <= 2 &&
         (Number(object.y) || 0) <= 2 &&
-        (Number(object.width) || 0) >= (Number(activity.stageWidth) || 1920) - 2 &&
-        (Number(object.height) || 0) >= (Number(activity.stageHeight) || 1080) - 2;
+        (Number(object.width) || 0) >= (Number(canvasActivity.stageWidth) || 1920) - 2 &&
+        (Number(object.height) || 0) >= (Number(canvasActivity.stageHeight) || 1080) - 2;
       const darkBackdrop =
         bg.includes('rgba(0,0,0') ||
         bg.includes('rgba(15,23,42') ||
@@ -185,8 +204,8 @@ const StageCanvas = forwardRef(function StageCanvas(
       return coversStage && darkBackdrop && alpha >= 0.05;
     });
   }, [
-    activity.stageHeight,
-    activity.stageWidth,
+    canvasActivity.stageHeight,
+    canvasActivity.stageWidth,
     currentLayerId,
     overlayLayerActive,
     renderObjects,
@@ -194,12 +213,17 @@ const StageCanvas = forwardRef(function StageCanvas(
 
   const baseScale = useMemo(() => {
     return getFitScale(
-      activity.stageWidth || 1920,
-      activity.stageHeight || 1080,
-      viewportSize.width - 20,
-      viewportSize.height - 52
+      canvasActivity.stageWidth || 1920,
+      canvasActivity.stageHeight || 1080,
+      viewportSize.width - 12,
+      viewportSize.height - 36
     );
-  }, [activity.stageWidth, activity.stageHeight, viewportSize.height, viewportSize.width]);
+  }, [
+    canvasActivity.stageWidth,
+    canvasActivity.stageHeight,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -222,8 +246,8 @@ const StageCanvas = forwardRef(function StageCanvas(
 
   const resolvedZoom = zoom === 'fit' ? baseScale : Number(zoom) || baseScale;
   const scale = resolvedZoom;
-  const vw = Math.round((activity.stageWidth || 1920) * scale);
-  const vh = Math.round((activity.stageHeight || 1080) * scale);
+  const vw = Math.round((canvasActivity.stageWidth || 1920) * scale);
+  const vh = Math.round((canvasActivity.stageHeight || 1080) * scale);
   const zoomPercent = Math.round(scale * 100);
 
   const toStage = useCallback(
@@ -591,10 +615,12 @@ const StageCanvas = forwardRef(function StageCanvas(
     }
     onSelectionChange(newIds);
     // selectedObjectId: the primary object for inspector (must be in selection)
-    onUpdate({
+    const selectedActivity = {
       ...a,
       selectedObjectId: newIds.has(primaryObjectId) ? primaryObjectId : [...newIds][0] || null,
-    });
+    };
+    latestRef.current = selectedActivity;
+    onUpdate(selectedActivity);
     const isEditableAnswerPlacement = obj.generatedBy === 'answer-placement';
     if (obj.locked && !isEditableAnswerPlacement) return;
 
@@ -637,7 +663,7 @@ const StageCanvas = forwardRef(function StageCanvas(
             ? { ...moved, answerPlacementManual: true, disableDrag: false, locked: false }
             : moved;
         });
-        onUpdate({ ...curr, objects: updatedObjects });
+        setLiveInteractionActivity({ ...curr, objects: updatedObjects });
       } else {
         const s = dragSnapshotRef.current?.[objId] || obj;
         const r = s.x + s.width,
@@ -653,12 +679,14 @@ const StageCanvas = forwardRef(function StageCanvas(
           next.y = Math.max(0, Math.min(s.y + dy, b - MIN));
           next.height = Math.max(MIN, b - next.y);
         }
-        patchObj(
-          objId,
+        const nextPatch =
           obj.generatedBy === 'answer-placement'
             ? { ...next, answerPlacementManual: true, disableDrag: false, locked: false }
-            : next
+            : next;
+        const updatedObjects = (curr.objects || []).map((item) =>
+          item.id === objId ? { ...item, ...nextPatch } : item
         );
+        setLiveInteractionActivity({ ...curr, objects: updatedObjects });
       }
     };
 
@@ -666,7 +694,14 @@ const StageCanvas = forwardRef(function StageCanvas(
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       interactRef.current = null;
+      const finalActivity = interactionDraftRef.current;
       dragSnapshotRef.current = null;
+      if (hasMoved && finalActivity) {
+        onUpdate(finalActivity);
+        clearLiveInteractionActivity();
+        return;
+      }
+      clearLiveInteractionActivity();
       // Plain click (no drag) on a multi-selected object → reduce to single selection
       if (!hasMoved && deferredSingleSelect) {
         const singleSet = getEditorLinkedSelectionIds(latestRef.current, objId);
@@ -682,8 +717,12 @@ const StageCanvas = forwardRef(function StageCanvas(
 
   // Rubber-band selection
   const startRubber = (e) => {
-    if (e.target !== stageRef.current) return;
+    const isViewportStart = e.target === viewportRef.current;
+    const isStageStart = e.target === stageRef.current;
+    if (!isViewportStart && !isStageStart) return;
+    if (e.button !== 0 || canvasTool !== 'select') return;
     e.preventDefault();
+    e.stopPropagation();
     e.currentTarget?.setPointerCapture?.(e.pointerId);
     const r = stageRef.current.getBoundingClientRect();
     const x0 = e.clientX - r.left,
@@ -864,14 +903,80 @@ const StageCanvas = forwardRef(function StageCanvas(
     <div
       ref={viewportRef}
       data-stage-zoom-scope="true"
+      onPointerDown={(event) => {
+        if (event.button !== 0 || canvasTool !== 'select') return;
+        startRubber(event);
+      }}
+      onMouseDown={(e) => {
+        if (canvasTool === 'pan') {
+          const node = viewportRef.current;
+          if (!node) return;
+          panStateRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            startScrollLeft: node.scrollLeft,
+            startScrollTop: node.scrollTop,
+          };
+          node.style.cursor = 'grabbing';
+          e.preventDefault();
+        }
+      }}
+      onMouseMove={(e) => {
+        if (canvasTool === 'pan' && panStateRef.current) {
+          const node = viewportRef.current;
+          if (!node) return;
+          const { startX, startY, startScrollLeft, startScrollTop } = panStateRef.current;
+          node.scrollLeft = startScrollLeft - (e.clientX - startX);
+          node.scrollTop = startScrollTop - (e.clientY - startY);
+        }
+      }}
+      onMouseUp={() => {
+        if (canvasTool === 'pan') {
+          panStateRef.current = null;
+          const node = viewportRef.current;
+          if (node) node.style.cursor = 'grab';
+        }
+      }}
+      onMouseLeave={() => {
+        if (canvasTool === 'pan') {
+          panStateRef.current = null;
+          const node = viewportRef.current;
+          if (node) node.style.cursor = 'grab';
+        }
+      }}
+      onClick={(e) => {
+        if (canvasTool !== 'zoom') return;
+        const node = viewportRef.current;
+        if (!node) return;
+        zoomClickCountRef.current += 1;
+        if (zoomClickCountRef.current >= 2) {
+          zoomClickCountRef.current = 0;
+          onCanvasToolChange?.('select');
+          onZoomChange?.('fit');
+          return;
+        }
+        const currentScale = zoom === 'fit' ? baseScale : Number(zoom) || baseScale;
+        const newScale = Math.min(Number((currentScale + 0.1).toFixed(2)), 4);
+        const rect = node.getBoundingClientRect();
+        const clickX = e.clientX - rect.left + node.scrollLeft;
+        const clickY = e.clientY - rect.top + node.scrollTop;
+        onZoomChange?.(newScale);
+        requestAnimationFrame(() => {
+          const newClickX = clickX * (newScale / currentScale);
+          const newClickY = clickY * (newScale / currentScale);
+          node.scrollLeft = Math.max(0, newClickX - (e.clientX - rect.left));
+          node.scrollTop = Math.max(0, newClickY - (e.clientY - rect.top));
+        });
+      }}
       style={{
         flex: 1,
         overflow: 'auto',
+        cursor: canvasTool === 'pan' ? 'grab' : canvasTool === 'zoom' ? 'zoom-in' : 'default',
         background: 'linear-gradient(180deg,#dbe5f0,#cfd9e6)',
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        padding: 14,
+        padding: 6,
       }}
     >
       <div style={{ position: 'relative' }}>
@@ -989,7 +1094,7 @@ const StageCanvas = forwardRef(function StageCanvas(
             fontWeight: 700,
           }}
         >
-          {activity.stageWidth} x {activity.stageHeight} | x{scale.toFixed(2)}
+          {canvasActivity.stageWidth} x {canvasActivity.stageHeight} | x{scale.toFixed(2)}
         </div>
         <div
           ref={stageRef}
@@ -998,7 +1103,7 @@ const StageCanvas = forwardRef(function StageCanvas(
             width: vw,
             height: vh,
             position: 'relative',
-            background: activity.backgroundColor || '#fff',
+            background: canvasActivity.backgroundColor || '#fff',
             border: '1px solid rgba(148,163,184,.45)',
             borderRadius: 18,
             overflow: 'hidden',
@@ -1024,7 +1129,7 @@ const StageCanvas = forwardRef(function StageCanvas(
             />
           )}
           {/* Izgara */}
-          {activity.viewOptions?.showGrid !== false && (
+          {canvasActivity.viewOptions?.showGrid !== false && (
             <div
               style={{
                 position: 'absolute',
@@ -1037,7 +1142,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               }}
             />
           )}
-          {activity.viewOptions?.showGuides && (
+          {canvasActivity.viewOptions?.showGuides && (
             <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3 }}>
               <div
                 style={{
@@ -1060,10 +1165,10 @@ const StageCanvas = forwardRef(function StageCanvas(
             </div>
           )}
           {/* SVG zemin */}
-          {activity.svgMarkup && (
+          {canvasActivity.svgMarkup && (
             <div
               style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-              dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
+              dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(canvasActivity.svgMarkup) }}
             />
           )}
           {overlayLayerActive && showBaseLayer && !hasExplicitLayerBackdrop && (
@@ -1259,17 +1364,18 @@ const StageCanvas = forwardRef(function StageCanvas(
             .filter((o) => o.visible !== false)
             .filter((o) => {
               const oL = o.layerId || 'base';
-              const cL = activity.activeLayerId || 'base';
+              const cL = canvasActivity.activeLayerId || 'base';
               if (oL === 'base' && cL !== 'base' && !showBaseLayer) return false;
               return true;
             })
             .sort((a, b) => a.zIndex - b.zIndex)
             .map((o) => {
               const objLayer = o.layerId || 'base';
-              const curLayer = activity.activeLayerId || 'base';
+              const curLayer = canvasActivity.activeLayerId || 'base';
               const isOtherLayerObj = objLayer !== curLayer;
               const isSel =
-                !isOtherLayerObj && (selectedIds.has(o.id) || activity.selectedObjectId === o.id);
+                !isOtherLayerObj &&
+                (selectedIds.has(o.id) || canvasActivity.selectedObjectId === o.id);
               const isEditorLocked = o.locked && o.generatedBy !== 'answer-placement';
               const st =
                 o.type === 'draggable' || o.type === 'dropzone'
@@ -1285,11 +1391,14 @@ const StageCanvas = forwardRef(function StageCanvas(
               const selectionColor = '#0ea5e9';
               const vectorPoints =
                 o.type === 'shape' && shapeKind === 'customPath' ? getObjectVectorPoints(o) : [];
-              const isTimelineActive = isObjectTimelineActive(activity, o.id, timelineTime);
+              const isTimelineActive =
+                !timelineVisualization || isObjectTimelineActive(canvasActivity, o.id, timelineTime);
               const isSceneTemplateObject = isGeneratedSceneTemplateObject(o);
-              const motionStyle = getTimelineMotionStyle(activity, o.id, timelineTime, {
-                suppressBoundaryEffects: timelineTime <= 0.01,
-              });
+              const motionStyle = timelineVisualization
+                ? getTimelineMotionStyle(canvasActivity, o.id, timelineTime, {
+                    suppressBoundaryEffects: timelineTime <= 0.01,
+                  })
+                : { opacity: 1, translateX: 0, translateY: 0, scale: 1 };
               const inactiveOpacity = isSceneTemplateObject
                 ? 1
                 : o.type === 'draggable' || o.type === 'dropzone'
@@ -1444,6 +1553,33 @@ const StageCanvas = forwardRef(function StageCanvas(
                         </div>
                       </div>
                     </div>
+                  ) : o.type === 'custom-widget' ? (
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        background: 'linear-gradient(135deg,#f0f9ff,#e0f2fe)',
+                        border: '2px dashed #0ea5e9',
+                        borderRadius: 12,
+                        color: '#0c4a6e',
+                        fontSize: Math.max(10, 13 * scale),
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        padding: `${8 * scale}px`,
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <span style={{ fontSize: Math.max(18, 28 * scale) }}>🧩</span>
+                      <span>{o.widget?.widgetName || o.widget?.widgetId || o.label || 'Widget'}</span>
+                      <span style={{ fontSize: Math.max(8, 10 * scale), opacity: 0.72, fontWeight: 600 }}>
+                        Önizleme için sağ üstten çalıştır
+                      </span>
+                    </div>
                   ) : o.type === 'shape' ? (
                     usesShapeSvg ? (
                       renderShapeContent(o, st, scale)
@@ -1503,7 +1639,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                         />
                       );
                     })}
-                  {isSel && activity.selectedObjectId === o.id && (
+                  {isSel && canvasActivity.selectedObjectId === o.id && (
                     <div
                       style={{
                         position: 'absolute',

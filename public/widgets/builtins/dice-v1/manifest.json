@@ -1,0 +1,44 @@
+{
+  "id": "dice-v1",
+  "name": "Zar Atma",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "defaultWidth": 300,
+  "defaultHeight": 260,
+  "props": [
+    {
+      "name": "min",
+      "type": "number",
+      "label": "Minimum",
+      "default": 1
+    },
+    {
+      "name": "max",
+      "type": "number",
+      "label": "Maksimum",
+      "default": 10
+    },
+    {
+      "name": "animated",
+      "type": "boolean",
+      "label": "Animasyonlu",
+      "default": true
+    }
+  ],
+  "commands": [
+    {
+      "name": "roll",
+      "label": "Zarı At"
+    },
+    {
+      "name": "reset",
+      "label": "Sıfırla"
+    }
+  ],
+  "events": [
+    {
+      "name": "diceRolled",
+      "label": "Zar Atıldı"
+    }
+  ]
+}

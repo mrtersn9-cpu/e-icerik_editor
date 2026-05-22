@@ -65,6 +65,8 @@ import {
   getStorylineRuntimeDropResultStates,
   getStorylineRuntimeCommandsForObject,
 } from '../../utils/storylineRuntimeEngine';
+import WidgetHost from '../../widgets/WidgetHost';
+import { buildWidgetIframeSrc } from '../../widgets/WidgetRegistry';
 import RuntimeVideoElement from '../editor/RuntimeVideoElement';
 import {
   PreviewMatchingFlow,
@@ -432,10 +434,9 @@ function getRuntimeAccessibilityProps(obj = {}, { clickable = false, isImage = f
 function getTriggerSourceMatches(trigger, objectId) {
   const source = trigger?.target || 'Secili Nesne';
   if (objectId === '__activity__')
-    return source === '__activity__' || source === 'Sahne' || source === 'Secili Nesne';
+    return source === '__activity__' || source === 'Sahne';
   return (
     source === objectId ||
-    source === 'Secili Nesne' ||
     source === 'TiklananNesne' ||
     source === 'selected'
   );
@@ -888,6 +889,8 @@ function StorylinePreviewObjectLayer({
   scale,
   captionsEnabled = false,
   runtimeVariables = {},
+  onWidgetEvent,
+  widgetRefs,
 }) {
   const previewRenderData = useMemo(
     () =>
@@ -1867,6 +1870,23 @@ function StorylinePreviewObjectLayer({
               style={{ width: '100%', accentColor: '#3b82f6', pointerEvents: 'auto' }}
             />
           </div>
+        ) : obj.type === 'custom-widget' ? (
+          <WidgetHost
+            src={buildWidgetIframeSrc({
+              widgetId: obj.widget?.widgetId,
+              basePath: obj.widget?.basePath,
+              entry: obj.widget?.entry,
+              instanceId: obj.id,
+              props: obj.widget?.props || {},
+            })}
+            widgetInstanceId={obj.id}
+            onEvent={(eventName, payload) => onWidgetEvent?.(obj, eventName, payload)}
+            ref={(el) => {
+              if (el) widgetRefs?.current?.set(obj.id, el);
+              else widgetRefs?.current?.delete(obj.id);
+            }}
+            style={{ width: '100%', height: '100%', borderRadius: 'inherit' }}
+          />
         ) : obj.type === 'shape' ? (
           <>
             <ShapePreviewIcon
@@ -2990,6 +3010,19 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     [activity?.id, previewActivities, resetPreviewRuntime]
   );
 
+  const goHomePreview = useCallback(
+    (reason = 'runtime-home') => {
+      const startActivity =
+        previewActivities.find((item) => item.id === activity?.id) || previewActivities[0];
+      const startSlides = getActivitySlides(startActivity || {});
+      const startSlideId = startSlides[0]?.id || '';
+      setSelectedActivityId(startActivity?.id || '');
+      setSelectedSlideId(startSlideId);
+      resetPreviewRuntime(reason);
+    },
+    [activity?.id, previewActivities, resetPreviewRuntime]
+  );
+
   const logPreviewRuntimeAction = useCallback((action, message, data = {}) => {
     setDragDebug((current) => {
       const entry = {
@@ -3287,6 +3320,8 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
           handleCheckAnswer();
         } else if (command.type === 'restart') {
           restartPreviewFromStart(command.reason || 'runtime-restart');
+        } else if (command.type === 'goHome') {
+          goHomePreview(command.reason || 'runtime-home');
         } else if (command.type === 'resetAttempt') {
           resetPreviewAttemptState(command.reason || 'runtime-attempt-reset');
         } else if (command.type === 'setLayer' && command.layerId) {
@@ -3397,6 +3432,15 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
               [command.variableId]: currentValue + (Number(command.delta) || 0),
             };
           });
+        } else if (command.type === 'openUrl' && command.url) {
+          window.open(command.url, '_blank', 'noopener,noreferrer');
+        } else if (command.type === 'print') {
+          window.print();
+        } else if (command.type === 'sendWidgetCommand') {
+          const widgetRef = widgetRefs.current.get(command.widgetId || command.objectId);
+          if (widgetRef?.sendCommand) {
+            widgetRef.sendCommand(command.command, command.payload);
+          }
         } else if (command.type === 'log') {
           logPreviewRuntimeAction(
             command.action || 'log',
@@ -3407,6 +3451,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       }
     },
     [
+      goHomePreview,
       goRelative,
       goToActivity,
       goToSlide,
@@ -3421,17 +3466,71 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     (sourceId, when = 'onClick') => {
       if (!previewActivity) return;
       const sourceIds = (Array.isArray(sourceId) ? sourceId : [sourceId]).filter(Boolean);
-      let commands = [];
-      for (const candidateId of sourceIds) {
-        const sourceObject = (previewActivity.objects || []).find(
-          (item) => item.id === candidateId || item.__runtimeId === candidateId
+      const sourceObjects = Object.fromEntries(
+        (previewActivity.objects || [])
+          .filter((item) => item?.id)
+          .map((item) => [item.id, item])
+      );
+      const firstSourceObject =
+        sourceObjects[sourceIds[0]] ||
+        (previewActivity.objects || []).find((item) => item.__runtimeId === sourceIds[0]) ||
+        null;
+      const commands = getStorylineRuntimeCommandsForObject({
+        slide: previewActivity,
+        sourceId: firstSourceObject?.id || sourceIds[0] || '',
+        sourceIds,
+        sourceObject: firstSourceObject,
+        sourceObjects,
+        when,
+        state: {
+          variables: runtimeVariables,
+          objectStates,
+          hiddenObjectIds,
+        },
+        variableDefinitions: variables,
+      });
+      applyPreviewRuntimeCommands(commands);
+    },
+    [
+      applyPreviewRuntimeCommands,
+      hiddenObjectIds,
+      objectStates,
+      previewActivity,
+      runtimeVariables,
+      variables,
+    ]
+  );
+
+  const widgetRefs = useRef(new Map());
+
+  const handleWidgetEvent = useCallback(
+    (widgetObj, eventName, payload) => {
+      const bindings = widgetObj?.bindings || {};
+      const updates = {};
+      Object.entries(bindings).forEach(([eventPath, variableId]) => {
+        const [evt, key] = eventPath.split('.');
+        if (evt === eventName && key && payload && payload[key] !== undefined) {
+          updates[variableId] = payload[key];
+        }
+      });
+      if (Object.keys(updates).length) {
+        setRuntimeVariables((current) => ({ ...current, ...updates }));
+      }
+      setTimeout(() => {
+        if (!previewActivity) return;
+        const sourceObjects = Object.fromEntries(
+          (previewActivity.objects || [])
+            .filter((item) => item?.id)
+            .map((item) => [item.id, item])
         );
-        const actualSourceId = sourceObject?.id || candidateId;
-        commands = getStorylineRuntimeCommandsForObject({
+        const commands = getStorylineRuntimeCommandsForObject({
           slide: previewActivity,
-          sourceId: actualSourceId,
-          sourceObject,
-          when,
+          sourceId: widgetObj.id,
+          sourceIds: [widgetObj.id],
+          sourceObject: widgetObj,
+          sourceObjects,
+          when: 'onWidgetEvent',
+          eventName,
           state: {
             variables: runtimeVariables,
             objectStates,
@@ -3439,9 +3538,8 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
           },
           variableDefinitions: variables,
         });
-        if (commands.length) break;
-      }
-      applyPreviewRuntimeCommands(commands);
+        applyPreviewRuntimeCommands(commands);
+      }, 0);
     },
     [
       applyPreviewRuntimeCommands,
@@ -3798,6 +3896,8 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
                     scale={scale}
                     captionsEnabled={captionsEnabled}
                     runtimeVariables={runtimeVariables}
+                    onWidgetEvent={handleWidgetEvent}
+                    widgetRefs={widgetRefs}
                   />
                   {['matching', 'sequence', 'text-entry', 'fill-blank'].includes(selectedActivity?.type) && (
                     <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#f8fafc', overflow: 'auto', padding: 24 }}>

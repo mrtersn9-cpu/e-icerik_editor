@@ -1,0 +1,39 @@
+{
+  "id": "bird-flight-v1",
+  "name": "Kuş Uçuş Animasyonu",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "defaultWidth": 500,
+  "defaultHeight": 320,
+  "props": [
+    {
+      "name": "speed",
+      "type": "number",
+      "label": "Hız",
+      "default": 1
+    }
+  ],
+  "commands": [
+    {
+      "name": "flyWithFlaps",
+      "label": "Kanat çırparak uç",
+      "params": {
+        "flapCount": "number"
+      }
+    },
+    {
+      "name": "reset",
+      "label": "Sıfırla"
+    }
+  ],
+  "events": [
+    {
+      "name": "flapComplete",
+      "label": "Kanat Çırpma Tamamlandı"
+    },
+    {
+      "name": "flightComplete",
+      "label": "Uçuş Tamamlandı"
+    }
+  ]
+}
