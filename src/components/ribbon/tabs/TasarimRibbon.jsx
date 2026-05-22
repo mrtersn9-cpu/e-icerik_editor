@@ -1,6 +1,5 @@
 import {
   CompactRibbonButton,
-  RibbonButton,
   RibbonColorInput,
   RibbonGroup,
   RibbonPopoverButton,
@@ -57,19 +56,6 @@ export default function TasarimRibbon({ controller }) {
         </RibbonStack>
       </RibbonGroup>
 
-      <RibbonGroup title="Yazı Tipleri" width={124}>
-        <RibbonStack>
-          <RibbonSelect
-            value={controller.object?.style?.fontFamily || 'Humst777 BlkCn BT'}
-            onChange={(event) => commands.setObjectStyle({ fontFamily: event.target.value })}
-            options={galleries.fonts.map((font) => ({ value: font, label: font }))}
-            disabled={!controller.can.selection}
-            width={102}
-          />
-          <CompactRibbonButton label="Başlık Stili" icon="heading" onClick={() => commands.applyTextPreset('title')} disabled={!controller.can.selection} width={102} />
-        </RibbonStack>
-      </RibbonGroup>
-
       <RibbonGroup title="Buton Stili" width={166}>
         <RibbonStack>
           <RibbonSelect
@@ -86,55 +72,58 @@ export default function TasarimRibbon({ controller }) {
         </RibbonStack>
       </RibbonGroup>
 
-      <RibbonGroup title="Kenarlık" width={94}>
-        <RibbonStack>
-          <RibbonColorInput
-            value={controller.resolveColor(controller.object?.style?.borderColor, '#94a3b8')}
-            onChange={(event) => commands.setObjectStyle({ borderColor: event.target.value })}
-            disabled={!controller.can.selection}
-            title="Kenar rengi"
-          />
-          <RibbonPopoverButton label="Kalınlık" icon="border" width={72} disabled={!controller.can.selection}>
+      <RibbonGroup title="Nesne Stili" width={188}>
+        <RibbonRow>
+          <RibbonPopoverButton label="Yazı" icon="heading" width={62} variant="large" tone="slate" disabled={!controller.can.selection}>
             <RibbonStack>
-              {[1, 2, 3, 4, 6, 8].map((value) => (
-                <CompactRibbonButton key={value} label={`${value}px`} icon="border" onClick={() => commands.setObjectStyle({ borderWidth: value })} width={76} />
-              ))}
+              <RibbonSelect
+                value={controller.object?.style?.fontFamily || 'Humst777 BlkCn BT'}
+                onChange={(event) => commands.setObjectStyle({ fontFamily: event.target.value })}
+                options={galleries.fonts.map((font) => ({ value: font, label: font }))}
+                disabled={!controller.can.selection}
+                width={140}
+              />
+              <CompactRibbonButton label="Başlık Stili" icon="heading" onClick={() => commands.applyTextPreset('title')} disabled={!controller.can.selection} width={140} />
+              <RibbonRow>
+                {paletteSwatches.map((color) => (
+                  <RibbonSwatch key={color} color={color} onClick={() => commands.setObjectStyle({ color })} />
+                ))}
+              </RibbonRow>
             </RibbonStack>
           </RibbonPopoverButton>
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Gölge" width={82}>
-        <RibbonStack>
-          <CompactRibbonButton label="Yumuşak" icon="shadow" onClick={() => commands.setObjectStyle({ boxShadow: '0 12px 28px rgba(15,23,42,.20)' })} disabled={!controller.can.selection} width={64} />
-          <CompactRibbonButton label="Yok" icon="none" onClick={() => commands.setObjectStyle({ boxShadow: 'none' })} disabled={!controller.can.selection} width={64} />
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Köşe Yarıçapı" width={92}>
-        <RibbonStack>
-          {[0, 8, 16].map((value) => (
-            <CompactRibbonButton key={value} label={`${value}px`} icon="radius" onClick={() => commands.setObjectStyle({ borderRadius: value })} disabled={!controller.can.selection} width={68} />
-          ))}
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Arka Plan" width={84}>
-        <RibbonButton label="Zemin" icon="background" onClick={commands.loadSvgBackground} tone="slate" width={62} />
-      </RibbonGroup>
-
-      <RibbonGroup title="Izgara Dokusu" width={92}>
-        <RibbonStack>
-          <CompactRibbonButton label="Izgara" icon="grid" onClick={() => commands.toggleViewOption('showGrid')} active={controller.view.showGrid !== false} width={70} />
-          <CompactRibbonButton label="Kılavuz" icon="guides" onClick={() => commands.toggleViewOption('showGuides')} active={!!controller.view.showGuides} width={70} />
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Renk Paleti" width={130}>
-        <RibbonRow>
-          {paletteSwatches.map((color) => (
-            <RibbonSwatch key={color} color={color} onClick={() => commands.setObjectStyle({ color })} />
-          ))}
+          <RibbonPopoverButton label="Çizgi" icon="border" width={62} variant="large" tone="slate" disabled={!controller.can.selection}>
+            <RibbonStack>
+              <RibbonColorInput
+                value={controller.resolveColor(controller.object?.style?.borderColor, '#94a3b8')}
+                onChange={(event) => commands.setObjectStyle({ borderColor: event.target.value })}
+                disabled={!controller.can.selection}
+                title="Kenar rengi"
+              />
+              <RibbonRow>
+                {[1, 2, 3, 4, 6, 8].map((value) => (
+                  <CompactRibbonButton key={value} label={`${value}px`} icon="border" onClick={() => commands.setObjectStyle({ borderWidth: value })} width={58} />
+                ))}
+              </RibbonRow>
+            </RibbonStack>
+          </RibbonPopoverButton>
+          <RibbonPopoverButton label="Diğer" icon="more" width={62} variant="large" tone="slate">
+            <RibbonStack>
+              <RibbonRow>
+                <CompactRibbonButton label="Yumuşak Gölge" icon="shadow" onClick={() => commands.setObjectStyle({ boxShadow: '0 12px 28px rgba(15,23,42,.20)' })} disabled={!controller.can.selection} width={104} />
+                <CompactRibbonButton label="Gölge Yok" icon="none" onClick={() => commands.setObjectStyle({ boxShadow: 'none' })} disabled={!controller.can.selection} width={86} />
+              </RibbonRow>
+              <RibbonRow>
+                {[0, 8, 16].map((value) => (
+                  <CompactRibbonButton key={value} label={`${value}px`} icon="radius" onClick={() => commands.setObjectStyle({ borderRadius: value })} disabled={!controller.can.selection} width={58} />
+                ))}
+              </RibbonRow>
+              <RibbonRow>
+                <CompactRibbonButton label="Zemin SVG" icon="background" onClick={commands.loadSvgBackground} width={90} />
+                <CompactRibbonButton label="Izgara" icon="grid" onClick={() => commands.toggleViewOption('showGrid')} active={controller.view.showGrid !== false} width={70} />
+                <CompactRibbonButton label="Kılavuz" icon="guides" onClick={() => commands.toggleViewOption('showGuides')} active={!!controller.view.showGuides} width={70} />
+              </RibbonRow>
+            </RibbonStack>
+          </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
     </>

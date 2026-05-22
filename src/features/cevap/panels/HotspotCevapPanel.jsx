@@ -14,9 +14,9 @@ export default function HotspotCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Gorsel uzerindeki etkin alanlar dogru cevap olarak isaretlenir."
+        description="Görsel üzerindeki etkin alanlar doğru cevap olarak işaretlenir."
       />
-      <CevapCard number="2" title={`Cevap Formu - Dogru Hotspotlar (${hotspots.length})`} wide>
+      <CevapCard number="2" title={`Cevap Formu - Doğru Hotspotlar (${hotspots.length})`} wide>
         <div style={{ display: 'grid', gap: 8 }}>
           {hotspots.map((hotspot, index) => (
             <label
@@ -46,8 +46,8 @@ export default function HotspotCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="5" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="6" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="7" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="8" title="Hotspot Haritasi" wide>
-        <MiniTable columns={['#', 'Hotspot', 'Dogru']} rows={hotspots.map((hotspot, index) => ({ id: hotspot.id, cells: [index + 1, hotspot.label || hotspot.id, hotspot.hotspotCorrect !== false ? '✓' : ''] }))} />
+      <CevapCard number="8" title="Hotspot Haritası" wide>
+        <MiniTable columns={['#', 'Hotspot', 'Doğru']} rows={hotspots.map((hotspot, index) => ({ id: hotspot.id, cells: [index + 1, hotspot.label || hotspot.id, hotspot.hotspotCorrect !== false ? '✓' : ''] }))} />
       </CevapCard>
     </PanelGrid>
   );

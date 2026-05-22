@@ -34,9 +34,13 @@ export default function GorunumRibbon({ controller }) {
         <RibbonRow>
           <RibbonPopoverButton label="Paneller" icon="panel" width={82} variant="large" tone="slate">
             <RibbonStack>
-              <CompactRibbonButton label="Etkinlik Haritası" icon="panel" onClick={commands.resetLayout} width={132} />
-              <CompactRibbonButton label="Sağ Panel" icon="panel" onClick={commands.openScenePanel} width={132} />
-              <CompactRibbonButton label="Zaman Çizelgesi" icon="ruler" onClick={commands.resetLayout} width={132} />
+              <CompactRibbonButton label="Haritayı Göster" icon="panel" onClick={commands.showLeftPanel} width={132} />
+              <CompactRibbonButton label="Haritayı Gizle" icon="panel" onClick={commands.hideLeftPanel} width={132} />
+              <CompactRibbonButton label="Timeline Göster" icon="ruler" onClick={commands.showTimeline} width={132} />
+              <CompactRibbonButton label="Timeline Kompakt" icon="ruler" onClick={commands.compactTimeline} width={132} />
+              <CompactRibbonButton label="Arayüz Küçült" icon="zoomOut" onClick={() => commands.scaleUi(-1)} width={132} />
+              <CompactRibbonButton label="Arayüz Büyüt" icon="zoomIn" onClick={() => commands.scaleUi(1)} width={132} />
+              <CompactRibbonButton label="Düzeni Sıfırla" icon="undo" onClick={commands.resetLayout} width={132} />
             </RibbonStack>
           </RibbonPopoverButton>
           <RibbonButton label="Tam Ekran" icon="fullscreen" onClick={commands.expandCanvas} tone="slate" width={70} />
@@ -47,15 +51,6 @@ export default function GorunumRibbon({ controller }) {
         <RibbonButton label="Cihaz Önizleme" icon="device" onClick={commands.openPreview} tone="slate" width={86} />
       </RibbonGroup>
 
-      <RibbonGroup title="Arayüz Ölçeği" width={168}>
-        <RibbonStack>
-          <RibbonRow>
-            <CompactRibbonButton label="Küçült" icon="zoomOut" onClick={() => commands.scaleUi(-1)} width={70} />
-            <CompactRibbonButton label="Büyüt" icon="zoomIn" onClick={() => commands.scaleUi(1)} width={70} />
-          </RibbonRow>
-          <CompactRibbonButton label="Düzeni Sıfırla" icon="undo" onClick={commands.resetLayout} width={144} />
-        </RibbonStack>
-      </RibbonGroup>
     </>
   );
 }

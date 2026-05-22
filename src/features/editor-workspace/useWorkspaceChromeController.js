@@ -14,6 +14,7 @@ const RIGHT_PANEL_BY_RIBBON = {
   view: 'view',
   publish: 'publish',
   help: 'help',
+  'object-design': 'format',
   'object-format': 'format',
 };
 
@@ -25,6 +26,7 @@ export default function useWorkspaceChromeController({
   onSelectActivity,
   onSelectionChange,
   onUpdateActivity,
+  onVariablesChange,
   present,
   ribbonController,
   selectedIds,
@@ -46,6 +48,7 @@ export default function useWorkspaceChromeController({
       objects.find((item) => item.id === safeActivity?.selectedObjectId) ||
       objects.find((item) => selectedIdSet.has(item.id)) ||
       null;
+    const selectedObjects = objects.filter((item) => selectedIdSet.has(item.id));
     const activeLayerObjects = objects.filter((item) => (item.layerId || 'base') === activeLayerId);
     const groupedActiveObjects = getEditorGroupedObjectEntries(safeActivity || {}, activeLayerObjects);
     const ribbonTab = ribbonController?.activeTab || 'home';
@@ -63,6 +66,7 @@ export default function useWorkspaceChromeController({
       commands: ribbonController?.commands || {},
       currentBook,
       currentPublisher,
+      currentContentLanguage: ribbonController?.currentContentLanguage,
       currentSlide,
       galleries: ribbonController?.galleries || {},
       groupedActiveObjects,
@@ -72,11 +76,13 @@ export default function useWorkspaceChromeController({
       onSelectActivity,
       onSelectionChange,
       onUpdateActivity,
+      onVariablesChange,
       present,
       resolvedLayerNames,
       ribbonController,
       selectedIds: selectedIdSet,
       selectedObject,
+      selectedObjects: selectedObjects.length ? selectedObjects : selectedObject ? [selectedObject] : [],
       showToast,
       slides,
       view: ribbonController?.view || {},
@@ -90,6 +96,7 @@ export default function useWorkspaceChromeController({
     onSelectActivity,
     onSelectionChange,
     onUpdateActivity,
+    onVariablesChange,
     present,
     ribbonController,
     selectedIds,

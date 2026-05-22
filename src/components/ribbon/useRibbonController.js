@@ -1,10 +1,11 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { fileToDataUrl, uploadMediaFile } from '../../api/apiClient';
 import {
   BUTTON_PACKAGES,
   BUTTON_STYLE_PRESETS,
   CHARACTER_LIBRARY,
+  DEFAULT_ACTIVITY_SETTINGS,
   LMS_STANDARD_OPTIONS,
   PLAYER_SKIN_PRESETS,
   RIBBON_SHAPE_PRESETS,
@@ -16,13 +17,20 @@ import {
   TIMELINE_EFFECT_OPTIONS,
 } from '../../constants';
 import { createObjectFromActivity } from '../../logic/activityFactory';
-import { getActivitySlides, selectActivitySlide } from '../../logic/activityHelpers';
+import {
+  commitMaterializedActivity,
+  getActivitySlides,
+  selectActivitySlide,
+} from '../../logic/activityHelpers';
 import {
   getActivityButtonMotion,
   getButtonPackageMotion,
+  getButtonMotionProfile,
+  buildReadyButtonStyle,
+  getAnswerLayerStylePresetById,
   restyleAllButtonsForPackage,
 } from '../../logic/buttonStyling';
-import { getActivityContentLanguage } from '../../logic/contentLanguage';
+import { contentText, getActivityContentLanguage } from '../../logic/contentLanguage';
 import {
   DRAG_DROP_ANIMATION_PRESETS,
   getDragDropAnimationPreset,
@@ -36,8 +44,10 @@ import {
 import { alignActivitySelection, distributeActivitySelection } from '../../logic/objectLayout';
 import {
   DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
+  EDUCATION_BUTTON_TEXT_SIZE_SMALL,
   SCENE_TEMPLATE_OPTIONS,
   applySceneTemplateToSlide,
+  getButtonPairSemanticIcon,
 } from '../../logic/sceneTemplates';
 import { normalizeSlide } from '../../logic/slideNormalization';
 import {
@@ -57,9 +67,11 @@ import {
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
   { value: 'en', label: 'English' },
+  { value: 'de', label: 'Deutsch' },
 ];
 
 const fontOptions = ['Humst777 BlkCn BT', 'Georgia', 'Trebuchet MS', 'Verdana', 'Tahoma', 'Arial'];
+const READY_BUTTON_ICON_SIZE = 28;
 
 function resolveColor(value, fallback = '#ffffff') {
   const raw = String(value || '').trim();
@@ -75,6 +87,7 @@ export default function useRibbonController({
   activeEditorTab,
   activity,
   applyRibbonObjectPatch,
+  bookDefaultStylePresetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
   canvasRef,
   commit,
   handleEditorTabSelect,
@@ -97,12 +110,17 @@ export default function useRibbonController({
   setActiveEditorTab,
   setAnswerDrawerOpen,
   setCanvasExpanded,
+  setIsSlidePanelCollapsed,
   setPanelScale,
   setRibbonAnimationPreviewKey,
   setSelectedIds,
   setShowBranchDiagram,
   setShowGlossaryEditor,
   setShowVariablesManager,
+  showBaseLayer,
+  onShowBaseLayerChange,
+  setTimelineDockOpen,
+  setTimelineHeight,
   setStoryRibbonTab,
   setZoom,
   showToast,
@@ -123,6 +141,7 @@ export default function useRibbonController({
     [activity, primaryObject]
   );
   const view = activity?.viewOptions || {};
+  const animationClipboardRef = useRef(null);
 
   const patchActivity = useCallback(
     (patch) => {
@@ -421,7 +440,7 @@ export default function useRibbonController({
     (pkgId) => {
       if (!activity) return;
       const committed = {
-        ...activity,
+        ...commitMaterializedActivity(activity),
         buttonPackageId: pkgId,
         buttonAnimationProfileId:
           activity.buttonAnimationProfileId ||
@@ -430,14 +449,67 @@ export default function useRibbonController({
       };
       const motion =
         getActivityButtonMotion(committed) || getButtonPackageMotion(pkgId);
-      const nextObjects = restyleAllButtonsForPackage(committed.objects || [], pkgId).map((object) =>
-        object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
-      );
-      updateActivity({
-        ...committed,
-        objects: nextObjects,
-        timeline: syncTimelineWithObjects({ ...committed, objects: nextObjects }),
+      const slides = getActivitySlides(committed);
+      const currentSlideId = committed.currentSlideId || slides[0]?.id || '';
+      const nextSlides = slides.map((slide, index) => {
+        const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId).map((object) =>
+          object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
+        );
+        return normalizeSlide(
+          {
+            ...slide,
+            objects: nextObjects,
+            timeline: syncTimelineWithObjects({ ...slide, objects: nextObjects }),
+          },
+          index
+        );
       });
+      updateActivity(
+        selectActivitySlide(
+          {
+            ...committed,
+            slides: nextSlides,
+            currentSlideId,
+            startSlideId: nextSlides[0]?.id || committed.startSlideId || '',
+          },
+          currentSlideId
+        )
+      );
+    },
+    [activity, updateActivity]
+  );
+
+  const applyButtonMotion = useCallback(
+    (profileId) => {
+      if (!activity) return;
+      const motion = getButtonMotionProfile(profileId);
+      const slidesForMotion = getActivitySlides(activity);
+      const currentSlideId = activity.currentSlideId || slidesForMotion[0]?.id || '';
+      const nextSlides = slidesForMotion.map((slide, index) => {
+        const nextObjects = (slide.objects || []).map((object) =>
+          object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
+        );
+        return normalizeSlide(
+          {
+            ...slide,
+            objects: nextObjects,
+            timeline: syncTimelineWithObjects({ ...slide, objects: nextObjects }),
+          },
+          index
+        );
+      });
+      updateActivity(
+        selectActivitySlide(
+          {
+            ...activity,
+            buttonAnimationProfileId: profileId,
+            slides: nextSlides,
+            currentSlideId,
+            startSlideId: nextSlides[0]?.id || activity.startSlideId || '',
+          },
+          currentSlideId
+        )
+      );
     },
     [activity, updateActivity]
   );
@@ -507,6 +579,237 @@ export default function useRibbonController({
     [activity, commitRibbonObject]
   );
 
+  const readyButtonPresets = useMemo(() => {
+    const settings = { ...DEFAULT_ACTIVITY_SETTINGS, ...(activity?.settings || {}) };
+    const tx = contentText(activity || {});
+    return [
+      {
+        id: 'check',
+        icon: '✓',
+        label: settings.checkButtonText || tx.check,
+        width: 330,
+        tone: 'success',
+        runtimeAction: '',
+        isCheckButton: true,
+      },
+      {
+        id: 'menu',
+        icon: '☰',
+        label: settings.menuButtonText || tx.menu,
+        width: 240,
+        tone: 'info',
+        runtimeAction: 'help',
+      },
+      {
+        id: 'prev',
+        icon: '≪',
+        label: tx.prev,
+        width: 240,
+        tone: 'primary',
+        trigger: { action: 'SliderGec', value: '__prev__' },
+      },
+      {
+        id: 'next',
+        icon: '≫',
+        label: tx.next,
+        width: 240,
+        tone: 'primary',
+        trigger: { action: 'SliderGec', value: '__next__' },
+      },
+      {
+        id: 'playpause',
+        icon: '▶',
+        label: 'Play / Pause',
+        width: 300,
+        tone: 'warning',
+        runtimeAction: 'toggle-play-pause',
+        playIcon: '▶',
+        pauseIcon: '❚❚',
+      },
+      {
+        id: 'mute',
+        icon: '🔊',
+        label: settings.soundOffText || tx.soundOff,
+        width: 300,
+        tone: 'neutral',
+        runtimeAction: 'toggle-mute',
+        soundOnLabel: settings.soundOnText || tx.soundOn,
+        soundOffLabel: settings.soundOffText || tx.soundOff,
+        soundOnIcon: '🔇',
+        soundOffIcon: '🔊',
+      },
+      {
+        id: 'answer',
+        icon: '✎',
+        label: settings.solutionButtonText || tx.solution,
+        width: 330,
+        tone: 'success',
+        runtimeAction: 'show-answer',
+      },
+      {
+        id: 'restart',
+        icon: '↻',
+        label: settings.restartFlowText || tx.restart,
+        width: 350,
+        tone: 'danger',
+        runtimeAction: 'restart',
+      },
+      {
+        id: 'complete',
+        icon: '✓',
+        label: settings.completeButtonText || tx.closeActivity,
+        width: 350,
+        tone: 'success',
+        runtimeAction: 'complete',
+      },
+    ];
+  }, [activity]);
+
+  const insertReadyButton = useCallback(
+    (kind) => {
+      if (!activity) return;
+      const objects = Array.isArray(activity.objects) ? activity.objects : [];
+      const triggers = Array.isArray(activity.triggers) ? activity.triggers : [];
+      const preset = readyButtonPresets.find((item) => item.id === kind) || readyButtonPresets[0];
+      const stageWidth = Number(activity.stageWidth || 1920) || 1920;
+      const stageHeight = Number(activity.stageHeight || 1080) || 1080;
+      const existingCount = objects.filter((item) => item.type === 'button').length;
+      const offset = Math.min(existingCount * 18, 120);
+      const tone = preset.tone || 'primary';
+      const stylePreset = getAnswerLayerStylePresetById(
+        activity.answerLayerStylePresetId ||
+          bookDefaultStylePresetId ||
+          DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID
+      );
+      const motion = stylePreset?.motion || {};
+      const topZIndex = objects.reduce((max, item) => Math.max(max, Number(item.zIndex) || 0), 0);
+      const groupId = `ready:${preset.id}:${uid()}`;
+      const totalWidth = Number(preset.width || 300);
+      const height = Number(preset.height || 64);
+      const iconWidth = Math.min(94, Math.max(62, Math.round(height * 1.28)));
+      const iconLabelGap = 12;
+      const labelWidth = Math.max(120, totalWidth - iconWidth - iconLabelGap);
+      const x = Math.max(24, Math.round(stageWidth - totalWidth - 90 - offset));
+      const y = Math.max(24, Math.round(stageHeight - 170 - offset));
+      const locale =
+        getActivityContentLanguage(activity) === 'de'
+          ? 'de-DE'
+          : getActivityContentLanguage(activity) === 'en'
+            ? 'en-US'
+            : 'tr-TR';
+      const makeReadyButton = (patch = {}) => {
+        const baseButton = createObjectFromActivity(activity, 'button');
+        const label = String(patch.label || '').toLocaleUpperCase(locale);
+        return {
+          ...baseButton,
+          label,
+          x: patch.x,
+          y,
+          width: patch.width,
+          height,
+          layerId: activity.activeLayerId || 'base',
+          zIndex: patch.zIndex,
+          readyButtonPresetId: preset.id,
+          readyButtonTone: tone,
+          isCheckButton: !!preset.isCheckButton,
+          runtimeAction: preset.runtimeAction || '',
+          soundOnLabel: preset.soundOnLabel || '',
+          soundOffLabel: preset.soundOffLabel || '',
+          soundOnIcon: preset.soundOnIcon || '',
+          soundOffIcon: preset.soundOffIcon || '',
+          soundIconMode: patch.soundIconMode || '',
+          playIcon: preset.playIcon || '',
+          pauseIcon: preset.pauseIcon || '',
+          linkedHoverGroup: groupId,
+          style: {
+            ...(baseButton.style || {}),
+            ...buildReadyButtonStyle(stylePreset, tone, {
+              ...baseButton,
+              readyButtonPresetId: preset.id,
+              runtimeAction: preset.runtimeAction || '',
+              label,
+            }),
+            fontSize: patch.fontSize,
+            lineHeight: patch.lineHeight || 1.1,
+            padding: 0,
+          },
+          ...(motion ? { buttonMotion: { ...motion } } : {}),
+          ...(patch.sceneTemplateSlotId ? { sceneTemplateSlotId: patch.sceneTemplateSlotId } : {}),
+        };
+      };
+      const iconObject = makeReadyButton({
+        label: getButtonPairSemanticIcon(
+          { label: preset.icon || '?', runtimeAction: preset.runtimeAction },
+          { label: preset.label, runtimeAction: preset.runtimeAction }
+        ),
+        x,
+        width: iconWidth,
+        zIndex: topZIndex + 1,
+        fontSize: READY_BUTTON_ICON_SIZE,
+        lineHeight: 1,
+        soundIconMode: preset.id === 'mute' ? 'icon-only' : '',
+        sceneTemplateSlotId: `ready-button:${preset.id}-icon`,
+      });
+      iconObject.style = {
+        ...(iconObject.style || {}),
+        borderRadius: 999,
+        fontSize: READY_BUTTON_ICON_SIZE,
+        padding: 0,
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+      };
+      const labelObject = makeReadyButton({
+        label: preset.label,
+        x: x + iconWidth + iconLabelGap,
+        width: labelWidth,
+        zIndex: topZIndex + 2,
+        fontSize: EDUCATION_BUTTON_TEXT_SIZE_SMALL,
+        soundIconMode: preset.id === 'mute' ? 'external' : '',
+        sceneTemplateSlotId: `ready-button:${preset.id}-label`,
+      });
+      labelObject.style = {
+        ...(labelObject.style || {}),
+        fontSize: EDUCATION_BUTTON_TEXT_SIZE_SMALL,
+        paddingLeft: 0,
+        whiteSpace: 'nowrap',
+      };
+      iconObject.linkedActionTargetId = labelObject.id;
+      labelObject.linkedActionTargetId = labelObject.id;
+      const nextTriggers = preset.trigger
+        ? [
+            ...triggers,
+            {
+              id: uid(),
+              when: 'onClick',
+              target: labelObject.id,
+              action: preset.trigger.action,
+              value: preset.trigger.value,
+              name: `${preset.label} tıklama görevi`,
+            },
+          ]
+        : triggers;
+      const nextObjects = [...objects, iconObject, labelObject];
+      updateActivity({
+        ...activity,
+        objects: nextObjects,
+        triggers: nextTriggers,
+        selectedObjectId: labelObject.id,
+        activeLayerId: labelObject.layerId,
+        timeline: syncTimelineWithObjects({ ...activity, objects: nextObjects }),
+      });
+      setSelectedIds(new Set([iconObject.id, labelObject.id]));
+      setActiveEditorTab('nesneler');
+    },
+    [
+      activity,
+      bookDefaultStylePresetId,
+      readyButtonPresets,
+      setActiveEditorTab,
+      setSelectedIds,
+      updateActivity,
+    ]
+  );
+
   const insertShape = useCallback((kind) => commitRibbonObject(createShapeObject(kind)), [commitRibbonObject]);
 
   const toggleViewOption = useCallback(
@@ -544,6 +847,7 @@ export default function useRibbonController({
       addSlide,
       align: (mode) => activity && updateActivity(alignActivitySelection(activity, selectedIds, mode)),
       applyButtonPackage,
+      applyButtonMotion,
       applyMasterLayoutObjects,
       applySceneTemplate,
       applySlideMaster,
@@ -565,7 +869,21 @@ export default function useRibbonController({
       },
       bringFront: () => canvasRef.current?.bringFront?.(),
       copy: () => canvasRef.current?.copySelected?.(),
-      copySelectedAnimation: () => showToast?.('Animasyon ayarları kopyalandı.', 'success'),
+      copySelectedAnimation: () => {
+        if (!selectedTimelineItem) {
+          showToast?.('Kopyalanacak animasyon seçili değil.', 'info');
+          return;
+        }
+        animationClipboardRef.current = {
+          entryEffect: selectedTimelineItem.entryEffect || 'none',
+          exitEffect: selectedTimelineItem.exitEffect || 'none',
+          direction: selectedTimelineItem.direction || 'left',
+          easing: selectedTimelineItem.easing || 'easeOut',
+          duration: selectedTimelineItem.duration ?? 2,
+          startMode: selectedTimelineItem.startMode || 'with-previous',
+        };
+        showToast?.('Animasyon ayarları kopyalandı.', 'success');
+      },
       cut: () => {
         const copied = canvasRef.current?.copySelected?.();
         if (copied !== false) canvasRef.current?.deleteSelected?.();
@@ -580,6 +898,7 @@ export default function useRibbonController({
       groupSelection,
       insertAudio,
       insertButtonPreset,
+      insertReadyButton,
       insertComponent: (kind) => {
         const componentMap = {
           'info-box': { label: 'Bilgi Kutusu', text: 'Bilgi Kutusu', background: '#eff6ff', borderColor: '#60a5fa' },
@@ -608,11 +927,22 @@ export default function useRibbonController({
         }
         handleEditorTabSelect('soru');
       },
+      openBranchReport: () => setShowBranchDiagram?.(true),
+      openGlossaryEditor: () => setShowGlossaryEditor?.(true),
+      openVariablesManager: () => setShowVariablesManager?.(true),
       openPreview: handleOpenStorylinePreview,
       openProject: () => importRef.current?.click?.(),
+      openSceneNotes: () => setStoryRibbonTab('scene'),
       openScenePanel: () => handleEditorTabSelect('sahne'),
       openTextStudio: () => openTextStudioWindow?.(true),
       paste: () => canvasRef.current?.pasteClipboard?.(),
+      pasteSelectedAnimation: () => {
+        if (!animationClipboardRef.current) {
+          showToast?.('Önce bir animasyon kopyala.', 'info');
+          return;
+        }
+        updateSelectedTimeline(animationClipboardRef.current);
+      },
       patchActivity,
       patchCurrentSlide,
       patchLms,
@@ -661,6 +991,17 @@ export default function useRibbonController({
               primaryObject.style?.textDecoration === 'underline' ? 'none' : 'underline',
           });
       },
+      showLeftPanel: () => setIsSlidePanelCollapsed?.(false),
+      hideLeftPanel: () => setIsSlidePanelCollapsed?.(true),
+      compactTimeline: () => {
+        setTimelineDockOpen?.(true);
+        setTimelineHeight?.(96);
+      },
+      showTimeline: () => {
+        setTimelineDockOpen?.(true);
+        setTimelineHeight?.(220);
+      },
+      toggleBaseLayer: () => onShowBaseLayerChange?.(!showBaseLayer),
       toggleViewOption,
       undo: history?.undo,
       ungroupSelection,
@@ -672,6 +1013,7 @@ export default function useRibbonController({
     dragAnimationPreset,
     galleries: {
       buttonPackages: BUTTON_PACKAGES,
+      readyButtons: readyButtonPresets,
       buttonStyles: BUTTON_STYLE_PRESETS,
       contentLanguages: CONTENT_LANGUAGE_OPTIONS,
       directions: TIMELINE_DIRECTION_OPTIONS,
@@ -699,6 +1041,7 @@ export default function useRibbonController({
       showGrid: view.showGrid !== false,
       showGuides: !!view.showGuides,
       showRulers: !!view.showRulers,
+      showBaseLayer: showBaseLayer !== false,
       snapEnabled: view.snapEnabled !== false,
       zoom,
     },

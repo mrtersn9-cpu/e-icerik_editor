@@ -87,6 +87,49 @@ const CONTENT_TEXT = {
     readyHelp:
       'The button is added to the scene and selected automatically. Assign menu and navigation tasks from the Click Task area below.',
   },
+  de: {
+    check: 'PRÜFEN',
+    start: 'AKTIVITÄT STARTEN',
+    menu: 'MENÜ',
+    prev: 'ZURÜCK',
+    next: 'WEITER',
+    playPause: 'PLAY / PAUSE',
+    mute: 'STUMM',
+    soundOn: 'TON EIN',
+    soundOff: 'TON AUS',
+    answer: 'ANTWORT ANZEIGEN',
+    solution: 'LÖSUNG ANZEIGEN',
+    restart: 'NEU STARTEN',
+    retry: 'WIEDERHOLEN',
+    complete: 'ABSCHLIESSEN',
+    closeActivity: 'AKTIVITÄT SCHLIESSEN',
+    home: 'STARTSEITE',
+    activityIntro: 'AKTIVITÄTSINTRO',
+    checkNote:
+      'Nachdem du die Fragen beantwortet hast, drücke „PRÜFEN“, um richtige und falsche Antworten zu sehen.',
+    closeNote: 'Schließt die Seite.',
+    startNote: 'Drücke „AKTIVITÄT STARTEN“, um die Aktivität zu beginnen.',
+    prevNote: 'Öffnet die vorherige Frage oder den vorherigen Slider.',
+    nextNote: 'Öffnet die nächste Frage oder den nächsten Slider.',
+    playPauseNote: 'Pausiert oder startet Audio und Video auf der Szene.',
+    guideLabel: 'AKTIVITÄTSINTRO',
+    guideNote: 'Öffnet die Aktivitätsintro.',
+    restartNote: 'Startet die Aktivität neu.',
+    muteNote: 'Schaltet den Ton ein oder aus.',
+    homeNote: 'Kehrt zur Startseite zurück.',
+    menuNote: 'Öffnet das Menü.',
+    completeNote: 'Beendet die Aktivität.',
+    retryNote: 'Startet die Aktivität erneut.',
+    answerNote: 'Zeigt die Lösung der Aktivität.',
+    correctTitle: 'RICHTIG',
+    incorrectTitle: 'FALSCH',
+    correctBody: 'Glückwunsch, du hast alle Fragen richtig beantwortet.',
+    incorrectBody: 'Leider hast du nicht alle Fragen richtig beantwortet.',
+    showSolution: 'LÖSUNG ANZEIGEN',
+    tryAgain: 'ERNEUT VERSUCHEN',
+    readyHelp:
+      'Der Button wird zur Szene hinzugefügt und automatisch ausgewählt. Lege Menü- und Navigationsaufgaben im Bereich Klick-Aufgabe fest.',
+  },
 };
 
 function getActivityContentLanguage(activity = {}) {
@@ -105,13 +148,23 @@ function contentText(activityOrLang = 'tr') {
 
 function translateGeneratedContentText(value = '', lang = 'tr') {
   const target = CONTENT_TEXT[lang] || CONTENT_TEXT.tr;
-  const other = lang === 'en' ? CONTENT_TEXT.tr : CONTENT_TEXT.en;
   let next = String(value || '');
-  Object.keys(other).forEach((key) => {
-    if (!other[key] || !target[key]) return;
-    next = next.split(other[key]).join(target[key]);
-  });
+  Object.entries(CONTENT_TEXT)
+    .filter(([sourceLang]) => sourceLang !== lang)
+    .flatMap(([, source]) =>
+      Object.keys(source)
+        .filter((key) => source[key] && target[key] && source[key] !== target[key])
+        .map((key) => [source[key], target[key]])
+    )
+    .sort((a, b) => String(b[0]).length - String(a[0]).length)
+    .forEach(([sourceText, targetText]) => {
+      next = next.split(sourceText).join(targetText);
+    });
   if (lang === 'en') next = next.split('KULLANIM KILAVUZU').join(target.activityIntro);
+  if (lang === 'de') {
+    next = next.split('KULLANIM KILAVUZU').join(target.activityIntro);
+    next = next.split('USER GUIDE').join(target.activityIntro);
+  }
   if (lang === 'tr') next = next.split('USER GUIDE').join(target.activityIntro);
   return next;
 }
@@ -119,7 +172,54 @@ function translateGeneratedContentText(value = '', lang = 'tr') {
 function applyContentLanguageToActivity(activity = {}, lang = 'tr') {
   const tx = contentText(lang);
   const translate = (value) => translateGeneratedContentText(value, lang);
-  const nextObjects = (activity.objects || []).map((object) => {
+  const screenText = {
+    tr: {
+      startShort: 'Başla',
+      successTitle: 'Harika!',
+      successBody: 'Doğru cevabı buldun.',
+      failureTitle: 'Tekrar Deneyelim',
+      failureBody: 'Doğru cevaba biraz daha yakınsın.',
+      retryText: 'Tekrar Dene',
+      continueText: 'Devam Et',
+      correctAnswer: 'Doğru Cevap',
+      answerBody: 'Sistem doğru cevabı otomatik olarak hazırladı.',
+      packageIntro: 'Tema Paketi Tanıtımı',
+      packageBody: 'Etkinlikte kullanacağın tema paketini ve buton davranışlarını önce incele.',
+      goToMenu: 'Menüye Geç',
+      goBack: 'Geri Dön',
+    },
+    en: {
+      startShort: 'Start',
+      successTitle: 'Great!',
+      successBody: 'You found the correct answer.',
+      failureTitle: 'Try Again',
+      failureBody: 'You are getting closer to the correct answer.',
+      retryText: 'Try Again',
+      continueText: 'Continue',
+      correctAnswer: 'Correct Answer',
+      answerBody: 'The system prepared the correct answer automatically.',
+      packageIntro: 'Theme Package Intro',
+      packageBody: 'Review the theme package and button behaviors before the activity.',
+      goToMenu: 'Go to Menu',
+      goBack: 'Go Back',
+    },
+    de: {
+      startShort: 'Start',
+      successTitle: 'Sehr gut!',
+      successBody: 'Du hast die richtige Antwort gefunden.',
+      failureTitle: 'Erneut versuchen',
+      failureBody: 'Du bist der richtigen Antwort schon näher.',
+      retryText: 'Erneut versuchen',
+      continueText: 'Weiter',
+      correctAnswer: 'Richtige Antwort',
+      answerBody: 'Das System hat die richtige Antwort automatisch vorbereitet.',
+      packageIntro: 'Einführung in das Designpaket',
+      packageBody: 'Prüfe zuerst das Designpaket und das Verhalten der Buttons.',
+      goToMenu: 'Zum Menü',
+      goBack: 'Zurück',
+    },
+  }[lang] || {};
+  const translateObject = (object) => {
     if (!object || typeof object !== 'object') return object;
     const shouldTranslate =
       object.generatedBy ||
@@ -138,7 +238,24 @@ function applyContentLanguageToActivity(activity = {}, lang = 'tr') {
         ? { ...object.accessibility, lang }
         : object.accessibility,
     };
-  });
+  };
+  const nextObjects = (activity.objects || []).map(translateObject);
+  const nextSlides = Array.isArray(activity.slides)
+    ? activity.slides.map((slide) => ({
+        ...slide,
+        contentLanguage: lang,
+        settings: {
+          ...(slide.settings || {}),
+          contentLanguage: lang,
+        },
+        objects:
+          slide.id && slide.id === activity.currentSlideId
+            ? nextObjects
+            : Array.isArray(slide.objects)
+              ? slide.objects.map(translateObject)
+              : slide.objects,
+      }))
+    : activity.slides;
   return {
     ...activity,
     contentLanguage: lang,
@@ -156,77 +273,93 @@ function applyContentLanguageToActivity(activity = {}, lang = 'tr') {
       answerButtonText: tx.answer,
     },
     objects: nextObjects,
+    slides: nextSlides,
     introScreen: activity.introScreen
       ? {
           ...activity.introScreen,
-          buttonText: lang === 'en' ? 'Start' : 'Başla',
+          buttonText: screenText.startShort,
         }
       : activity.introScreen,
     resultScreens: activity.resultScreens
       ? {
           ...activity.resultScreens,
-          successTitle: lang === 'en' ? 'Great!' : 'Harika!',
-          successBody: lang === 'en' ? 'You found the correct answer.' : 'Doğru cevabı buldun.',
-          failureTitle: lang === 'en' ? 'Try Again' : 'Tekrar Deneyelim',
-          failureBody:
-            lang === 'en'
-              ? 'You are getting closer to the correct answer.'
-              : 'Doğru cevaba biraz daha yakınsın.',
-          retryText: lang === 'en' ? 'Try Again' : 'Tekrar Dene',
-          continueText: lang === 'en' ? 'Continue' : 'Devam Et',
+          successTitle: screenText.successTitle,
+          successBody: screenText.successBody,
+          failureTitle: screenText.failureTitle,
+          failureBody: screenText.failureBody,
+          retryText: screenText.retryText,
+          continueText: screenText.continueText,
         }
       : activity.resultScreens,
     answerScreen: activity.answerScreen
       ? {
           ...activity.answerScreen,
-          title: lang === 'en' ? 'Correct Answer' : 'Doğru Cevap',
-          body:
-            lang === 'en'
-              ? 'The system prepared the correct answer automatically.'
-              : 'Sistem doğru cevabı otomatik olarak hazırladı.',
+          title: screenText.correctAnswer,
+          body: screenText.answerBody,
           buttonText: tx.restart,
         }
       : activity.answerScreen,
     buttonPackageScreen: activity.buttonPackageScreen
       ? {
           ...activity.buttonPackageScreen,
-          title: lang === 'en' ? 'Theme Package Intro' : 'Tema Paketi Tanıtımı',
-          body:
-            lang === 'en'
-              ? 'Review the theme package and button behaviors before the activity.'
-              : 'Etkinlikte kullanacağın tema paketini ve buton davranışlarını önce incele.',
-          buttonText: lang === 'en' ? 'Go to Menu' : 'Menüye Geç',
-          backButtonText: lang === 'en' ? 'Go Back' : 'Geri Dön',
+          title: screenText.packageIntro,
+          body: screenText.packageBody,
+          buttonText: screenText.goToMenu,
+          backButtonText: screenText.goBack,
           items: createDefaultThemePackageItems().map((item) => ({
             ...item,
-            ...(lang === 'en'
-              ? {
-                  label:
-                    {
-                      guide: 'Intro',
-                      start: 'Start Activity',
-                      prev: 'Previous Question',
-                      next: 'Next Question',
-                      menu: 'Menu',
-                      playpause: 'Play / Pause',
-                      check: 'Check',
-                      solution: 'Show Solution',
-                      restart: 'Restart',
-                    }[item.id] || item.label,
-                  desc:
-                    {
-                      guide: 'Shows the opening information and quick help.',
-                      start: 'Moves past the welcome step and starts the activity.',
-                      prev: 'Returns to the previous question or slider.',
-                      next: 'Moves to the next question or slider.',
-                      menu: 'Opens guide, sound and restart options.',
-                      playpause: 'Plays or pauses audio and video on the scene.',
-                      check: 'Checks answers with the selected theme colors.',
-                      solution: 'Shows the correct placement and hints.',
-                      restart: 'Resets the activity and returns to the beginning.',
-                    }[item.id] || item.desc,
-                }
-              : {}),
+            label:
+              {
+                tr: {},
+                en: {
+                  guide: 'Intro',
+                  start: 'Start Activity',
+                  prev: 'Previous Question',
+                  next: 'Next Question',
+                  menu: 'Menu',
+                  playpause: 'Play / Pause',
+                  check: 'Check',
+                  solution: 'Show Solution',
+                  restart: 'Restart',
+                },
+                de: {
+                  guide: 'Intro',
+                  start: 'Aktivität starten',
+                  prev: 'Vorherige Frage',
+                  next: 'Nächste Frage',
+                  menu: 'Menü',
+                  playpause: 'Play / Pause',
+                  check: 'Prüfen',
+                  solution: 'Lösung anzeigen',
+                  restart: 'Neu starten',
+                },
+              }[lang]?.[item.id] || item.label,
+            desc:
+              {
+                tr: {},
+                en: {
+                  guide: 'Shows the opening information and quick help.',
+                  start: 'Moves past the welcome step and starts the activity.',
+                  prev: 'Returns to the previous question or slider.',
+                  next: 'Moves to the next question or slider.',
+                  menu: 'Opens guide, sound and restart options.',
+                  playpause: 'Plays or pauses audio and video on the scene.',
+                  check: 'Checks answers with the selected theme colors.',
+                  solution: 'Shows the correct placement and hints.',
+                  restart: 'Resets the activity and returns to the beginning.',
+                },
+                de: {
+                  guide: 'Zeigt die Einführung und eine kurze Hilfe.',
+                  start: 'Überspringt die Begrüßung und startet die Aktivität.',
+                  prev: 'Kehrt zur vorherigen Frage oder zum vorherigen Slider zurück.',
+                  next: 'Wechselt zur nächsten Frage oder zum nächsten Slider.',
+                  menu: 'Öffnet Hilfe, Ton und Neustartoptionen.',
+                  playpause: 'Startet oder pausiert Audio und Video auf der Szene.',
+                  check: 'Prüft Antworten mit den gewählten Designfarben.',
+                  solution: 'Zeigt die richtige Platzierung und Hinweise.',
+                  restart: 'Setzt die Aktivität zurück und beginnt von vorn.',
+                },
+              }[lang]?.[item.id] || item.desc,
           })),
         }
       : activity.buttonPackageScreen,

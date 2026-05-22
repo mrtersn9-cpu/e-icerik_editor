@@ -85,7 +85,7 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
               }
             }}
           >
-            Otomatik Olustur
+            Otomatik Oluştur
           </SmallButton>
         </div>
         <div style={{ display: 'grid', gap: 8 }}>

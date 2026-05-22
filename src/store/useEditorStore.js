@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 
 // Basit UI state'leri — EIcerikEditor.jsx'teki useState kalabalığını azaltmak için
+const DEFAULT_CANVAS_ZOOM = 0.6;
+
 const useEditorStore = create((set, get) => ({
   // Zoom & viewport
-  zoom: 'fit',
+  zoom: DEFAULT_CANVAS_ZOOM,
   setZoom: (value) =>
     set((state) => ({
       zoom: typeof value === 'function' ? value(state.zoom) : value,
@@ -16,10 +18,17 @@ const useEditorStore = create((set, get) => ({
     })),
 
   // Timeline
-  timelineHeight: 220,
+  timelineHeight: 190,
   setTimelineHeight: (value) =>
     set((state) => ({
       timelineHeight: typeof value === 'function' ? value(state.timelineHeight) : value,
+    })),
+
+  timelineDockOpen: false,
+  setTimelineDockOpen: (value) =>
+    set((state) => ({
+      timelineDockOpen:
+        typeof value === 'function' ? value(state.timelineDockOpen) : value,
     })),
 
   timelineCurrentTime: 0,
@@ -32,6 +41,13 @@ const useEditorStore = create((set, get) => ({
   setTimelinePlaying: (value) =>
     set((state) => ({
       timelinePlaying: typeof value === 'function' ? value(state.timelinePlaying) : value,
+    })),
+
+  timelineVisualization: true,
+  setTimelineVisualization: (value) =>
+    set((state) => ({
+      timelineVisualization:
+        typeof value === 'function' ? value(state.timelineVisualization) : value,
     })),
 
   // DB / Connection
@@ -61,6 +77,12 @@ const useEditorStore = create((set, get) => ({
       canvasExpanded: typeof value === 'function' ? value(state.canvasExpanded) : value,
     })),
 
+  canvasTool: 'select',
+  setCanvasTool: (value) =>
+    set((state) => ({
+      canvasTool: typeof value === 'function' ? value(state.canvasTool) : value,
+    })),
+
   showReviewThreads: false,
   setShowReviewThreads: (value) =>
     set((state) => ({
@@ -74,13 +96,13 @@ const useEditorStore = create((set, get) => ({
     })),
 
   // Panel sizes
-  leftPanelWidth: 260,
+  leftPanelWidth: 240,
   setLeftPanelWidth: (value) =>
     set((state) => ({
       leftPanelWidth: typeof value === 'function' ? value(state.leftPanelWidth) : value,
     })),
 
-  rightPanelWidth: 320,
+  rightPanelWidth: 380,
   setRightPanelWidth: (value) =>
     set((state) => ({
       rightPanelWidth: typeof value === 'function' ? value(state.rightPanelWidth) : value,
@@ -107,14 +129,17 @@ const useEditorStore = create((set, get) => ({
   // Reset UI to defaults
   resetUi: () =>
     set({
-      zoom: 'fit',
+      zoom: DEFAULT_CANVAS_ZOOM,
       panelScale: 1,
       timelineHeight: 220,
+      timelineDockOpen: false,
       timelineCurrentTime: 0,
       timelinePlaying: false,
+      timelineVisualization: true,
       activeTab: 'sahne',
       storyRibbonTab: 'home',
       canvasExpanded: false,
+      canvasTool: 'select',
       showReviewThreads: false,
       editorPreviewState: 'normal',
       leftPanelWidth: 260,

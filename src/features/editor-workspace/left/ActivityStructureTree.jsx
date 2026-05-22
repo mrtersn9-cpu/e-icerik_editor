@@ -1,170 +1,241 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
+import { SlideThumbnail } from '../../../components/SlideStrip';
 import { getActivitySlides } from '../../../logic/activityHelpers';
 
-function TreeIcon({ children, tone = '#64748b' }) {
-  return (
-    <span
-      style={{
-        width: 18,
-        height: 18,
-        borderRadius: 5,
-        border: '1px solid #d7e2ef',
-        background: '#ffffff',
-        color: tone,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 10,
-        fontWeight: 900,
-        flexShrink: 0,
-      }}
-    >
-      {children}
-    </span>
-  );
+import { IconButton, InlineRename, SectionHeader, mapChrome } from './ActivityMapPrimitives';
+
+function safeLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const lower = text.toLocaleLowerCase('tr-TR');
+  if (['undefined', 'null', 'nan'].includes(lower)) return '';
+  if (/^\d+$/.test(text)) return '';
+  if (/^[a-z0-9_-]{8,}$/i.test(text) && !/\s/.test(text)) return '';
+  if (/^slider\s*\d+$/i.test(text)) return '';
+  if (text.length <= 2) return '';
+  return text;
+}
+
+export function getSlideDisplayName(slide, index = 0) {
+  return safeLabel(slide?.sceneName) || safeLabel(slide?.name) || `Slide ${index + 1}`;
 }
 
 export default function ActivityStructureTree({
   activity,
-  activities = [],
-  currentBook,
-  onSelectActivity,
+  onAddSlide,
+  onDeleteSlide,
+  onDuplicateSlide,
+  onMoveSlide,
+  onRenameActivity,
+  onRenameSlide,
   onSelectSlide,
+  query = '',
 }) {
-  const [expanded, setExpanded] = useState(() => new Set(['book', activity?.id].filter(Boolean)));
-  const bookActivities = activities.filter((item) =>
-    currentBook?.id ? item.bookId === currentBook.id : item.id === activity?.id
+  const [editingActivityKey, setEditingActivityKey] = useState(0);
+  const [editingSlideId, setEditingSlideId] = useState('');
+  const [editingSlideKey, setEditingSlideKey] = useState(0);
+  const slides = getActivitySlides(activity || {});
+  const currentSlideId = activity?.currentSlideId || slides[0]?.id || '';
+  const currentSlideIndex = Math.max(
+    0,
+    slides.findIndex((slide) => slide.id === currentSlideId)
   );
-
-  const toggle = (id) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const normalizedQuery = query.trim().toLocaleLowerCase('tr-TR');
+  const filteredSlides = useMemo(
+    () =>
+      slides.filter((slide, index) => {
+        if (!normalizedQuery) return true;
+        return getSlideDisplayName(slide, index)
+          .toLocaleLowerCase('tr-TR')
+          .includes(normalizedQuery);
+      }),
+    [normalizedQuery, slides]
+  );
+  const activityLabel =
+    safeLabel(activity?.name) ||
+    safeLabel(activity?.sceneName) ||
+    (slides.length
+      ? getSlideDisplayName(slides.find((slide) => slide.id === currentSlideId) || slides[0], 0)
+      : '') ||
+    'Etkinlik';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 900,
-          color: '#64748b',
-          letterSpacing: 0.45,
-          textTransform: 'uppercase',
-          marginBottom: 2,
-        }}
-      >
-        Etkinlik Yapısı
-      </div>
-      <button
-        type="button"
-        onClick={() => toggle('book')}
-        style={{
-          border: 'none',
-          background: 'transparent',
-          color: '#172033',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 7,
-          minHeight: 24,
-          padding: '2px 3px',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontSize: 11,
-          fontWeight: 850,
-        }}
-      >
-        <span style={{ width: 12, color: '#64748b' }}>{expanded.has('book') ? '▾' : '▸'}</span>
-        <TreeIcon tone="#2563eb">⌂</TreeIcon>
-        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {currentBook?.name || 'Kitap'}
-        </span>
-      </button>
+    <section
+      style={{
+        border: `1px solid ${mapChrome.border}`,
+        borderRadius: 9,
+        background: '#ffffff',
+        boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+        padding: 9,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7,
+      }}
+    >
+      <SectionHeader
+        title="Sahneler"
+        action={
+          <div style={{ display: 'inline-flex', gap: 3 }}>
+            <IconButton icon="add" label="Yeni sahne" onClick={onAddSlide} />
+            <IconButton icon="copy" label="Sahne çoğalt" onClick={onDuplicateSlide} />
+            <IconButton
+              disabled={currentSlideIndex <= 0}
+              icon="up"
+              label="Yukarı taşı"
+              onClick={() => onMoveSlide?.(-1)}
+            />
+            <IconButton
+              disabled={currentSlideIndex >= slides.length - 1}
+              icon="down"
+              label="Aşağı taşı"
+              onClick={() => onMoveSlide?.(1)}
+            />
+            <IconButton
+              disabled={slides.length <= 1}
+              icon="delete"
+              label="Sahne sil"
+              onClick={onDeleteSlide}
+              tone={mapChrome.danger}
+            />
+          </div>
+        }
+      />
 
-      {expanded.has('book') &&
-        bookActivities.map((item) => {
-          const slides = getActivitySlides(item);
-          const isActiveActivity = item.id === activity?.id;
-          const isOpen = expanded.has(item.id) || isActiveActivity;
+      {activityLabel ? (
+        <div
+          onDoubleClick={() => setEditingActivityKey((value) => value + 1)}
+          style={{
+            minHeight: 24,
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0,1fr)',
+            alignItems: 'center',
+            border: `1px solid ${mapChrome.borderSoft}`,
+            borderRadius: 7,
+            background: '#fbfdff',
+            padding: '3px 7px',
+          }}
+        >
+          <InlineRename
+            displayValue={activityLabel}
+            editKey={editingActivityKey}
+            onCommit={(value) => {
+              if (value) onRenameActivity?.(value);
+            }}
+            placeholder="Etkinlik"
+          />
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {filteredSlides.map((slide) => {
+          const index = slides.findIndex((item) => item.id === slide.id);
+          const isCurrent = slide.id === currentSlideId;
+          const displayName = getSlideDisplayName(slide, index);
           return (
-            <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof onSelectActivity === 'function') onSelectActivity(item.id);
-                  toggle(item.id);
-                }}
+            <div
+              key={slide.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectSlide?.(slide.id)}
+              onDoubleClick={() => {
+                setEditingSlideId(slide.id);
+                setEditingSlideKey((value) => value + 1);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSelectSlide?.(slide.id);
+                }
+                if (event.key === 'F2') {
+                  event.preventDefault();
+                  setEditingSlideId(slide.id);
+                  setEditingSlideKey((value) => value + 1);
+                }
+              }}
+              style={{
+                width: '100%',
+                border: `1px solid ${isCurrent ? '#4f46e5' : mapChrome.borderSoft}`,
+                borderRadius: 8,
+                background: isCurrent ? '#eef2ff' : '#ffffff',
+                color: mapChrome.text,
+                cursor: 'pointer',
+                padding: 5,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                textAlign: 'left',
+                boxShadow: isCurrent ? '0 0 0 1px rgba(79,70,229,.16)' : 'none',
+              }}
+            >
+              <div
                 style={{
-                  border: 'none',
-                  background: isActiveActivity ? '#eaf2ff' : 'transparent',
-                  color: isActiveActivity ? '#174ea6' : '#172033',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  minHeight: 25,
-                  padding: '2px 4px 2px 13px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontSize: 11,
-                  fontWeight: 850,
+                  position: 'relative',
+                  alignSelf: 'center',
+                  width: 128,
+                  maxWidth: '100%',
                 }}
               >
-                <span style={{ width: 12, color: '#64748b' }}>{isOpen ? '▾' : '▸'}</span>
-                <TreeIcon tone={isActiveActivity ? '#16a34a' : '#64748b'}>●</TreeIcon>
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {item.name || 'Etkinlik'}
+                <SlideThumbnail
+                  slide={slide}
+                  isActive={isCurrent}
+                  width={128}
+                  height={72}
+                  showBadges={false}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 5,
+                    top: 5,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 5,
+                    background: isCurrent ? '#4f46e5' : '#94a3b8',
+                    color: '#ffffff',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 10,
+                    fontWeight: 950,
+                    lineHeight: 1,
+                  }}
+                >
+                  {index + 1}
                 </span>
-              </button>
-
-              {isOpen &&
-                slides.map((slide, index) => {
-                  const isCurrent = isActiveActivity && slide.id === activity?.currentSlideId;
-                  return (
-                    <button
-                      key={slide.id}
-                      type="button"
-                      onClick={() => isActiveActivity && onSelectSlide?.(slide.id)}
-                      disabled={!isActiveActivity}
-                      style={{
-                        border: 'none',
-                        background: isCurrent ? '#dbeafe' : 'transparent',
-                        color: isCurrent ? '#1d4ed8' : '#334155',
-                        display: 'grid',
-                        gridTemplateColumns: '18px 1fr',
-                        alignItems: 'center',
-                        gap: 7,
-                        minHeight: 23,
-                        padding: '2px 5px 2px 43px',
-                        borderRadius: 6,
-                        cursor: isActiveActivity ? 'pointer' : 'default',
-                        textAlign: 'left',
-                        opacity: isActiveActivity ? 1 : 0.55,
-                      }}
-                    >
-                      <TreeIcon tone={isCurrent ? '#1d4ed8' : '#64748b'}>{index + 1}</TreeIcon>
-                      <span
-                        style={{
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          fontSize: 10.5,
-                          fontWeight: isCurrent ? 850 : 700,
-                        }}
-                      >
-                        {slide.name || slide.sceneName || `Slide ${index + 1}`}
-                      </span>
-                    </button>
-                  );
-                })}
+              </div>
+              <InlineRename
+                active={isCurrent}
+                displayValue={displayName}
+                editKey={editingSlideId === slide.id ? editingSlideKey : 0}
+                onCommit={(value) => {
+                  if (value) onRenameSlide?.(slide.id, value);
+                  setEditingSlideId('');
+                }}
+                onCancel={() => setEditingSlideId('')}
+                placeholder={`Slide ${index + 1}`}
+              />
             </div>
           );
         })}
-    </div>
+
+        {!filteredSlides.length && (
+          <div
+            style={{
+              border: `1px dashed ${mapChrome.border}`,
+              borderRadius: 7,
+              background: mapChrome.panelSoft,
+              color: mapChrome.muted,
+              fontSize: 11,
+              fontWeight: 760,
+              padding: '10px 8px',
+              textAlign: 'center',
+            }}
+          >
+            Arama ile eşleşen slide yok.
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

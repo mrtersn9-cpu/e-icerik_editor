@@ -164,6 +164,7 @@ import {
   getButtonMotionProfile,
   getActivityButtonMotion,
 } from '../logic/buttonStyling';
+import { generateLegacyAnswerSceneSet } from '../logic/answerSceneSetGenerator';
 import {
   SCENE_TEMPLATE_OPTIONS,
   SCENE_TEMPLATE_VERSION,
@@ -344,6 +345,7 @@ import {
   enforceTtkbEditorState,
 } from '../utils/ttkbCompliance';
 
+import CustomInteractionInspector from '../activity-types/custom-interaction/CustomInteractionInspector';
 import DragDropConfigPanel from './activity-editors/DragDropConfigPanel';
 import FillBlankEditor from './activity-editors/FillBlankEditor';
 import MatchingEditor from './activity-editors/MatchingEditor';
@@ -442,14 +444,14 @@ export function RightInspector({
   };
   const card = {
     background: '#ffffff',
-    border: '1px solid #cbd5e1',
-    borderRadius: 6,
-    padding: 10,
+    border: '1px solid #dbe6f3',
+    borderRadius: 8,
+    padding: 8,
     marginBottom: 8,
-    boxShadow: '0 1px 3px rgba(0,0,0,.05)',
+    boxShadow: 'none',
   };
   const triggerSourceOptions = [
-    { value: 'Secili Nesne', label: 'Tiklanan / secili nesne' },
+    { value: 'Secili Nesne', label: 'Tıklanan / seçili nesne' },
     ...objects.map((obj) => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` })),
   ];
   const triggerTargetOptions = objects.map((obj) => ({
@@ -458,7 +460,7 @@ export function RightInspector({
   }));
   const triggerLayerOptions = layers.map((layer, index) => ({
     value: layer.id,
-    label: resolvedLayerNames[layer.id] || `Layer ${index + 1}`,
+    label: resolvedLayerNames[layer.id] || `Katman ${index + 1}`,
   }));
   const triggerActivityOptions = [
     { value: '__next__', label: 'Sonraki sahne' },
@@ -531,12 +533,12 @@ export function RightInspector({
               onChange={(e) => patchObj(sel.id, { rotation: +e.target.value })}
             />
             <SelectInp
-              label="Layer"
+              label="Katman"
               value={sel.layerId || 'base'}
               onChange={(e) => patchObj(sel.id, { layerId: e.target.value })}
               options={layers.map((layer, index) => ({
                 value: layer.id,
-                label: resolvedLayerNames[layer.id] || `Layer ${index + 1}`,
+                label: resolvedLayerNames[layer.id] || `Katman ${index + 1}`,
               }))}
             />
             {(sel.type === 'draggable' || sel.type === 'dropzone') && (
@@ -1120,7 +1122,7 @@ export function RightInspector({
         </div>
       ) : (
         <div style={{ ...card, textAlign: 'center', color: '#333', fontSize: 11, padding: 16 }}>
-          Canvas'tan nesne seçin
+          Çalışma alanından nesne seçin
           <br />
           veya rubber-band ile çoklu seçim yapın
         </div>
@@ -1271,7 +1273,7 @@ export function RightInspector({
                   </span>
                 )}
                 <button
-                  title={o.visible === false ? 'Goster' : 'Gizle'}
+                  title={o.visible === false ? 'Göster' : 'Gizle'}
                   onClick={(e) => {
                     e.stopPropagation();
                     ids.forEach((id) => patchObj(id, { visible: o.visible === false }));
@@ -1691,11 +1693,11 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 textTransform: 'uppercase',
               }}
             >
-              Secim Kurgusu
+              Seçim Kurgusu
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
-              Tekli veya coklu secimi, secim alaninin kare mi yuvarlak mi olacagini ve icindeki
-              isaretin tik mi carpi mi olacagini buradan belirle.
+              Tekli veya çoklu seçimi, seçim alanının kare mi yuvarlak mı olacağını ve içindeki
+              işaretin tik mi çarpı mı olacağını buradan belirle.
             </div>
             <div
               style={{
@@ -1713,12 +1715,12 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8', marginBottom: 8 }}>
-                  Secim Tipi
+                  Seçim Tipi
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[
-                    { k: 'single', l: 'Tekli Secim' },
-                    { k: 'multi', l: 'Coklu Secim' },
+                    { k: 'single', l: 'Tekli Seçim' },
+                    { k: 'multi', l: 'Çoklu Seçim' },
                   ].map((m) => (
                     <button
                       key={m.k}
@@ -1749,7 +1751,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
-                  Alan Bicimi
+                  Alan Biçimi
                 </div>
                 <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginBottom: 8 }}>
                   Tıkla: sahneye seçim alanı ekler.
@@ -1788,13 +1790,13 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#15803d', marginBottom: 8 }}>
-                  Isaret
+                  İşaret
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[
                     { k: 'check', l: 'Tik', glyph: '✓' },
-                    { k: 'cross', l: 'Carpi', glyph: '✗' },
-                    { k: 'dot', l: 'Buyuk Nokta', glyph: '●' },
+                    { k: 'cross', l: 'Çarpı', glyph: '✗' },
+                    { k: 'dot', l: 'Büyük Nokta', glyph: '●' },
                   ].map((item) => (
                     <button
                       key={item.k}
@@ -1827,12 +1829,12 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#b91c1c', marginBottom: 8 }}>
-                  Yanlis Secimde
+                  Yanlış Seçimde
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[
-                    { k: 'opposite', l: 'Ters Isaret' },
-                    { k: 'same', l: 'Ayni Isaret' },
+                    { k: 'opposite', l: 'Ters İşaret' },
+                    { k: 'same', l: 'Aynı İşaret' },
                     { k: 'none', l: 'Bos Kalsin' },
                   ].map((item) => (
                     <button
@@ -1926,7 +1928,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 {resolveWrongSelectionGlyph(selectionUi, selectionUi.controlMark)}
               </div>
               <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.6, minWidth: 180 }}>
-                Soldan saga: bos hali, secili dogru hali, secili yanlis hali.
+                Soldan sağa: boş hali, seçili doğru hali, seçili yanlış hali.
               </div>
             </div>
           </div>
@@ -1950,12 +1952,12 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 textTransform: 'uppercase',
               }}
             >
-              Sahne Secim Sekilleri
+              Sahne Seçim Şekilleri
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
               Yukarıdaki <strong>+ Yuvarlak</strong> veya <strong>+ Kare</strong> butonları sahneye
               doğrudan seçim alanı ekler. İstersen sahnedeki mevcut şekil, buton veya metni de
-              burada seçim alanına çevirebilirsin. Ayni soruya ait sekillere ayni{' '}
+              burada seçim alanına çevirebilirsin. Aynı soruya ait şekillere aynı{' '}
               <strong>Soru Kimligi</strong> yaz.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2005,8 +2007,8 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           {item.label || `${item.type} ${index + 1}`}
                         </div>
                         <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                          {item.type} nesnesi • kendi sekli korunur • secilince{' '}
-                          {getSelectionMarkGlyph(resolvedMark)} gorunur
+                          {item.type} nesnesi • kendi sekli korunur • seçilince{' '}
+                          {getSelectionMarkGlyph(resolvedMark)} görünür
                         </div>
                       </div>
                       <label
@@ -2046,7 +2048,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           }
                           style={{ accentColor: '#2563eb' }}
                         />
-                        Secim alani
+                        Seçim alanı
                       </label>
                     </div>
                     {active && (
@@ -2067,7 +2069,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           placeholder="soru-1"
                         />
                         <Inp
-                          label="Secenek Kodu"
+                          label="Seçenek Kodu"
                           value={item.selectionChoice || ''}
                           onChange={(e) =>
                             patchCanvasObject(item.id, { selectionChoice: e.target.value })
@@ -2075,7 +2077,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           placeholder="A / B / D / Y"
                         />
                         <SelectInp
-                          label="Isaret"
+                          label="İşaret"
                           value={item.selectionMark || 'global'}
                           onChange={(e) =>
                             patchCanvasObject(item.id, {
@@ -2086,11 +2088,11 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           options={[
                             {
                               value: 'global',
-                              label: `Genel (${selectionUi.controlMark === 'check' ? 'Tik' : selectionUi.controlMark === 'cross' ? 'Carpi' : 'Buyuk Nokta'})`,
+                              label: `Genel (${selectionUi.controlMark === 'check' ? 'Tik' : selectionUi.controlMark === 'cross' ? 'Çarpı' : 'Büyük Nokta'})`,
                             },
                             { value: 'check', label: 'Tik' },
-                            { value: 'cross', label: 'Carpi' },
-                            { value: 'dot', label: 'Buyuk Nokta' },
+                            { value: 'cross', label: 'Çarpı' },
+                            { value: 'dot', label: 'Büyük Nokta' },
                           ]}
                         />
                         <label
@@ -2113,7 +2115,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                             }
                             style={{ accentColor: '#16a34a' }}
                           />
-                          Dogru cevap
+                          Doğru cevap
                         </label>
                       </div>
                     )}
@@ -2149,7 +2151,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 textTransform: 'uppercase',
               }}
             >
-              Dogru Secenek Formu
+              Doğru Seçenek Formu
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.55 }}>
               {(activity.mcQuestion || 'Soru metni yok.').trim()}
@@ -2166,7 +2168,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                   border: '1px solid #bfdbfe',
                 }}
               >
-                {(activity.mcMode || 'single') === 'multi' ? 'Coklu dogru' : 'Tek dogru'}
+                {(activity.mcMode || 'single') === 'multi' ? 'Çoklu doğru' : 'Tek doğru'}
               </div>
               <div
                 style={{
@@ -2179,7 +2181,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                   border: '1px solid #e2e8f0',
                 }}
               >
-                {correctOptionCount} dogru secili
+                {correctOptionCount} doğru seçili
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2214,7 +2216,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {option.label || `Secenek ${index + 1}`}
+                      {option.label || `Seçenek ${index + 1}`}
                     </div>
                   </div>
                   <input
@@ -2259,11 +2261,11 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 textTransform: 'uppercase',
               }}
             >
-              Surukle-Birak Kurgusu
+              Sürükle-Bırak Kurgusu
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
-              Soru grubu, grup, kapasite, coklu hedef ve davranis kurallarini buradan yonet. Tek tek
-              oge boyutlari ise sagdaki <strong>Nesne</strong> sekmesinde kalir.
+              Soru grubu, grup, kapasite, çoklu hedef ve davranış kurallarını buradan yönet. Tek tek
+              öğe boyutları ise sağdaki <strong>Nesne</strong> sekmesinde kalir.
             </div>
             <DragDropConfigPanel activity={activity} onUpdate={onUpdate} showMatchEditor={false} />
           </div>
@@ -2287,10 +2289,10 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                 textTransform: 'uppercase',
               }}
             >
-              Dogru Eslesme Formu
+              Doğru Eşleşme Formu
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
-              Burasi gercek cevap alanidir. Her surukle icin dogru birak alanini burada secersin.
+              Burası gerçek cevap alanıdır. Her sürükle için doğru bırakma alanını burada seçersin.
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               <button
@@ -2320,7 +2322,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                   border: '1px solid #fed7aa',
                 }}
               >
-                {matchedCount}/{draggables.length} eslesme
+                {matchedCount}/{draggables.length} eşleşme
               </div>
               <div
                 style={{
@@ -2346,10 +2348,10 @@ export function AnswerFormPanel({ activity, onUpdate }) {
               }}
             >
               <div style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>
-                Ayni dropzone dizilim
+                Aynı bırakma alanı dizilimi
               </div>
               {[
-                { id: 'stack', label: 'Ust Uste' },
+                { id: 'stack', label: 'Üst Üste' },
                 { id: 'row', label: 'Satir' },
                 { id: 'grid', label: 'Izgara' },
               ].map((mode) => (
@@ -2409,7 +2411,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {drag.label || `Surukle ${index + 1}`}
+                      {drag.label || `Sürükle ${index + 1}`}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                       {drag.scope && (
@@ -2440,7 +2442,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                             fontWeight: 700,
                           }}
                         >
-                          Coklu hedef
+                          Çoklu hedef
                         </span>
                       )}
                     </div>
@@ -2474,7 +2476,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                                   }
                                   style={{ accentColor: '#0ea5e9' }}
                                 />
-                                <span>{drop.label || `Birak ${dropIndex + 1}`}</span>
+                                <span>{drop.label || `Bırak ${dropIndex + 1}`}</span>
                                 {drop.scope && (
                                   <span style={{ fontSize: 11, color: '#64748b' }}>
                                     ({drop.scope})
@@ -2487,7 +2489,7 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                           areDragDropScopesCompatible(activity, drag, drop)
                         ).length === 0 && (
                           <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                            Bu surukleme icin uyumlu birak alani yok.
+                            Bu sürükleme için uyumlu bırakma alanı yok.
                           </div>
                         )}
                       </div>
@@ -2510,12 +2512,12 @@ export function AnswerFormPanel({ activity, onUpdate }) {
                         outline: 'none',
                       }}
                     >
-                      <option value="">Birak sec</option>
+                      <option value="">Bırak seç</option>
                       {dropzones
                         .filter((drop) => areDragDropScopesCompatible(activity, drag, drop))
                         .map((drop, dropIndex) => (
                           <option key={drop.id} value={drop.id}>
-                            {drop.label || `Birak ${dropIndex + 1}`}
+                            {drop.label || `Bırak ${dropIndex + 1}`}
                           </option>
                         ))}
                     </select>
@@ -2718,8 +2720,8 @@ export function RightInspectorPhase2({
   };
   const tx = contentText(safeActivity);
   const triggerSourceOptions = [
-    { value: 'Secili Nesne', label: 'Tiklanan / secili nesne' },
-    { value: '__activity__', label: 'Sahne / yukleme' },
+    { value: 'Secili Nesne', label: 'Tıklanan / seçili nesne' },
+    { value: '__activity__', label: 'Sahne / yükleme' },
     ...objects.map((obj) => ({ value: obj.id, label: `${obj.label || obj.type} (${obj.type})` })),
   ];
   const triggerTargetOptions = objects.map((obj) => ({
@@ -2734,7 +2736,7 @@ export function RightInspectorPhase2({
     }));
   const triggerLayerOptions = layers.map((layer, index) => ({
     value: layer.id,
-    label: resolvedLayerNames[layer.id] || `Layer ${index + 1}`,
+    label: resolvedLayerNames[layer.id] || `Katman ${index + 1}`,
   }));
   const triggerActivityOptions = [
     { value: '__next__', label: 'Sonraki sahne' },
@@ -2863,7 +2865,7 @@ export function RightInspectorPhase2({
             target: canonicalTargetId,
             action: resolvedAction,
             value: resolvedValue,
-            name: `${sel.label || sel.type} tiklama gecisi`,
+            name: `${sel.label || sel.type} tıklama geçişi`,
             extra: '',
           },
         ];
@@ -3079,7 +3081,7 @@ export function RightInspectorPhase2({
               target: labelObject.id,
               action: preset.trigger.action,
               value: preset.trigger.value,
-              name: `${preset.label} tiklama gorevi`,
+              name: `${preset.label} tıklama görevi`,
             },
           ]
         : triggers;
@@ -3104,29 +3106,35 @@ export function RightInspectorPhase2({
       triggers,
     ]
   );
+  const looksLikeRawTriggerId = (value = '') => {
+    const text = String(value || '').trim();
+    return /^[a-z0-9_-]{8,}$/i.test(text) && !/\s/.test(text);
+  };
   const getOptionLabel = (options = [], value = '', fallback = '') =>
-    options.find((option) => option.value === value)?.label || fallback || value || '-';
+    options.find((option) => option.value === value)?.label ||
+    fallback ||
+    (looksLikeRawTriggerId(value) ? 'Silinmiş hedef' : value || '-');
   const getTriggerValueLabel = (item = {}) => {
     if (item.action === 'KatmanaGec')
-      return getOptionLabel(triggerLayerOptions, item.value, 'Katman sec');
+      return getOptionLabel(triggerLayerOptions, item.value, 'Katman seç');
     if (item.action === 'SliderGec')
-      return getOptionLabel(triggerSlideOptions, item.value, 'Slider sec');
+      return getOptionLabel(triggerSlideOptions, item.value, 'Slide seç');
     if (item.action === 'SayfaGec')
-      return getOptionLabel(triggerActivityOptions, item.value, 'Sahne sec');
+      return getOptionLabel(triggerActivityOptions, item.value, 'Sahne seç');
     if (item.action === 'Goster' || item.action === 'Gizle')
-      return getOptionLabel(triggerTargetOptions, item.value, 'Nesne sec');
+      return getOptionLabel(triggerTargetOptions, item.value, 'Nesne seç');
     if (
       item.action === 'DegiskenAta' ||
       item.action === 'DegiskenArttir' ||
       item.action === 'DegiskenAzalt'
     )
-      return getOptionLabel(variableOptions, item.value, 'Degisken sec');
+      return getOptionLabel(variableOptions, item.value, 'Değişken seç');
     if (item.action === 'NesneDurumuAyarla')
-      return getOptionLabel(objectStateOptions, item.value, 'Nesne sec');
-    return item.value || '';
+      return getOptionLabel(objectStateOptions, item.value, 'Nesne seç');
+    return looksLikeRawTriggerId(item.value) ? 'Silinmiş hedef' : item.value || '';
   };
   const describeTrigger = (item = {}) => {
-    const whenLabel = getOptionLabel(TRIGGER_WHEN_OPTIONS, item.when || 'onClick', 'Tiklandiginda');
+    const whenLabel = getOptionLabel(TRIGGER_WHEN_OPTIONS, item.when || 'onClick', 'Tıklandığında');
     const sourceLabel =
       item.when === 'onLoad'
         ? 'Sahne'
@@ -3134,7 +3142,7 @@ export function RightInspectorPhase2({
     const actionLabel = getOptionLabel(
       TRIGGER_ACTION_OPTIONS,
       item.action || 'SayfaGec',
-      'Sayfaya Gec'
+      'Sayfaya Geç'
     );
     const valueLabel = getTriggerValueLabel(item);
     const extraLabel =
@@ -3145,12 +3153,13 @@ export function RightInspectorPhase2({
         : item.action === 'DegiskenArttir' || item.action === 'DegiskenAzalt'
           ? ` (${item.extra || '1'})`
           : item.action === 'NesneDurumuAyarla'
-            ? ` / ${getOptionLabel(OBJECT_STATE_OPTIONS, item.stateKey || 'visited', 'Visited')}=${String(item.stateValue ?? 'true')}`
+            ? ` / ${getOptionLabel(OBJECT_STATE_OPTIONS, item.stateKey || 'visited', 'Ziyaret Edildi')}=${String(item.stateValue ?? 'true')}`
             : '';
     const conditionCount = Array.isArray(item.conditions) ? item.conditions.length : 0;
-    return `${whenLabel} • ${sourceLabel} → ${actionLabel}${valueLabel ? ` (${valueLabel}${extraLabel})` : extraLabel}${conditionCount ? ` • ${conditionCount} kosul` : ''}`;
+    return `${whenLabel} • ${sourceLabel} → ${actionLabel}${valueLabel ? ` (${valueLabel}${extraLabel})` : extraLabel}${conditionCount ? ` • ${conditionCount} koşul` : ''}`;
   };
   const isAdvancedMode = uiMode === 'advanced';
+  const isCustomInteraction = activity?.type === 'custom-interaction';
   const hasAnswerPanel = ['selection', 'drag-drop', 'mixed'].includes(activity?.type);
   const selectionActionBtn = {
     minHeight: 29,
@@ -3199,7 +3208,7 @@ export function RightInspectorPhase2({
     { id: 'object', label: sel || multiSel ? 'Nesne' : 'Öğeler' },
     ...(hasAnswerPanel ? [{ id: 'answer', label: 'Cevap' }] : []),
     ...(!hideTimeline ? [{ id: 'timeline', label: 'Zaman' }] : []),
-    { id: 'interaction', label: 'Etkilesim' },
+    { id: 'interaction', label: 'Etkileşim' },
   ];
   const [inspectorTab, setInspectorTab] = useState(() => (sel || multiSel ? 'object' : 'scene'));
   const [editingLayerId, setEditingLayerId] = useState(null);
@@ -3230,7 +3239,7 @@ export function RightInspectorPhase2({
       const hasObjectsInLayer = objects.some((obj) => (obj.layerId || 'base') === layerId);
       const ok = window.confirm(
         hasObjectsInLayer
-          ? `"${resolvedLayerName}" katmanı silinsin mi? İçindeki nesneler Base Layer'a taşınacak.`
+          ? `"${resolvedLayerName}" katmanı silinsin mi? İçindeki nesneler Temel Katman'a taşınacak.`
           : `"${resolvedLayerName}" katmanı silinsin mi?`
       );
       if (!ok) return;
@@ -3304,16 +3313,16 @@ export function RightInspectorPhase2({
   }, [layerPresets, selectedLayerPresetId]);
 
   const activeInspectorTab = forcedInspectorTab || inspectorTab;
-  const showScenePanel = activeInspectorTab === 'scene';
-  const showObjectPanel = activeInspectorTab === 'object';
-  const showAnswerPanel = activeInspectorTab === 'answer';
-  const showTimelinePanel = activeInspectorTab === 'timeline';
-  const showInteractionPanel = activeInspectorTab === 'interaction';
+  const showScenePanel = !isCustomInteraction && activeInspectorTab === 'scene';
+  const showObjectPanel = !isCustomInteraction && activeInspectorTab === 'object';
+  const showAnswerPanel = !isCustomInteraction && activeInspectorTab === 'answer';
+  const showTimelinePanel = !isCustomInteraction && activeInspectorTab === 'timeline';
+  const showInteractionPanel = !isCustomInteraction && activeInspectorTab === 'interaction';
   const objectListLayerId = sel?.layerId || safeActivity.activeLayerId || 'base';
   const objectListLayer = layers.find((layer) => layer.id === objectListLayerId) || null;
   const objectListLayerName =
     resolvedLayerNames[objectListLayerId] ||
-    (objectListLayer?.kind === 'base' ? 'Base Layer' : 'Aktif Katman');
+    (objectListLayer?.kind === 'base' ? 'Temel Katman' : 'Aktif Katman');
   const objectListObjects = useMemo(
     () => objects.filter((item) => (item.layerId || 'base') === objectListLayerId),
     [objectListLayerId, objects]
@@ -3361,10 +3370,10 @@ export function RightInspectorPhase2({
     scene: { icon: '▷', helper: 'Katmanlar', count: String(layers.length) },
     object: {
       icon: multiSel ? '◻' : '◎',
-      helper: multiSel ? 'Toplu' : sel ? 'Secili' : 'Ogeler',
+      helper: multiSel ? 'Toplu' : sel ? 'Seçili' : 'Öğeler',
       count: String(sel ? 1 : multiSel ? selectedObjectCount : groupedObjectListEntries.length),
     },
-    answer: { icon: '✓', helper: 'Yanit', count: null },
+    answer: { icon: '✓', helper: 'Yanıt', count: null },
     timeline: { icon: '◷', helper: 'Klipler', count: String(timeline.length) },
     interaction: {
       icon: '⇄',
@@ -3543,7 +3552,7 @@ export function RightInspectorPhase2({
           shapeKind: 'roundedRect',
           layerId: activeLayerId,
           generatedBy: 'answer-key',
-          label: `${index + 1}. ${option.label || `Secenek ${index + 1}`}`,
+          label: `${index + 1}. ${option.label || `Seçenek ${index + 1}`}`,
           x: 40,
           y: 42 + index * 38,
           width: Math.max(280, stageWidth - 80),
@@ -3665,7 +3674,10 @@ export function RightInspectorPhase2({
   }, [activity.type, isCevapLayerActive, objects, patchAct, safeActivity]);
 
   const handleGenerateAnswerLayerSceneSet = useCallback(() => {
-    const requiredLayerNames = ['menu', 'explanation', 'normal', 'Correct', 'Incorrect', 'cevap'];
+    if (generateLegacyAnswerSceneSet) {
+      patchAct(generateLegacyAnswerSceneSet(safeActivity));
+    } else {
+      const requiredLayerNames = ['menu', 'explanation', 'normal', 'Correct', 'Incorrect', 'cevap'];
     const existingLayerNameKeys = new Set(
       layers.map((layer) =>
         normalizeLayerNameKey(resolvedLayerNames[layer.id] || layer.name || '')
@@ -4037,7 +4049,7 @@ export function RightInspectorPhase2({
         target: closeButton.id,
         action: 'KatmanaGec',
         value: 'base',
-        name: 'Layer kapat',
+        name: 'Katman kapat',
         generatedBy: 'answer-template',
       });
       return closeButton;
@@ -4556,6 +4568,7 @@ export function RightInspectorPhase2({
       objects: normalizedSceneSet.objects || mergedObjects,
       triggers: [...remainingTriggers, ...generatedTriggers],
     });
+    }
   }, [
     answerLayerStylePreset,
     layers,
@@ -4578,7 +4591,9 @@ export function RightInspectorPhase2({
       />
     );
   const workspacePanel =
-    forcedInspectorTab ? null : activeTab === 'metinler' ? (
+    isCustomInteraction ? (
+      <CustomInteractionInspector activity={activity} onUpdate={onUpdate} variables={variables} />
+    ) : forcedInspectorTab ? null : activeTab === 'metinler' ? (
       <div
         style={{
           ...card,
@@ -4586,9 +4601,9 @@ export function RightInspectorPhase2({
           border: '1px solid #c7d9f1',
         }}
       >
-        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>METIN STUDYOSU</div>
+        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>METİN STÜDYOSU</div>
         <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.7, marginBottom: 10 }}>
-          Metin stillerini ve blok duzenini ayri pencerede duzenleyebilirsin.
+          Metin stillerini ve blok düzenini ayrı pencerede düzenleyebilirsin.
         </div>
         <button
           onClick={onOpenTextStudioWindow}
@@ -4604,7 +4619,7 @@ export function RightInspectorPhase2({
             cursor: 'pointer',
           }}
         >
-          Metin Studyosunu Ac
+          Metin Stüdyosunu Aç
         </button>
       </div>
     ) : activeTab === 'soru' && activity?.type === 'selection' ? (
@@ -4615,7 +4630,7 @@ export function RightInspectorPhase2({
           border: '1px solid #c7d9f1',
         }}
       >
-        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>QUESTION ARACLARI</div>
+        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>SORU ARAÇLARI</div>
         <SelectionEditor activity={activity} onUpdate={onUpdate} />
       </div>
     ) : activeTab === 'soru' && activity?.type === 'sequence' ? (
@@ -4638,7 +4653,7 @@ export function RightInspectorPhase2({
           border: '1px solid #c7d9f1',
         }}
       >
-        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>KARMA AKIS</div>
+        <div style={{ ...s10, color: '#2563eb', marginBottom: 8 }}>KARMA AKIŞ</div>
         <MixedActivityEditor activity={activity} onUpdate={onUpdate} getCorrectDragMatches={getCorrectDragMatches} />
       </div>
     ) : null;
@@ -4650,13 +4665,13 @@ export function RightInspectorPhase2({
         height: '100%',
         minHeight: 0,
         flexShrink: 0,
-        borderLeft: mobile ? 'none' : '1px solid rgba(148,163,184,.18)',
-        background: 'linear-gradient(180deg,#fbfdff,#f3f8ff)',
+        borderLeft: mobile ? 'none' : '1px solid #dbe6f3',
+        background: '#ffffff',
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
         overscrollBehavior: 'contain',
         touchAction: 'pan-y',
-        padding: 8,
+        padding: 10,
         paddingBottom: mobile ? 18 : 8,
       }}
     >
@@ -4674,7 +4689,7 @@ export function RightInspectorPhase2({
           {workspaceTitle}
         </div>
       )}
-      {!hideInspectorTabs && (
+      {!hideInspectorTabs && !isCustomInteraction && (
         <div
           style={{
             ...card,
@@ -4815,16 +4830,16 @@ export function RightInspectorPhase2({
       {showObjectPanel && multiSel && !sel ? (
         <>
           <div style={card}>
-            <div style={s10}>SECIM</div>
+            <div style={s10}>SEÇİM</div>
             <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-              {selectedObjectCount} nesne secildi
+              {selectedObjectCount} nesne seçildi
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
               Alan: {Math.round(selectionBounds?.width || 0)} x{' '}
               {Math.round(selectionBounds?.height || 0)}
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-              Ok tuslari ile tasiyin, Delete ile silin.
+              Ok tuşları ile taşıyın, Delete ile silin.
             </div>
             <div
               style={{
@@ -4844,7 +4859,7 @@ export function RightInspectorPhase2({
                 onClick={() => patchSelectedObjects({ locked: false })}
                 style={selectionActionBtn}
               >
-                Kilidi Ac
+                Kilidi Aç
               </button>
               <button
                 onClick={groupSelectedObjects}
@@ -4858,23 +4873,23 @@ export function RightInspectorPhase2({
                 Grupla
               </button>
               <button onClick={ungroupSelectedObjects} style={selectionActionBtn}>
-                Ayir
+                Ayır
               </button>
             </div>
           </div>
 
           <div style={card}>
-            <div style={s10}>TOPLU DUZENLEME</div>
+            <div style={s10}>TOPLU DÜZENLEME</div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
               <div style={{ flex: 1 }}>
                 <label
                   style={{ fontSize: 11, color: '#78909C', display: 'block', marginBottom: 2 }}
                 >
-                  Genislik
+                  Genişlik
                 </label>
                 <input
                   type="number"
-                  placeholder="Ayni yap"
+                  placeholder="Aynı yap"
                   style={bulkInputStyle}
                   onBlur={(e) =>
                     commitBulkNumberInput(e, (value) =>
@@ -4893,11 +4908,11 @@ export function RightInspectorPhase2({
                 <label
                   style={{ fontSize: 11, color: '#78909C', display: 'block', marginBottom: 2 }}
                 >
-                  Yukseklik
+                  Yükseklik
                 </label>
                 <input
                   type="number"
-                  placeholder="Ayni yap"
+                  placeholder="Aynı yap"
                   style={bulkInputStyle}
                   onBlur={(e) =>
                     commitBulkNumberInput(e, (value) =>
@@ -4945,7 +4960,7 @@ export function RightInspectorPhase2({
                 </label>
                 <input
                   type="number"
-                  placeholder="Kose"
+                  placeholder="Köşe"
                   style={bulkInputStyle}
                   onBlur={(e) =>
                     commitBulkNumberInput(e, (value) =>
@@ -5034,7 +5049,7 @@ export function RightInspectorPhase2({
               </label>
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
-              Secili nesnelerin boyutu, fontu ve renkleri tek seferde uygulanir.
+              Seçili nesnelerin boyutu, fontu ve renkleri tek seferde uygulanır.
             </div>
           </div>
 
@@ -5046,8 +5061,8 @@ export function RightInspectorPhase2({
               {[
                 { label: 'Sol', kind: 'align', value: 'left' },
                 { label: 'Orta X', kind: 'align', value: 'center' },
-                { label: 'Sag', kind: 'align', value: 'right' },
-                { label: 'Ust', kind: 'align', value: 'top' },
+                { label: 'Sağ', kind: 'align', value: 'right' },
+                { label: 'Üst', kind: 'align', value: 'top' },
                 { label: 'Orta Y', kind: 'align', value: 'middle' },
                 { label: 'Alt', kind: 'align', value: 'bottom' },
               ].map((action) => (
@@ -5063,7 +5078,7 @@ export function RightInspectorPhase2({
           </div>
 
           <div style={card}>
-            <div style={s10}>OTOMATIK BOSLUK</div>
+            <div style={s10}>OTOMATİK BOŞLUK</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <button
                 onClick={() => runSelectionAction('distribute', 'horizontal')}
@@ -5074,7 +5089,7 @@ export function RightInspectorPhase2({
                   cursor: selectedObjects.length < 3 ? 'default' : 'pointer',
                 }}
               >
-                Yatay Dagit
+                Yatay Dağıt
               </button>
               <button
                 onClick={() => runSelectionAction('distribute', 'vertical')}
@@ -5085,11 +5100,11 @@ export function RightInspectorPhase2({
                   cursor: selectedObjects.length < 3 ? 'default' : 'pointer',
                 }}
               >
-                Dikey Dagit
+                Dikey Dağıt
               </button>
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
-              Esit aralik dagitma icin en az 3 nesne secili olmali.
+              Eşit aralık dağıtma için en az 3 nesne seçili olmalı.
             </div>
           </div>
         </>
@@ -5137,12 +5152,12 @@ export function RightInspectorPhase2({
               onChange={(e) => patchObj(sel.id, { rotation: +e.target.value })}
             />
             <SelectInp
-              label="Layer"
+              label="Katman"
               value={sel.layerId || 'base'}
               onChange={(e) => patchObj(sel.id, { layerId: e.target.value })}
               options={layers.map((layer, index) => ({
                 value: layer.id,
-                label: resolvedLayerNames[layer.id] || `Layer ${index + 1}`,
+                label: resolvedLayerNames[layer.id] || `Katman ${index + 1}`,
               }))}
             />
             <div
@@ -5174,7 +5189,7 @@ export function RightInspectorPhase2({
                   cursor: sel.groupId ? 'pointer' : 'default',
                 }}
               >
-                Ayir
+                Ayır
               </button>
             </div>
             <div
@@ -5186,7 +5201,7 @@ export function RightInspectorPhase2({
               }}
             >
               <div style={{ fontSize: 11, fontWeight: 800, color: '#334155', marginBottom: 6 }}>
-                Tiklama Gorevi
+                Tıklama Görevi
               </div>
               <SelectInp
                 label="Aksiyon"
@@ -5196,14 +5211,14 @@ export function RightInspectorPhase2({
                   { value: 'none', label: 'Yok' },
                   { value: 'check', label: 'Kontrol Et' },
                   { value: 'runtime:toggle-play-pause', label: 'Play / Pause Medya' },
-                  { value: 'runtime:toggle-mute', label: 'Sesi Ac / Kapat' },
-                  { value: 'runtime:show-answer', label: 'Cozumu Goster' },
-                  { value: 'runtime:restart', label: 'Yeniden Baslat' },
-                  { value: 'runtime:complete', label: 'Etkinligi Bitir' },
-                  { value: 'close-layer', label: "Layer'i Kapat" },
-                  { value: 'SliderGec', label: 'Soru / Slider Gec' },
-                  { value: 'SayfaGec', label: 'Sahneye Gec' },
-                  { value: 'KatmanaGec', label: 'Katmana Gec' },
+                  { value: 'runtime:toggle-mute', label: 'Sesi Aç / Kapat' },
+                  { value: 'runtime:show-answer', label: 'Çözümü Göster' },
+                  { value: 'runtime:restart', label: 'Yeniden Başlat' },
+                  { value: 'runtime:complete', label: 'Etkinliği Bitir' },
+                  { value: 'close-layer', label: 'Katmanı Kapat' },
+                  { value: 'SliderGec', label: 'Soru / Sahneye Geç' },
+                  { value: 'SayfaGec', label: 'Sahneye Geç' },
+                  { value: 'KatmanaGec', label: 'Katmana Geç' },
                 ]}
               />
               {objectClickTaskAction === 'SliderGec' && (
@@ -5235,8 +5250,8 @@ export function RightInspectorPhase2({
                 />
               )}
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.5 }}>
-                Bu ayar secili nesneye <strong>onClick</strong> triggeri ekler veya var olan
-                triggeri gunceller.
+                Bu ayar seçili nesneye <strong>onClick</strong> triggeri ekler veya var olan
+                tetikleyiciyi günceller.
               </div>
             </div>
             {(sel.type === 'draggable' || sel.type === 'dropzone') && (
@@ -5283,7 +5298,7 @@ export function RightInspectorPhase2({
                     onChange={(e) =>
                       patchObj(sel.id, { capacity: Math.max(0, +e.target.value || 0) })
                     }
-                    placeholder="0 = sinirsiz / global"
+                    placeholder="0 = sınırsız / global"
                   />
                 )}
                 <div
@@ -5297,8 +5312,8 @@ export function RightInspectorPhase2({
                     lineHeight: 1.6,
                   }}
                 >
-                  Bu panelde yaptigin boyut ve konum degisikligi sadece secili ogeyi etkiler.
-                  Hepsini birlikte duzenlemek istersen coklu secim kullan.
+                  Bu panelde yaptığın boyut ve konum değişikliği sadece seçili öğeyi etkiler.
+                  Hepsini birlikte düzenlemek istersen çoklu seçim kullan.
                 </div>
               </>
             )}
@@ -5422,7 +5437,7 @@ export function RightInspectorPhase2({
                   onChange={(e) => patchObj(sel.id, { mediaEndAction: e.target.value })}
                   options={[
                     { value: 'none', label: 'Bir sey yapma / trigger bekle' },
-                    { value: 'close-layer', label: "Bulundugu layer'i kapat" },
+                    { value: 'close-layer', label: "Bulunduğu layer'ı kapat" },
                   ]}
                 />
                 <div
@@ -5436,7 +5451,7 @@ export function RightInspectorPhase2({
                     lineHeight: 1.45,
                   }}
                 >
-                  Ses sahnede gorunmez; preview/SCORM'da layer acilinca otomatik calar. Ses Cal/Ses
+                  Ses sahnede görünmez; preview/SCORM'da layer açılınca otomatik çalar. Ses Çal/Ses
                   Durdur ve Medya bitince triggerlariyla kontrol edebilirsin.
                 </div>
                 <div style={{ marginTop: 4 }}>
@@ -5928,7 +5943,7 @@ export function RightInspectorPhase2({
                 )}
                 <div style={{ display: 'flex', gap: 5 }}>
                   <SelectInp
-                    label="Kose"
+                    label="Köşe"
                     value={sel.style?.strokeLinejoin || 'round'}
                     onChange={(e) =>
                       patchObj(sel.id, { style: { ...sel.style, strokeLinejoin: e.target.value } })
@@ -6109,10 +6124,10 @@ export function RightInspectorPhase2({
           }}
         >
           <div style={{ fontWeight: 900, color: '#0f172a', marginBottom: 8, fontSize: 16 }}>
-            Cevap ayarlari Cevap Kontrol Merkezi'nde
+            Cevap ayarları Cevap Kontrol Merkezi'nde
           </div>
           <div style={{ marginBottom: 12 }}>
-            Cevap duzenleme tek kaynak olarak sag ustteki Cevap butonuyla acilan merkezden
+            Cevap düzenleme tek kaynak olarak sağ üstteki Cevap butonuyla açılan merkezden
             yapilir.
           </div>
           <button
@@ -6130,7 +6145,7 @@ export function RightInspectorPhase2({
               cursor: 'pointer',
             }}
           >
-            Cevap Merkezini Ac
+            Cevap Merkezini Aç
           </button>
         </div>
       ) : showScenePanel ? null : (
@@ -6149,8 +6164,8 @@ export function RightInspectorPhase2({
           </div>
           <div>
             {showInteractionPanel
-              ? 'Tetikleyici ve degiskenleri bu sekmede yonetebilirsin.'
-              : 'Düzenlemek istedigin bolumu yukaridan sec.'}
+              ? 'Tetikleyici ve değişkenleri bu sekmede yönetebilirsin.'
+              : 'Düzenlemek istediğin bölümü yukarıdan seç.'}
           </div>
         </div>
       )}
@@ -6218,7 +6233,7 @@ export function RightInspectorPhase2({
                 ).length;
                 const resolvedLayerName =
                   resolvedLayerNames[layer.id] ||
-                  (layer.kind === 'base' ? 'Base Layer' : `Layer ${index + 1}`);
+                  (layer.kind === 'base' ? 'Temel Katman' : `Katman ${index + 1}`);
                 const actualIndex = layers.findIndex((item) => item.id === layer.id);
                 const isEditing = editingLayerId === layer.id && layer.kind !== 'base';
                 const isDefaultOverlayLayer =
@@ -6322,7 +6337,7 @@ export function RightInspectorPhase2({
                                   whiteSpace: 'nowrap',
                                 }}
                               >
-                                (Base Layer)
+                                (Temel Katman)
                               </span>
                             )}
                             {isDefaultOverlayLayer && (
@@ -6350,7 +6365,7 @@ export function RightInspectorPhase2({
                           marginTop: 2,
                         }}
                       >
-                        {visibleCount} obje · {isActiveLayer ? 'aktif' : 'tikla'}
+                        {visibleCount} nesne · {isActiveLayer ? 'aktif' : 'tıkla'}
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -6493,7 +6508,7 @@ export function RightInspectorPhase2({
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>
-                  Layer Görünüm Paketleri
+                  Katman Görünüm Paketleri
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <button
@@ -6662,7 +6677,7 @@ export function RightInspectorPhase2({
                 }}
               >
                 <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35, minWidth: 0 }}>
-                  menu, explanation, normal, Correct, Incorrect ve cevap katmanlari secili stile
+                  menu, explanation, normal, Correct, Incorrect ve cevap katmanları seçili stile
                   gore otomatik yerlesir.
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -6795,7 +6810,7 @@ export function RightInspectorPhase2({
                     outline: 'none',
                   }}
                 >
-                  <option value="">Set sec</option>
+                  <option value="">Set seç</option>
                   {layerPresets.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -6854,7 +6869,7 @@ export function RightInspectorPhase2({
                   options={startSlideOptions.slice(0, 1)}
                 />
                 <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.45 }}>
-                  Runtime her zaman ana sahneden ve Base Layer'dan başlar.
+                  Önizleme her zaman ana sahneden ve Temel Katman'dan başlar.
                 </div>
                 <SelectInp
                   label="Sahne Şablonu"
@@ -6981,23 +6996,23 @@ export function RightInspectorPhase2({
                   textTransform: 'uppercase',
                 }}
               >
-                Katman Ogeleri
+                Katman Öğeleri
               </div>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
                 {objectListLayerName}
               </div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                {groupedObjectListEntries.length} oge
+                {groupedObjectListEntries.length} öğe
                 {hiddenObjectCount ? ` • ${hiddenObjectCount} gizli` : ''}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <span style={miniMetric}>{layerVisibleCount} gorunur</span>
+              <span style={miniMetric}>{layerVisibleCount} görünür</span>
               <span style={miniMetric}>
                 {sel
-                  ? 'Secim aktif'
+                  ? 'Seçim aktif'
                   : multiSel
-                    ? `${selectedObjectCount} secili`
+                    ? `${selectedObjectCount} seçili`
                     : 'Katman listesi'}
               </span>
             </div>
@@ -7170,10 +7185,10 @@ export function RightInspectorPhase2({
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
-                Bu katmanda henuz oge yok
+                Bu katmanda henüz öğe yok
               </div>
               <div>
-                {objectListLayerName} icin yeni kutu, metin veya medya eklediginde burada
+                {objectListLayerName} için yeni kutu, metin veya medya eklediğinde burada
                 siralanacak.
               </div>
             </div>
@@ -7344,14 +7359,14 @@ export function RightInspectorPhase2({
                   textTransform: 'uppercase',
                 }}
               >
-                Etkilesim Ozeti
+                Etkileşim Özeti
               </div>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
                 {isAdvancedMode ? 'Kurgu aktif' : 'Temel mod'}
               </div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
                 {isAdvancedMode
-                  ? 'Trigger ve degisken kartlari hemen asagida'
+                  ? 'Tetikleyici ve değişken kartları hemen aşağıda'
                   : "Tetikleyici ve değişken düzenleme için Gelişmiş Mod'u açın."}
               </div>
             </div>
@@ -7450,7 +7465,7 @@ export function RightInspectorPhase2({
                       )
                     )
                   }
-                  placeholder={`Degisken ${index + 1}`}
+                  placeholder={`Değişken ${index + 1}`}
                 />
                 <button
                   onClick={() =>
@@ -7491,7 +7506,7 @@ export function RightInspectorPhase2({
                 />
                 {variable.type === 'boolean' ? (
                   <SelectInp
-                    label="Ilk Deger"
+                    label="İlk Değer"
                     value={String(!!variable.value)}
                     onChange={(e) =>
                       patchVariables((prev) =>
@@ -7506,7 +7521,7 @@ export function RightInspectorPhase2({
                   />
                 ) : (
                   <Inp
-                    label="Ilk Deger"
+                    label="İlk Değer"
                     type={variable.type === 'number' ? 'number' : 'text'}
                     value={variable.value ?? ''}
                     onChange={(e) =>
@@ -7541,7 +7556,7 @@ export function RightInspectorPhase2({
               marginBottom: 6,
             }}
           >
-            <div style={s10}>TETIKLEYICILER</div>
+            <div style={s10}>TETİKLEYİCİLER</div>
             <button
               onClick={() => {
                 const t = createTriggerItem(triggers.length);
@@ -7612,14 +7627,14 @@ export function RightInspectorPhase2({
                           fontWeight: 800,
                         }}
                       >
-                        Trigger {index + 1}
+                        Tetikleyici {index + 1}
                       </span>
                       <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>
                         {describeTrigger(item)}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-                      {item.name || 'Kosullu aksiyon satiri'}
+                      {item.name || 'Koşullu aksiyon satırı'}
                     </div>
                   </div>
                   <button
@@ -7673,7 +7688,7 @@ export function RightInspectorPhase2({
                     onChange={(e) => patchTrigger(item.id, { target: e.target.value })}
                     options={
                       item.when === 'onLoad'
-                        ? [{ value: '__activity__', label: 'Sahne / yukleme' }]
+                        ? [{ value: '__activity__', label: 'Sahne / yükleme' }]
                         : triggerSourceOptions
                     }
                   />
@@ -7738,7 +7753,7 @@ export function RightInspectorPhase2({
                     label="Ad"
                     value={item.name || ''}
                     onChange={(e) => patchTrigger(item.id, { name: e.target.value })}
-                    placeholder="Kosullu gecis"
+                    placeholder="Koşullu geçiş"
                   />
                   {item.action === 'KatmanaGec' ? (
                     <SelectInp
@@ -7793,17 +7808,17 @@ export function RightInspectorPhase2({
                   ) : item.action === 'DegiskenAta' ? (
                     <>
                       <SelectInp
-                        label="Degisken"
+                        label="Değişken"
                         value={item.value || ''}
                         onChange={(e) => patchTrigger(item.id, { value: e.target.value })}
                         options={
                           variableOptions.length
                             ? variableOptions
-                            : [{ value: '', label: 'Degisken yok' }]
+                            : [{ value: '', label: 'Değişken yok' }]
                         }
                       />
                       <Inp
-                        label="Yeni Deger"
+                        label="Yeni Değer"
                         value={item.extra || ''}
                         onChange={(e) => patchTrigger(item.id, { extra: e.target.value })}
                       />
@@ -7811,13 +7826,13 @@ export function RightInspectorPhase2({
                   ) : item.action === 'DegiskenArttir' || item.action === 'DegiskenAzalt' ? (
                     <>
                       <SelectInp
-                        label="Degisken"
+                        label="Değişken"
                         value={item.value || ''}
                         onChange={(e) => patchTrigger(item.id, { value: e.target.value })}
                         options={
                           variableOptions.length
                             ? variableOptions
-                            : [{ value: '', label: 'Degisken yok' }]
+                            : [{ value: '', label: 'Değişken yok' }]
                         }
                       />
                       <Inp
@@ -7846,7 +7861,7 @@ export function RightInspectorPhase2({
                         options={OBJECT_STATE_OPTIONS}
                       />
                       <SelectInp
-                        label="Deger"
+                        label="Değer"
                         value={String(item.stateValue ?? 'true')}
                         onChange={(e) => patchTrigger(item.id, { stateValue: e.target.value })}
                         options={boolOptions}
@@ -7854,7 +7869,7 @@ export function RightInspectorPhase2({
                     </>
                   ) : (
                     <Inp
-                      label="Deger"
+                      label="Değer"
                       value={item.value || ''}
                       onChange={(e) => patchTrigger(item.id, { value: e.target.value })}
                     />
@@ -7875,7 +7890,7 @@ export function RightInspectorPhase2({
                       color: '#334155',
                     }}
                   >
-                    <span>Kosullar {conditionCount ? `(${conditionCount})` : ''}</span>
+                    <span>Koşullar {conditionCount ? `(${conditionCount})` : ''}</span>
                     <span style={{ fontSize: 11, color: '#64748b' }}>
                       {getOptionLabel(triggerModeOptions, item.conditionMode || 'all', 'Tumu')}
                     </span>
@@ -7914,7 +7929,7 @@ export function RightInspectorPhase2({
                           cursor: 'pointer',
                         }}
                       >
-                        + Kosul
+                        + Koşul
                       </button>
                     </div>
                     {(item.conditions || []).map((condition) => (
@@ -7943,7 +7958,7 @@ export function RightInspectorPhase2({
                               )
                             }
                             options={[
-                              { value: 'variable', label: 'Degisken' },
+                              { value: 'variable', label: 'Değişken' },
                               { value: 'objectState', label: 'Nesne Durumu' },
                             ]}
                           />
@@ -7972,7 +7987,7 @@ export function RightInspectorPhase2({
                           }}
                         >
                           <SelectInp
-                            label={condition.sourceType === 'objectState' ? 'Nesne' : 'Degisken'}
+                            label={condition.sourceType === 'objectState' ? 'Nesne' : 'Değişken'}
                             value={condition.sourceId || ''}
                             onChange={(e) =>
                               patchTriggerConditions(item.id, (prev) =>
@@ -8051,7 +8066,7 @@ export function RightInspectorPhase2({
                           padding: '8px 0',
                         }}
                       >
-                        Kosul yok, trigger her zaman calisir
+                        Koşul yok, tetikleyici her zaman çalışır
                       </div>
                     )}
                   </div>
@@ -8061,7 +8076,7 @@ export function RightInspectorPhase2({
           })}
           {triggers.length === 0 && (
             <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', padding: '8px 0' }}>
-              Tetikleyici yok. Yeni satir ekleyerek Articulate mantiginda akis kurabilirsin.
+              Tetikleyici yok. Yeni satır ekleyerek Articulate mantığında akış kurabilirsin.
             </div>
           )}
         </div>

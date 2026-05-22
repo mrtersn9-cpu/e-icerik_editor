@@ -13,15 +13,15 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Ogrenci kisa metin yaniti girer; otomatik veya manuel degerlendirilir."
+        description="Öğrenci kısa metin yanıtı girer; otomatik veya manuel değerlendirilir."
       />
-      <CevapCard number="2" title="Soru Yapisi">
+      <CevapCard number="2" title="Soru Yapısı">
         <Field label="Soru / prompt"><TextArea value={activity.textEntryPrompt || ''} onChange={(value) => patch({ textEntryPrompt: value })} /></Field>
         <Field label="Maksimum karakter"><TextInput type="number" min="1" value={activity.textEntryMaxLength || 250} onChange={(value) => patch({ textEntryMaxLength: Number(value) || 250 })} /></Field>
-        <Field label="Yanit kutusu satir sayisi"><TextInput type="number" min="1" max="20" value={activity.textEntryRows || 3} onChange={(value) => patch({ textEntryRows: Math.max(1, Math.min(20, Number(value) || 3)) })} /></Field>
-        <ToggleRow label="Sesle yazim destegi" checked={!!activity.textEntryVoiceInput} onChange={(checked) => patch({ textEntryVoiceInput: checked })} />
+        <Field label="Yanıt kutusu satır sayısı"><TextInput type="number" min="1" max="20" value={activity.textEntryRows || 3} onChange={(value) => patch({ textEntryRows: Math.max(1, Math.min(20, Number(value) || 3)) })} /></Field>
+        <ToggleRow label="Sesle yazım desteği" checked={!!activity.textEntryVoiceInput} onChange={(checked) => patch({ textEntryVoiceInput: checked })} />
       </CevapCard>
-      <CevapCard number="3" title="Cevap Formu - Beklenen Yanitlar">
+      <CevapCard number="3" title="Cevap Formu - Beklenen Yanıtlar">
         <div style={{ display: 'grid', gap: 8 }}>
           {answers.map((answer, index) => (
             <div key={index} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr) 70px 34px', gap: 8, alignItems: 'center' }}>
@@ -46,10 +46,10 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
           </SmallButton>
         </div>
       </CevapCard>
-      <CevapCard number="4" title="Degerlendirme Yontemi">
-        <Field label="Yontem"><SelectInput value={activity.answerControl?.textEvaluation || 'keyword'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), textEvaluation: value } })} options={[{ value: 'keyword', label: 'Anahtar kelime tabanli' }, { value: 'manual', label: 'Manual degerlendirme' }]} /></Field>
-        <ToggleRow label="Buyuk/kucuk harf duyarli" checked={activity.textEntryCaseSensitive} onChange={(checked) => patch({ textEntryCaseSensitive: checked })} />
-        <Field label="Benzer ifade toleransi">
+      <CevapCard number="4" title="Değerlendirme Yöntemi">
+        <Field label="Yöntem"><SelectInput value={activity.answerControl?.textEvaluation || 'keyword'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), textEvaluation: value } })} options={[{ value: 'keyword', label: 'Anahtar kelime tabanlı' }, { value: 'manual', label: 'Manuel değerlendirme' }]} /></Field>
+        <ToggleRow label="Büyük/küçük harf duyarlı" checked={activity.textEntryCaseSensitive} onChange={(checked) => patch({ textEntryCaseSensitive: checked })} />
+        <Field label="Benzer ifade toleransı">
           <SelectInput
             value={activity.answerControl?.textTolerance || '20'}
             onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), textTolerance: value } })}
@@ -68,8 +68,8 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="12" title="Rubrik Ozeti" wide>
-        <MiniTable columns={['Anahtar Kelime', 'Agirlik', 'Durum']} rows={answers.map((answer, index) => ({ id: index, cells: [answer || '-', (activity.textEntryAnswerWeights || [])[index] || 1, answer ? 'Aktif' : 'Eksik'] }))} />
+      <CevapCard number="12" title="Rubrik Özeti" wide>
+        <MiniTable columns={['Anahtar Kelime', 'Ağırlık', 'Durum']} rows={answers.map((answer, index) => ({ id: index, cells: [answer || '-', (activity.textEntryAnswerWeights || [])[index] || 1, answer ? 'Aktif' : 'Eksik'] }))} />
       </CevapCard>
     </PanelGrid>
   );

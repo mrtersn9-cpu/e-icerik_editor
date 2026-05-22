@@ -23,10 +23,10 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Ogrencinin her ifade icin dogru ya da yanlis secmesini saglar."
+        description="Öğrencinin her ifade için doğru ya da yanlış seçmesini sağlar."
       />
-      <CevapCard number="2" title={`Ifade Listesi (${options.length})`} wide>
-        <Field label="Ifade / soru">
+      <CevapCard number="2" title={`İfade Listesi (${options.length})`} wide>
+        <Field label="İfade / soru">
           <TextArea value={activity.mcQuestion || ''} onChange={(value) => patch({ mcQuestion: value })} />
         </Field>
         <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
@@ -38,7 +38,7 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
           ))}
         </div>
       </CevapCard>
-      <CevapCard number="3" title="Cevap Formu - Dogru / Yanlis">
+      <CevapCard number="3" title="Cevap Formu - Doğru / Yanlış">
         <div style={{ display: 'grid', gap: 10 }}>
           {options.map((option) => (
             <div
@@ -62,29 +62,29 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
                 tone={option.isCorrect ? 'green' : 'blue'}
                 onClick={() => setSingleCorrectOption(activity, onUpdate, option.id)}
               >
-                Dogru cevap
+                Doğru cevap
               </ChoiceButton>
             </div>
           ))}
           <MiniPreview
-            label="Onizleme"
+            label="Önizleme"
             value={options.find((option) => option.isCorrect)?.label}
-            empty="Henuz dogru/yanlis secimi yok"
+            empty="Henüz doğru/yanlış seçimi yok"
             tone={options.some((option) => option.isCorrect) ? 'green' : 'slate'}
           />
         </div>
       </CevapCard>
-      <CevapCard number="4" title="Yanit Duzeni">
-        <Field label="Duzen tipi">
-          <SelectInput value={activity.answerControl?.trueFalseLayout || 'together'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), trueFalseLayout: value } })} options={[{ value: 'together', label: 'Tek kart uzerinde' }, { value: 'per-statement', label: 'Ifade bazinda' }]} />
+      <CevapCard number="4" title="Yanıt Düzeni">
+        <Field label="Düzen tipi">
+          <SelectInput value={activity.answerControl?.trueFalseLayout || 'together'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), trueFalseLayout: value } })} options={[{ value: 'together', label: 'Tek kart üzerinde' }, { value: 'per-statement', label: 'İfade bazında' }]} />
         </Field>
-        <Field label="Buton siralamasi">
+        <Field label="Buton sıralaması">
           <SelectInput
             value={activity.answerControl?.trueFalseButtonOrder || 'normal'}
             onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), trueFalseButtonOrder: value } })}
             options={[
-              { value: 'normal', label: 'Dogru - Yanlis' },
-              { value: 'reversed', label: 'Yanlis - Dogru' },
+              { value: 'normal', label: 'Doğru - Yanlış' },
+              { value: 'reversed', label: 'Yanlış - Doğru' },
             ]}
           />
         </Field>
@@ -96,8 +96,8 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Cevap Anahtari Ozeti" wide>
-        <MiniTable columns={['Ifade', 'Dogru Cevap']} rows={options.map((option) => ({ id: option.id, cells: [option.label || '-', option.isCorrect ? 'Dogru' : 'Yanlis'] }))} />
+      <CevapCard number="10" title="Cevap Anahtarı Özeti" wide>
+        <MiniTable columns={['İfade', 'Doğru Cevap']} rows={options.map((option) => ({ id: option.id, cells: [option.label || '-', option.isCorrect ? 'Doğru' : 'Yanlış'] }))} />
       </CevapCard>
     </PanelGrid>
   );

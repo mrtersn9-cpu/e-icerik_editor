@@ -24,9 +24,9 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Kullanici bir veya birden fazla dogru secenegi secer."
+        description="Kullanıcı bir veya birden fazla doğru seçeneği seçer."
       />
-      <CevapCard number="2" title={`Secenek Listesi (${summary.options.length})`} wide>
+      <CevapCard number="2" title={`Seçenek Listesi (${summary.options.length})`} wide>
         <div style={{ display: 'grid', gap: 8 }}>
           <Field label="Soru metni">
             <TextArea value={activity.mcQuestion || ''} onChange={(value) => patch({ mcQuestion: value })} />
@@ -48,7 +48,7 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
               />
               <SmallButton
                 variant="danger"
-                ariaLabel={`${String.fromCharCode(65 + index)} secenegini sil`}
+                ariaLabel={`${String.fromCharCode(65 + index)} seçeneğini sil`}
                 onClick={() => removeMcOption(activity, onUpdate, option.id)}
               >
                 Sil
@@ -56,18 +56,18 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
             </div>
           ))}
           <SmallButton variant="primary" onClick={() => addMcOption(activity, onUpdate)}>
-            + Secenek Ekle
+            + Seçenek Ekle
           </SmallButton>
         </div>
       </CevapCard>
-      <CevapCard number="3" title="Soru Yapisi">
-        <Field label="Secim turu">
-          <SelectInput value={activity.mcMode || 'single'} onChange={(value) => patch({ mcMode: value })} options={[{ value: 'single', label: 'Tekli secim' }, { value: 'multi', label: 'Coklu secim' }]} />
+      <CevapCard number="3" title="Soru Yapısı">
+        <Field label="Seçim türü">
+          <SelectInput value={activity.mcMode || 'single'} onChange={(value) => patch({ mcMode: value })} options={[{ value: 'single', label: 'Tekli seçim' }, { value: 'multi', label: 'Çoklu seçim' }]} />
         </Field>
-        <ToggleRow label="Secenek sirasini karistir" checked={activity.settings?.shuffleOptions} onChange={(checked) => patch({ settings: { ...(activity.settings || {}), shuffleOptions: checked } })} />
-        <ToggleRow label="Soru sirasini karistir" checked={activity.settings?.shuffleQuestions} onChange={(checked) => patch({ settings: { ...(activity.settings || {}), shuffleQuestions: checked } })} />
+        <ToggleRow label="Seçenek sırasını karıştır" checked={activity.settings?.shuffleOptions} onChange={(checked) => patch({ settings: { ...(activity.settings || {}), shuffleOptions: checked } })} />
+        <ToggleRow label="Soru sırasını karıştır" checked={activity.settings?.shuffleQuestions} onChange={(checked) => patch({ settings: { ...(activity.settings || {}), shuffleQuestions: checked } })} />
       </CevapCard>
-      <CevapCard number="4" title="Cevap Formu - Dogru Secenekler">
+      <CevapCard number="4" title="Cevap Formu - Doğru Seçenekler">
         <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {summary.options.map((option, index) => {
@@ -83,16 +83,16 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
                       : setSingleCorrectOption(activity, onUpdate, option.id)
                   }
                 >
-                  {letter}. {option.label || `Secenek ${index + 1}`}
+                  {letter}. {option.label || `Seçenek ${index + 1}`}
                 </ChoiceButton>
               );
             })}
           </div>
-          {!summary.options.length && <span style={{ color: '#64748b', fontSize: 12 }}>0 secenek</span>}
+          {!summary.options.length && <span style={{ color: '#64748b', fontSize: 12 }}>0 seçenek</span>}
           <MiniPreview
-            label="Secili dogru cevap"
+            label="Seçili doğru cevap"
             value={summary.correctOptions.map((option) => option.label).join(', ')}
-            empty="Henuz dogru secenek secilmedi"
+            empty="Henüz doğru seçenek seçilmedi"
             tone={summary.correctOptions.length ? 'green' : 'slate'}
           />
         </div>
@@ -104,9 +104,9 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Opsiyon Haritasi" wide>
+      <CevapCard number="10" title="Seçenek Haritası" wide>
         <MiniTable
-          columns={['Secenek', 'Metin', 'Dogru', 'Puan']}
+          columns={['Seçenek', 'Metin', 'Doğru', 'Puan']}
           rows={summary.options.map((option, index) => ({ id: option.id, cells: [String.fromCharCode(65 + index), option.label || '-', option.isCorrect ? '✓' : '', option.points || 1] }))}
         />
       </CevapCard>

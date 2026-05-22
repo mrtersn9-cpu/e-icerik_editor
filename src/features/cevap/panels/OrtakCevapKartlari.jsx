@@ -390,7 +390,7 @@ export function IpucuCard({ number, activity, onUpdate }) {
             onChange={(value) => patch({ hintTiming: value })}
             options={[
               { value: 'manual', label: 'Butona tiklandiginda' },
-              { value: 'after-wrong', label: 'Yanlis cevaptan sonra' },
+              { value: 'after-wrong', label: 'Yanlış cevaptan sonra' },
               { value: 'always', label: 'Her zaman' },
             ]}
           />

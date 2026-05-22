@@ -60,45 +60,26 @@ export default function GirisRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Hizala" width={164}>
-        <RibbonStack>
-          <RibbonRow>
-            <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.multiSelection} width={70} />
-            <CompactRibbonButton label="Orta" icon="alignCenter" onClick={() => commands.align('center')} disabled={!can.multiSelection} width={70} />
-          </RibbonRow>
-          <RibbonRow>
-            <CompactRibbonButton label="Sağa" icon="alignRight" onClick={() => commands.align('right')} disabled={!can.multiSelection} width={70} />
-            <RibbonPopoverButton label="Diğer" icon="more" width={70} disabled={!can.multiSelection}>
-              <RibbonMenuGrid columns="repeat(2, 100px)">
-                <CompactRibbonButton label="Üste Hizala" icon="alignTop" onClick={() => commands.align('top')} width={96} />
-                <CompactRibbonButton label="Ortaya" icon="alignMiddle" onClick={() => commands.align('middle')} width={96} />
-                <CompactRibbonButton label="Alta Hizala" icon="alignBottom" onClick={() => commands.align('bottom')} width={96} />
-                <CompactRibbonButton label="Yatay Dağıt" icon="distributeH" onClick={() => commands.distribute('horizontal')} disabled={!can.distribute} width={96} />
-                <CompactRibbonButton label="Dikey Dağıt" icon="distributeV" onClick={() => commands.distribute('vertical')} disabled={!can.distribute} width={96} />
-              </RibbonMenuGrid>
-            </RibbonPopoverButton>
-          </RibbonRow>
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Düzenle" width={160}>
-        <RibbonStack>
-          <RibbonRow>
-            <CompactRibbonButton label="Grupla" icon="group" onClick={commands.groupSelection} disabled={!can.group} width={66} />
-            <CompactRibbonButton label="Ayır" icon="ungroup" onClick={commands.ungroupSelection} disabled={!can.selection} width={62} />
-          </RibbonRow>
-          <RibbonRow>
-            <CompactRibbonButton label="Kilitle" icon="lock" onClick={() => commands.setSelectionLocked(true)} disabled={!can.selection} width={66} />
-            <CompactRibbonButton label="Aç" icon="unlock" onClick={() => commands.setSelectionLocked(false)} disabled={!can.selection} width={62} />
-          </RibbonRow>
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Sıralama" width={118}>
-        <RibbonStack>
-          <CompactRibbonButton label="Öne Getir" icon="bringFront" onClick={commands.bringFront} disabled={!can.selection} width={88} />
-          <CompactRibbonButton label="Arkaya Gönder" icon="sendBack" onClick={commands.sendBack} disabled={!can.selection} width={88} />
-        </RibbonStack>
+      <RibbonGroup title="Seçim Araçları" width={178}>
+        <RibbonRow>
+          <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.multiSelection} width={64} />
+          <CompactRibbonButton label="Grupla" icon="group" onClick={commands.groupSelection} disabled={!can.group} width={64} />
+          <RibbonPopoverButton label="Diğer" icon="more" width={58} disabled={!can.selection && !can.multiSelection}>
+            <RibbonMenuGrid columns="repeat(2, 112px)">
+              <CompactRibbonButton label="Ortala" icon="alignCenter" onClick={() => commands.align('center')} disabled={!can.multiSelection} width={106} />
+              <CompactRibbonButton label="Sağa Hizala" icon="alignRight" onClick={() => commands.align('right')} disabled={!can.multiSelection} width={106} />
+              <CompactRibbonButton label="Üste Hizala" icon="alignTop" onClick={() => commands.align('top')} disabled={!can.multiSelection} width={106} />
+              <CompactRibbonButton label="Alta Hizala" icon="alignBottom" onClick={() => commands.align('bottom')} disabled={!can.multiSelection} width={106} />
+              <CompactRibbonButton label="Yatay Dağıt" icon="distributeH" onClick={() => commands.distribute('horizontal')} disabled={!can.distribute} width={106} />
+              <CompactRibbonButton label="Dikey Dağıt" icon="distributeV" onClick={() => commands.distribute('vertical')} disabled={!can.distribute} width={106} />
+              <CompactRibbonButton label="Ayır" icon="ungroup" onClick={commands.ungroupSelection} disabled={!can.selection} width={106} />
+              <CompactRibbonButton label="Kilitle" icon="lock" onClick={() => commands.setSelectionLocked(true)} disabled={!can.selection} width={106} />
+              <CompactRibbonButton label="Kilidi Aç" icon="unlock" onClick={() => commands.setSelectionLocked(false)} disabled={!can.selection} width={106} />
+              <CompactRibbonButton label="Öne Getir" icon="bringFront" onClick={commands.bringFront} disabled={!can.selection} width={106} />
+              <CompactRibbonButton label="Arkaya Gönder" icon="sendBack" onClick={commands.sendBack} disabled={!can.selection} width={106} />
+            </RibbonMenuGrid>
+          </RibbonPopoverButton>
+        </RibbonRow>
       </RibbonGroup>
     </>
   );

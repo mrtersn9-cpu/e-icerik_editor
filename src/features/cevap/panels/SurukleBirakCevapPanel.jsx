@@ -318,23 +318,23 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
         </div>
       <CevapCard number="2" title="Cevap Yapisi" order={2}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 6 }}>
-          <ReadOnlyValue label="Suruklenebilir ogeler" value={summary.draggables.length} />
-          <ReadOnlyValue label="Birakma alanlari" value={summary.dropzones.length} />
+          <ReadOnlyValue label="Sürüklenebilir öğeler" value={summary.draggables.length} />
+          <ReadOnlyValue label="Bırakma alanları" value={summary.dropzones.length} />
           <ReadOnlyValue
-            label="Dogru eslesmeler"
+            label="Doğru eşleşmeler"
             value={`${Object.keys(activeChoiceMap).length}/${summary.dropzones.length}`}
           />
         </div>
       </CevapCard>
-      <CevapCard number="3" title="Birakma Kurallari" order={3}>
+      <CevapCard number="3" title="Bırakma Kuralları" order={3}>
         <div style={{ display: 'grid', gap: 7 }}>
           <ToggleRow
-            label="Tek hedefe tek oge"
+            label="Tek hedefe tek öğe"
             checked={!settings.allowMultipleItemsPerDrop}
             onChange={(checked) => patchSettings({ allowMultipleItemsPerDrop: !checked })}
           />
           <ToggleRow
-            label="Coklu kabul"
+            label="Çoklu kabul"
             checked={settings.allowMultipleItemsPerDrop}
             onChange={(checked) => patchSettings({ allowMultipleItemsPerDrop: checked })}
           />
@@ -344,27 +344,27 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
             onChange={(checked) => patchSettings({ isolateScopes: checked })}
           />
           <ToggleRow
-            label="Grup disina izin ver"
+            label="Grup dışına izin ver"
             checked={!!settings.allowCrossScope}
             onChange={(checked) => patchSettings({ allowCrossScope: checked })}
           />
           <ToggleRow
-            label="Ayni oge coklu hedefe gitsin"
+            label="Aynı öğe çoklu hedefe gitsin"
             checked={!!settings.allowMultipleTargetsPerDrag}
             onChange={(checked) => patchSettings({ allowMultipleTargetsPerDrag: checked })}
           />
           <ToggleRow
-            label="Yanlis birakmayi geri al"
+            label="Yanlış bırakmayı geri al"
             checked={settings.returnWrongDrop !== false}
             onChange={(checked) => patchSettings({ returnWrongDrop: checked })}
           />
-          <Field label="Serbest birakma davranisi">
+          <Field label="Serbest bırakma davranışı">
             <SelectInput
               value={settings.answerPlacementLayout || 'stack'}
               onChange={(value) => patchSettings({ answerPlacementLayout: value })}
               options={[
-                { value: 'stack', label: 'En yakina yapistir' },
-                { value: 'row', label: 'Satir' },
+                { value: 'stack', label: 'En yakına yapıştır' },
+                { value: 'row', label: 'Satır' },
                 { value: 'grid', label: 'Izgara' },
               ]}
             />
@@ -372,13 +372,13 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
         </div>
       </CevapCard>
       </div>
-      <CevapCard number="6" title={isGroupMode ? 'Cevap Formu - Grup Eslesmeleri' : 'Cevap Formu - Dogru Eslesmeler'} wide order={5}>
+      <CevapCard number="6" title={isGroupMode ? 'Cevap Formu - Grup Eşleşmeleri' : 'Cevap Formu - Doğru Eşleşmeler'} wide order={5}>
         <div style={{ display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
               {isGroupMode
-                ? 'Her hedefe atanacak grubu secin'
-                : 'Her hedefe dogru suruklenebilir ogeyi secin'}
+                ? 'Her hedefe atanacak grubu seçin'
+                : 'Her hedefe doğru sürüklenebilir öğeyi seçin'}
             </span>
             <SmallButton onClick={clearMatches}>Temizle</SmallButton>
           </div>
@@ -428,7 +428,7 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
                       borderColor: currentDrag ? '#86efac' : '#cbd5e1',
                     }}
                   >
-                    <option value="">— Sec —</option>
+                    <option value="">— Seç —</option>
                     {compatibleChoices.map((drag) => (
                       <option key={drag.id} value={drag.id}>
                         {getObjectLabel(drag, drag.id)}
@@ -439,21 +439,21 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
               );
             })}
             {!summary.dropzones.length && (
-              <div style={{ color: '#64748b', fontSize: 12 }}>0 birakma alani</div>
+              <div style={{ color: '#64748b', fontSize: 12 }}>0 bırakma alanı</div>
             )}
           </div>
         </div>
       </CevapCard>
-      <CevapCard number="7" title="Eslesme Haritasi" order={6}>
+      <CevapCard number="7" title="Eşleşme Haritası" order={6}>
         <div style={{ maxHeight: 156, overflow: 'auto' }}>
           <MiniTable
-            columns={['#', 'Hedef Alan', 'Secilen Oge', 'Dogru']}
+            columns={['#', 'Hedef Alan', 'Seçilen Öğe', 'Doğru']}
             rows={matchRows}
-            emptyText="0 eslesme"
+            emptyText="0 eşleşme"
           />
         </div>
       </CevapCard>
-      <CevapCard number="8" title="Gelismis Ayarlar" wide order={7}>
+      <CevapCard number="8" title="Gelişmiş Ayarlar" wide order={7}>
         <button
           type="button"
           onClick={() => setShowAdvanced((value) => !value)}
@@ -469,20 +469,20 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
             cursor: 'pointer',
           }}
         >
-          {showAdvanced ? 'Gelismis ayarlari gizle' : 'Geri bildirim, puanlama ve erisilebilirlik ayarlarini ac'}
+          {showAdvanced ? 'Gelişmiş ayarları gizle' : 'Geri bildirim, puanlama ve erişilebilirlik ayarlarını aç'}
         </button>
       </CevapCard>
       {showAdvanced && (
         <>
-          <CevapCard number="9" title="Oge ve Alan Ayarlari" wide order={8}>
+          <CevapCard number="9" title="Öğe ve Alan Ayarları" wide order={8}>
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#334155', fontSize: 11, fontWeight: 900 }}>
-                  Suruklenebilir ogeler ({summary.draggables.length})
+                  Sürüklenebilir öğeler ({summary.draggables.length})
                 </div>
                 {summary.draggables.map((drag, index) => (
                   <div key={drag.id} style={compactInputStyle}>
-                    <ReadOnlyValue value={getObjectLabel(drag, `Surukle ${index + 1}`)} />
+                    <ReadOnlyValue value={getObjectLabel(drag, `Sürükle ${index + 1}`)} />
                     <TextInput
                       value={drag.scope || ''}
                       placeholder="Soru grubu"
@@ -496,12 +496,12 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
                   </div>
                 ))}
                 {!summary.draggables.length && (
-                  <div style={{ color: '#64748b', fontSize: 11 }}>0 suruklenebilir oge</div>
+                  <div style={{ color: '#64748b', fontSize: 11 }}>0 sürüklenebilir öğe</div>
                 )}
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#334155', fontSize: 11, fontWeight: 900 }}>
-                  Birakma alanlari ({summary.dropzones.length})
+                  Bırakma alanları ({summary.dropzones.length})
                 </div>
                 {summary.dropzones.map((drop, index) => (
                   <div

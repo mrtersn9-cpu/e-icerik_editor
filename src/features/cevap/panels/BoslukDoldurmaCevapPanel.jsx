@@ -59,17 +59,17 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
           onChange={(checked) => patch({ fillBlankTrim: checked })}
         />
         <ToggleRow
-          label="Es anlamlilari kabul et"
+          label="Eş anlamlıları kabul et"
           checked={!!activity.fillBlankAcceptSynonyms}
           onChange={(checked) => patch({ fillBlankAcceptSynonyms: checked })}
         />
         <ToggleRow
-          label="Regex kullanimi"
+          label="Regex kullanımı"
           checked={!!activity.fillBlankUseRegex}
           onChange={(checked) => patch({ fillBlankUseRegex: checked })}
         />
         <ToggleRow
-          label="Turkce karakter toleransi"
+          label="Türkçe karakter toleransı"
           checked={!!activity.fillBlankTurkishTolerance}
           onChange={(checked) => patch({ fillBlankTurkishTolerance: checked })}
         />
@@ -80,8 +80,8 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
       <IpucuCard number="8" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="9" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="10" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="11" title="Yanit Esleme Ozeti" wide>
-        <MiniTable columns={['#', 'Varsayilan Yanit', 'Kabul Edilen Yanitlar', 'Puan', 'Durum']} rows={answers.map((answer, index) => ({ id: answer.id, cells: [index + 1, answer.acceptedValues?.[0] || '-', (answer.acceptedValues || []).join(', '), answer.points || 1, 'Aktif'] }))} />
+      <CevapCard number="11" title="Yanıt Eşleme Özeti" wide>
+        <MiniTable columns={['#', 'Varsayılan Yanıt', 'Kabul Edilen Yanıtlar', 'Puan', 'Durum']} rows={answers.map((answer, index) => ({ id: answer.id, cells: [index + 1, answer.acceptedValues?.[0] || '-', (answer.acceptedValues || []).join(', '), answer.points || 1, 'Aktif'] }))} />
       </CevapCard>
     </PanelGrid>
   );

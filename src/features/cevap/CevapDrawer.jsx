@@ -57,22 +57,22 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
         aria-modal="true"
         aria-label="Etkinlik kontrol merkezi"
         style={{
-          width: 'min(700px, calc(100vw - 56px))',
+          width: 'min(720px, calc(100vw - 56px))',
           maxWidth: '100vw',
           height: '100vh',
-          background: '#f8fbff',
+          background: '#ffffff',
           color: '#0f172a',
-          boxShadow: '-26px 0 70px rgba(15,23,42,.24)',
+          boxShadow: '-18px 0 42px rgba(15,23,42,.18)',
           display: 'grid',
           gridTemplateRows: 'auto minmax(0,1fr) auto',
           padding: 10,
-          gap: 6,
+          gap: 5,
           overflow: 'hidden',
         }}
       >
         <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ color: '#1d4ed8', fontSize: 14, fontWeight: 900 }}>
+            <div style={{ color: '#174ea6', fontSize: 13, fontWeight: 950 }}>
               ETKİNLİK KONTROL MERKEZİ
             </div>
             <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>
@@ -90,21 +90,21 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
               borderRadius: 999,
               background: '#ffffff',
               color: '#0f172a',
-              fontSize: 20,
+              fontSize: 18,
               cursor: 'pointer',
             }}
           >
             x
           </button>
         </header>
-        <main style={{ minHeight: 0, overflow: 'auto', paddingRight: 1 }}>
+        <main style={{ minHeight: 0, overflow: 'auto', paddingRight: 1, background: '#ffffff' }}>
           <CevapPanelRouter activity={activity} onUpdate={onUpdate} />
           <SahneyeUygulaCard activity={activity} onUpdate={onUpdate} number="Uygula" />
         </main>
         <footer
           className="cevap-drawer-footer"
           style={{
-            minHeight: 44,
+            minHeight: 40,
             border: '1px solid #dbe4ef',
             borderRadius: 8,
             background: '#ffffff',

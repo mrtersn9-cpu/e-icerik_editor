@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 
 import { SLIDE_TRANSITION_OPTIONS } from '../constants';
+import { buildResolvedLayerNameMap } from '../logic/factories';
 import { EDITOR_THEME } from '../theme';
 import {
   uid,
@@ -11,6 +12,20 @@ import {
 } from '../utils/editorHelpers';
 
 // ─── SlideThumbnail ───────────────────────────────────────────────────────────
+
+const managedAnswerLayerPreviewItems = [
+  { key: 'menu', label: 'Menü', tone: '#2563eb' },
+  { key: 'normal', label: 'Normal', tone: '#f59e0b' },
+  { key: 'correct', label: 'Doğru', tone: '#16a34a' },
+  { key: 'incorrect', label: 'Yanlış', tone: '#dc2626' },
+  { key: 'cevap', label: 'Cevap', tone: '#7c3aed' },
+];
+
+function normalizeThumbnailLayerKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('tr-TR');
+}
 
 export function SlideThumbnail({
   slide,
@@ -30,6 +45,22 @@ export function SlideThumbnail({
     const layerId = String(item?.layerId || 'base');
     return item?.visible !== false && layerId === 'base';
   });
+  const slideLayers = Array.isArray(slide?.layers) ? slide.layers : [];
+  const resolvedLayerNames = buildResolvedLayerNameMap(slideLayers, slide || {});
+  const managedLayerPreview = managedAnswerLayerPreviewItems
+    .map((item) => {
+      const layer = slideLayers.find(
+        (entry) =>
+          normalizeThumbnailLayerKey(resolvedLayerNames[entry?.id] || entry?.name) === item.key
+      );
+      if (!layer) return null;
+      const count = (slide?.objects || []).filter(
+        (object) => object?.visible !== false && (object.layerId || 'base') === layer.id
+      ).length;
+      return { ...item, count };
+    })
+    .filter(Boolean);
+  const showManagedLayerPreview = baseLayerObjects.length === 0 && managedLayerPreview.length > 0;
   const sortedByZ = baseLayerObjects.sort((a, b) => (a?.zIndex || 1) - (b?.zIndex || 1));
   const visibleObjects = isTemplateSlide
     ? sortedByZ
@@ -86,6 +117,45 @@ export function SlideThumbnail({
         />
       )}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,.04)' }} />
+      {showManagedLayerPreview && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 7,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gap: 4,
+            alignContent: 'center',
+          }}
+        >
+          {managedLayerPreview.slice(0, 5).map((item) => (
+            <div
+              key={item.key}
+              style={{
+                minWidth: 0,
+                minHeight: 0,
+                borderRadius: 5,
+                border: `1px solid ${item.tone}55`,
+                background: `${item.tone}12`,
+                color: item.tone,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: Math.max(6, Math.min(10, width / 15)),
+                fontWeight: 900,
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                padding: '0 3px',
+              }}
+              title={`${item.label}: ${item.count} nesne`}
+            >
+              {item.label}
+            </div>
+          ))}
+        </div>
+      )}
       {visibleObjects.map((obj) => {
         const st = obj.style || {};
         const isImage = !!obj.imageData;
@@ -185,7 +255,7 @@ export function SlideThumbnail({
                   fontWeight: 800,
                 }}
               >
-                {slide.slideTransitionEffect === 'slide' ? 'Kaydir' : 'Fade'}
+                {slide.slideTransitionEffect === 'slide' ? 'Kaydır' : 'Fade'}
               </span>
             )}
           </div>
@@ -551,7 +621,7 @@ export function SlideStrip({
     }, 0);
     const confirmMessage = [
       `"${sourceSlide?.sceneName || sourceSlide?.name || 'Sahne'}" sahnesi silinsin mi?`,
-      `Toplam ${affectedTriggerCount} adet SliderGec tetikleyicisi bu sahneyi hedefliyor.`,
+      `Toplam ${affectedTriggerCount} adet sahne geçiş tetikleyicisi bu sahneyi hedefliyor.`,
       'Bu tetikleyiciler otomatik olarak onceki/ilk sahneye yonlendirilecek.',
     ].join('\n');
     if (!window.confirm(confirmMessage)) return;
@@ -581,45 +651,13 @@ export function SlideStrip({
 
   if (vertical) {
     return (
-      <div
-        style={{
-          flexShrink: 0,
-          height: '100%',
-          minHeight: 0,
-          background: '#f6f8fb',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={{
-            padding: '14px 14px 10px',
-            borderBottom: '1px solid #d7dee7',
-            background: 'linear-gradient(180deg,#ffffff,#f5f7fa)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 500, color: '#52667a' }}>Sahneler</div>
+      <div className="eic-slide-strip-vertical">
+        <div className="eic-slide-strip-vertical-header">
+          <div className="eic-slide-strip-head-row">
+            <div className="eic-slide-strip-title">Sahneler</div>
             <button
               onClick={handleAdd}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 4,
-                border: '1px solid #c8d2dd',
-                background: '#ffffff',
-                color: '#52667a',
-                cursor: 'pointer',
-                fontSize: 14,
-                lineHeight: 1,
-              }}
+              className="eic-slide-strip-add-btn"
             >
               +
             </button>
@@ -627,15 +665,7 @@ export function SlideStrip({
           <select
             value={currentSlideId}
             onChange={(event) => handleSelect(event.target.value)}
-            style={{
-              width: '100%',
-              height: 30,
-              border: '1px solid #cfd8e3',
-              background: '#ffffff',
-              color: '#425466',
-              fontSize: 12,
-              padding: '0 10px',
-            }}
+            className="eic-slide-strip-select"
           >
             {slides.map((slide, index) => (
               <option
@@ -646,16 +676,8 @@ export function SlideStrip({
           </select>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            padding: '18px 14px 28px',
-            background: '#fbfcfd',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+        <div className="eic-slide-strip-scroll">
+          <div className="eic-slide-strip-list">
             {slides.map((slide, index) => {
               const isActive = slide.id === currentSlideId;
               const slideSummary = getSlideProgressSummary(slide);

@@ -5,7 +5,17 @@ import {
   NumberInput,
   PanelCard,
   PanelShell,
+  PreviewTile,
+  ToggleRow,
+  inspectorChrome,
 } from './PanelPrimitives';
+
+const transitionSoundOptions = [
+  { value: 'none', label: 'Ses yok' },
+  { value: 'soft-click', label: 'Yumuşak tık' },
+  { value: 'page', label: 'Sayfa geçişi' },
+  { value: 'chime', label: 'Kısa uyarı' },
+];
 
 export default function TransitionRightPanel({ controller }) {
   const commands = controller.commands || {};
@@ -16,47 +26,105 @@ export default function TransitionRightPanel({ controller }) {
 
   return (
     <PanelShell title="Geçiş Ayarları" subtitle="Seçili slide geçişi ve süreleri.">
-      <PanelCard title="Geçiş">
-        <div style={{ display: 'grid', gap: 8 }}>
-          <FieldLabel>
-            Stil
-            <NativeSelect
-              value={currentSlide.slideTransitionEffect || 'none'}
-              options={galleries.transitions || []}
-              onChange={(value) => patchSlide({ slideTransitionEffect: value })}
+      <PanelCard title="1. Seçili geçiş" collapsible>
+        <div style={{ display: 'grid', gridTemplateColumns: '72px minmax(0,1fr)', gap: 8 }}>
+          <PreviewTile label="Önizle" active onClick={commands.previewTransition}>
+            <div
+              style={{
+                height: 24,
+                borderRadius: 6,
+                background: 'linear-gradient(135deg, #dbeafe 0%, #ffffff 52%, #bfdbfe 100%)',
+                border: '1px solid #bfdbfe',
+              }}
             />
-          </FieldLabel>
-          <FieldLabel>
-            Easing
-            <NativeSelect
-              value={currentSlide.slideTransitionEasing || 'easeOut'}
-              options={galleries.easings || []}
-              onChange={(value) => patchSlide({ slideTransitionEasing: value })}
-            />
-          </FieldLabel>
+          </PreviewTile>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <FieldLabel>
+              Stil
+              <NativeSelect
+                value={currentSlide.slideTransitionEffect || 'none'}
+                options={galleries.transitions || []}
+                onChange={(value) => patchSlide({ slideTransitionEffect: value })}
+              />
+            </FieldLabel>
+            <FieldLabel>
+              Easing
+              <NativeSelect
+                value={currentSlide.slideTransitionEasing || 'easeOut'}
+                options={galleries.easings || []}
+                onChange={(value) => patchSlide({ slideTransitionEasing: value })}
+              />
+            </FieldLabel>
+          </div>
         </div>
       </PanelCard>
 
-      <PanelCard title="Zamanlama">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <FieldLabel>
-            Süre
-            <NumberInput
-              value={currentSlide.slideTransitionDuration ?? 0.45}
-              onChange={(value) => patchSlide({ slideTransitionDuration: value })}
-            />
-          </FieldLabel>
-          <FieldLabel>
-            Gecikme
-            <NumberInput
-              value={currentSlide.slideTransitionDelay ?? 0}
-              onChange={(value) => patchSlide({ slideTransitionDelay: value })}
-            />
-          </FieldLabel>
+      <PanelCard title="2. Geçiş galerisi" collapsible>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 6 }}>
+          {(galleries.transitions || []).slice(0, 8).map((transition) => (
+            <PreviewTile
+              key={transition.value}
+              label={transition.label}
+              active={(currentSlide.slideTransitionEffect || 'none') === transition.value}
+              onClick={() => patchSlide({ slideTransitionEffect: transition.value })}
+              tone={transition.value === 'none' ? '#64748b' : inspectorChrome.blue}
+            >
+              <div
+                style={{
+                  height: 22,
+                  borderRadius: 6,
+                  border: '1px solid #dbe6f3',
+                  background:
+                    transition.value === 'none'
+                      ? '#f8fafc'
+                      : transition.value.includes('fade')
+                        ? 'linear-gradient(90deg, #eff6ff, #60a5fa)'
+                        : transition.value.includes('slide') || transition.value.includes('cover')
+                          ? 'linear-gradient(90deg, #dbeafe 0 45%, #2563eb 45% 52%, #eff6ff 52%)'
+                          : 'radial-gradient(circle at 50% 50%, #60a5fa 0 35%, #eff6ff 36% 100%)',
+                }}
+              />
+            </PreviewTile>
+          ))}
         </div>
       </PanelCard>
 
-      <PanelCard title="Komutlar">
+      <PanelCard title="3. Zamanlama" collapsible>
+        <div style={{ display: 'grid', gap: 7 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+            <FieldLabel>
+              Süre
+              <NumberInput
+                value={currentSlide.slideTransitionDuration ?? 0.45}
+                onChange={(value) => patchSlide({ slideTransitionDuration: value })}
+              />
+            </FieldLabel>
+            <FieldLabel>
+              Gecikme
+              <NumberInput
+                value={currentSlide.slideTransitionDelay ?? 0}
+                onChange={(value) => patchSlide({ slideTransitionDelay: value })}
+              />
+            </FieldLabel>
+          </div>
+          <FieldLabel>
+            Ses
+            <NativeSelect
+              value={currentSlide.slideTransitionSound || 'none'}
+              options={transitionSoundOptions}
+              onChange={(value) => patchSlide({ slideTransitionSound: value })}
+            />
+          </FieldLabel>
+          <ToggleRow
+            label="Canlı önizleme"
+            hint="Önizle komutu seçili geçişle açılır."
+            checked={currentSlide.liveTransitionPreview !== false}
+            onChange={(checked) => patchSlide({ liveTransitionPreview: checked })}
+          />
+        </div>
+      </PanelCard>
+
+      <PanelCard title="4. Komutlar" collapsible>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
           <ActionButton onClick={commands.previewTransition}>Önizle</ActionButton>
           <ActionButton onClick={commands.applyTransitionToAllSlides}>Tümüne Uygula</ActionButton>

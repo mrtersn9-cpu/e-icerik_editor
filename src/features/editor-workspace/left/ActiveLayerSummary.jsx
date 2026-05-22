@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 
-import { LayerThumbnail } from '../../../components/SlideStrip';
-import { getActivityLayers, getCanvasObjects } from '../../../logic/activityHelpers';
+import { getActivityLayers } from '../../../logic/activityHelpers';
 import { getEditorGroupedObjectEntries } from '../../../logic/editorHelpers';
 import { buildResolvedLayerNameMap, createLayer } from '../../../logic/factories';
 
@@ -16,6 +15,8 @@ const objectTone = {
   text: '#ef4444',
   video: '#0284c7',
 };
+
+
 
 function IconButton({ children, disabled = false, onClick, title }) {
   return (
@@ -158,20 +159,23 @@ export default function ActiveLayerSummary({
                 background: isActive ? '#eef6ff' : 'transparent',
                 borderRadius: 7,
                 display: 'grid',
-                gridTemplateColumns: '42px 1fr auto',
+                gridTemplateColumns: '12px 1fr auto',
                 alignItems: 'center',
-                gap: 7,
+                gap: 6,
                 padding: '3px 5px',
                 cursor: 'pointer',
                 color: '#26364d',
                 textAlign: 'left',
               }}
             >
-              <LayerThumbnail
-                activity={activity}
-                layer={layer}
-                isActive={isActive}
-                getCanvasObjects={getCanvasObjects}
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: isActive ? '#2563eb' : '#94a3b8',
+                  boxShadow: isActive ? '0 0 0 2px rgba(37,99,235,.14)' : 'none',
+                }}
               />
               <span
                 style={{

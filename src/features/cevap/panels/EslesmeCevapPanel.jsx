@@ -23,9 +23,9 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Iki liste arasindaki ogeleri dogru eslestirme etkinligi."
+        description="İki liste arasındaki öğeleri doğru eşleştirme etkinliği."
       />
-      <CevapCard number="2" title={`Cevap Formu - Eslesme Ciftleri (${pairs.length})`} wide>
+      <CevapCard number="2" title={`Cevap Formu - Eşleşme Çiftleri (${pairs.length})`} wide>
         <div style={{ display: 'grid', gap: 8 }}>
           {pairs.map((pair, index) => (
             <div key={pair.id} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1fr) minmax(0,1fr) 34px', gap: 8, alignItems: 'center' }}>
@@ -37,35 +37,35 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
           ))}
           <SmallButton
             variant="primary"
-            onClick={() => patch({ matchingPairs: [...pairs, { id: uid(), left: `Sol ${pairs.length + 1}`, right: `Sag ${pairs.length + 1}` }] })}
+            onClick={() => patch({ matchingPairs: [...pairs, { id: uid(), left: `Sol ${pairs.length + 1}`, right: `Sağ ${pairs.length + 1}` }] })}
           >
-            + Oge Ekle
+            + Öğe Ekle
           </SmallButton>
         </div>
       </CevapCard>
-      <CevapCard number="3" title="Baglanti Kurallari">
-        <ToggleRow label="Rastgele sirala" checked={activity.matchingShuffle !== false} onChange={(checked) => patch({ matchingShuffle: checked })} />
-        <ToggleRow label="Birbir esleme" checked={!!activity.matchingMutual} onChange={(checked) => patch({ matchingMutual: checked })} />
-        <Field label="Eslestirme kurali"><SelectInput value={activity.answerControl?.matchingRule || 'one-to-one'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), matchingRule: value } })} options={[{ value: 'one-to-one', label: 'Bire bir eslesme' }, { value: 'many', label: 'Coktan bire izin ver' }]} /></Field>
-        <Field label="Cizgi stili">
+      <CevapCard number="3" title="Bağlantı Kuralları">
+        <ToggleRow label="Rastgele sırala" checked={activity.matchingShuffle !== false} onChange={(checked) => patch({ matchingShuffle: checked })} />
+        <ToggleRow label="Birebir eşleme" checked={!!activity.matchingMutual} onChange={(checked) => patch({ matchingMutual: checked })} />
+        <Field label="Eşleştirme kuralı"><SelectInput value={activity.answerControl?.matchingRule || 'one-to-one'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), matchingRule: value } })} options={[{ value: 'one-to-one', label: 'Bire bir eşleşme' }, { value: 'many', label: 'Çoktan bire izin ver' }]} /></Field>
+        <Field label="Çizgi stili">
           <SelectInput
             value={activity.matchingLineStyle || 'solid'}
             onChange={(value) => patch({ matchingLineStyle: value })}
             options={[
-              { value: 'solid', label: 'Duz' },
+              { value: 'solid', label: 'Düz' },
               { value: 'dashed', label: 'Kesikli' },
-              { value: 'dotted', label: 'Noktali' },
+              { value: 'dotted', label: 'Noktalı' },
             ]}
           />
         </Field>
-        <Field label="Cizgi kalinligi (px)">
+        <Field label="Çizgi kalınlığı (px)">
           <TextInput type="number" min="1" max="10" value={activity.matchingLineWidth || 2} onChange={(value) => patch({ matchingLineWidth: Math.max(1, Math.min(10, Number(value) || 2)) })} />
         </Field>
-        <Field label="Baglanti rengi">
+        <Field label="Bağlantı rengi">
           <TextInput value={activity.matchingLineColor || '#1d4ed8'} onChange={(value) => patch({ matchingLineColor: value })} />
         </Field>
       </CevapCard>
-      <CevapCard number="4" title="Eslestirme Onizleme" wide>
+      <CevapCard number="4" title="Eşleştirme Önizleme" wide>
         <div style={{ display: 'grid', gap: 8 }}>
           {pairs.map((pair, index) => (
             <div
@@ -77,11 +77,11 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
                 alignItems: 'center',
               }}
             >
-              <MiniPreview label={`${index + 1}. sol oge`} value={pair.left} empty="Sol oge bos" />
-              <MiniPreview label="Secilen sag oge" value={pair.right} empty="Sag oge bos" tone="green" />
+              <MiniPreview label={`${index + 1}. sol öğe`} value={pair.left} empty="Sol öğe boş" />
+              <MiniPreview label="Seçilen sağ öğe" value={pair.right} empty="Sağ öğe boş" tone="green" />
             </div>
           ))}
-          {!pairs.length && <span style={{ color: '#64748b', fontSize: 12 }}>0 eslesme</span>}
+          {!pairs.length && <span style={{ color: '#64748b', fontSize: 12 }}>0 eşleşme</span>}
         </div>
       </CevapCard>
       <DogrulamaKurallariCard number="5" activity={activity} onUpdate={onUpdate} />
@@ -91,8 +91,8 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
       <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Eslesme Haritasi" wide>
-        <MiniTable columns={['#', 'Sol Sutun', 'Sag Sutun']} rows={pairs.map((pair, index) => ({ id: pair.id, cells: [index + 1, pair.left || '-', pair.right || '-'] }))} />
+      <CevapCard number="10" title="Eşleşme Haritası" wide>
+        <MiniTable columns={['#', 'Sol Sütun', 'Sağ Sütun']} rows={pairs.map((pair, index) => ({ id: pair.id, cells: [index + 1, pair.left || '-', pair.right || '-'] }))} />
       </CevapCard>
     </PanelGrid>
   );

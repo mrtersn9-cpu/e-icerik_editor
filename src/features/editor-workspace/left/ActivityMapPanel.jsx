@@ -1,165 +1,391 @@
 import { useMemo, useState } from 'react';
 
-import { SlideThumbnail } from '../../../components/SlideStrip';
 import { getActivitySlides, selectActivitySlide } from '../../../logic/activityHelpers';
-import { createSlide } from '../../../logic/factories';
+import { buildResolvedLayerNameMap, createLayer, createSlide } from '../../../logic/factories';
 import { normalizeSlide } from '../../../logic/slideNormalization';
 import { clamp, uid } from '../../../utils/editorHelpers';
 
-import ActiveLayerSummary from './ActiveLayerSummary';
-import ActivityStructureTree from './ActivityStructureTree';
+import {
+  InlineRename,
+  MiniIcon,
+  mapChrome,
+} from './ActivityMapPrimitives';
+import ActivityStructureTree, { getSlideDisplayName } from './ActivityStructureTree';
 
 const railItems = [
-  { id: 'map', label: 'Harita', glyph: '▥' },
-  { id: 'add', label: 'Ekle', glyph: '+' },
-  { id: 'layers', label: 'Layer', glyph: '▤' },
-  { id: 'media', label: 'Medya', glyph: '▧' },
-  { id: 'warn', label: 'Uyarı', glyph: '!' },
+  { id: 'map', label: 'Harita', icon: 'menu' },
+  { id: 'add', label: 'Yeni sahne', icon: 'add' },
 ];
+
+const layerAliases = {
+  base: 'Ana',
+  correct: 'Doğru',
+  incorrect: 'Yanlış',
+  cevap: 'Cevap',
+  menu: 'Menü',
+  normal: 'Normal',
+  explanation: 'Açıklama',
+};
 
 function RailButton({ active, item, onClick }) {
   return (
     <button
       type="button"
       title={item.label}
+      aria-label={item.label}
       onClick={onClick}
       style={{
-        width: 30,
-        height: 30,
-        borderRadius: 8,
+        width: 28,
+        height: 28,
+        borderRadius: 7,
         border: `1px solid ${active ? '#bfdbfe' : '#d8e2ef'}`,
-        background: active ? '#eef6ff' : '#ffffff',
-        color: active ? '#1d4ed8' : '#64748b',
+        background: active ? '#eaf2ff' : '#ffffff',
+        color: active ? mapChrome.blue : mapChrome.muted,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: item.id === 'add' ? 18 : 13,
-        fontWeight: 900,
+        padding: 0,
       }}
     >
-      {item.glyph}
+      <MiniIcon icon={item.icon} size={15} />
     </button>
   );
 }
 
-function TinyButton({ children, disabled = false, onClick, title }) {
+function isTextEditingTarget(target) {
+  const tagName = String(target?.tagName || '').toLowerCase();
+  return (
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    target?.isContentEditable
+  );
+}
+
+function normalizeLayers(activity = {}) {
+  const layers =
+    Array.isArray(activity.layers) && activity.layers.length
+      ? activity.layers
+      : [createLayer('', 0, { kind: 'base' })];
+  return layers.map((layer, index) => ({
+    ...layer,
+    id: index === 0 || layer.kind === 'base' ? 'base' : layer.id || uid(),
+    kind: index === 0 || layer.kind === 'base' ? 'base' : 'overlay',
+    visible: layer.visible !== false,
+  }));
+}
+
+function normalizeLayerName(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function getLayerDisplayName(layer, resolvedNames = {}) {
+  const layerId = layer?.id || 'base';
+  const rawName = String(layer?.name || '').trim();
+  const resolvedName = String(resolvedNames[layerId] || rawName || '').trim();
+  if (layerId === 'base' || layer?.kind === 'base') return layerAliases.base;
+  const key = normalizeLayerName(resolvedName);
+  return layerAliases[key] || resolvedName || 'Katman';
+}
+
+function LayerAction({ active = false, disabled = false, icon, label, onClick }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      aria-label={label}
+      title={label}
       onClick={disabled ? undefined : onClick}
-      title={title}
       style={{
-        height: 22,
-        minWidth: 22,
-        borderRadius: 6,
-        border: '1px solid #cfe0f4',
-        background: disabled ? '#f8fafc' : '#ffffff',
-        color: disabled ? '#cbd5e1' : '#2563eb',
+        width: 18,
+        height: 18,
+        minWidth: 18,
+        border: 'none',
+        borderRadius: 5,
+        background: active ? '#eaf2ff' : 'transparent',
+        color: disabled ? '#cbd5e1' : active ? mapChrome.blue : '#64748b',
         cursor: disabled ? 'default' : 'pointer',
-        fontSize: 11,
-        fontWeight: 900,
-        lineHeight: 1,
-        padding: '0 6px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
       }}
     >
-      {children}
+      {icon ? <MiniIcon icon={icon} size={12} /> : null}
     </button>
   );
 }
 
-function WorkspaceWarnings({ activity }) {
-  const warnings = useMemo(() => {
-    if (!activity) return [];
-    const list = [];
-    const objects = activity.objects || [];
-    const correctLayer = objects.some((item) => /correct/i.test(item.layerId || item.label || ''));
-    const triggers = activity.triggers || [];
+function DeleteLayerButton({ disabled = false, onClick }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label="Katmanı sil"
+      title="Katmanı sil"
+      onClick={disabled ? undefined : onClick}
+      style={{
+        width: 18,
+        height: 18,
+        minWidth: 18,
+        border: 'none',
+        borderRadius: 5,
+        background: 'transparent',
+        color: disabled ? '#cbd5e1' : '#94a3b8',
+        cursor: disabled ? 'default' : 'pointer',
+        fontSize: 13,
+        lineHeight: 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      ×
+    </button>
+  );
+}
 
-    if (objects.some((item) => item.visible === false && item.locked)) {
-      list.push({ tone: '#f59e0b', text: 'Gizli ve kilitli nesneler var.' });
-    }
-    if (activity.type === 'drag-drop' && !Object.keys(activity.dragDropMatches || {}).length) {
-      list.push({ tone: '#2563eb', text: 'Sürükle-bırak eşleşmeleri tanımlanmamış.' });
-    }
-    if (!triggers.length) {
-      list.push({ tone: '#2563eb', text: 'Bu sahnede trigger tanımlanmamış.' });
-    }
-    if (!correctLayer && ['selection', 'drag-drop', 'mixed'].includes(activity.type)) {
-      list.push({ tone: '#f97316', text: 'Correct layer boş görünüyor.' });
-    }
-    return list.slice(0, 3);
-  }, [activity]);
+function LayerManager({ activity, onSelectionChange, onUpdateActivity }) {
+  const [editingLayerId, setEditingLayerId] = useState('');
+  const [editingLayerKey, setEditingLayerKey] = useState(0);
+  const layers = normalizeLayers(activity || {});
+  const objects = useMemo(
+    () => (Array.isArray(activity?.objects) ? activity.objects : []),
+    [activity?.objects]
+  );
+  const activeLayerId = activity?.activeLayerId || 'base';
+  const resolvedNames = buildResolvedLayerNameMap(layers, activity || {});
+
+  const patchActivity = (patch) => {
+    if (!activity) return;
+    onUpdateActivity?.({ ...activity, ...patch });
+  };
+
+  const patchLayer = (layerId, patch) => {
+    patchActivity({
+      layers: layers.map((layer) => (layer.id === layerId ? { ...layer, ...patch } : layer)),
+    });
+  };
+
+  const addLayer = () => {
+    const nextLayer = createLayer('', layers.length, { autoName: true });
+    patchActivity({
+      layers: [...layers, nextLayer],
+      activeLayerId: nextLayer.id,
+      selectedObjectId: null,
+    });
+    onSelectionChange?.(new Set());
+  };
+
+  const deleteLayer = (layerId) => {
+    if (layerId === 'base' || layers.length <= 1) return;
+    const nextLayers = layers.filter((layer) => layer.id !== layerId);
+    const nextObjects = objects.map((object) =>
+      (object.layerId || 'base') === layerId ? { ...object, layerId: 'base' } : object
+    );
+    const nextTriggers = (activity.triggers || []).map((trigger) =>
+      trigger.action === 'KatmanaGec' && trigger.value === layerId
+        ? { ...trigger, value: 'base' }
+        : trigger
+    );
+    patchActivity({
+      activeLayerId: activeLayerId === layerId ? 'base' : activeLayerId,
+      layers: nextLayers,
+      objects: nextObjects,
+      selectedObjectId:
+        objects.find((object) => object.id === activity.selectedObjectId)?.layerId === layerId
+          ? null
+          : activity.selectedObjectId,
+      triggers: nextTriggers,
+    });
+    if (activeLayerId === layerId) onSelectionChange?.(new Set());
+  };
+
+  const selectLayer = (layerId) => {
+    patchActivity({ activeLayerId: layerId, selectedObjectId: null });
+    onSelectionChange?.(new Set());
+  };
 
   return (
-    <div style={{ borderTop: '1px solid #e5edf6', paddingTop: 9 }}>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 900,
-          color: '#64748b',
-          letterSpacing: 0.45,
-          textTransform: 'uppercase',
-          marginBottom: 6,
-        }}
-      >
-        Hatalar / Uyarılar
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {warnings.map((item) => (
-          <div
-            key={item.text}
+    <section
+      style={{
+        border: `1px solid ${mapChrome.border}`,
+        borderRadius: 8,
+        background: '#ffffff',
+        boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+        padding: 7,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 5,
+      }}
+    >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 6,
+            minHeight: 20,
+          }}
+        >
+          <span
             style={{
-              display: 'grid',
-              gridTemplateColumns: '16px 1fr auto',
-              alignItems: 'center',
-              gap: 6,
-              color: '#334155',
-              fontSize: 10.5,
-              lineHeight: 1.3,
+              color: mapChrome.muted,
+              fontSize: 10,
+              fontWeight: 950,
+              letterSpacing: 0.25,
+              textTransform: 'uppercase',
             }}
           >
-            <span style={{ color: item.tone, fontWeight: 900 }}>!</span>
-            <span>{item.text}</span>
-            <span
-              style={{
-                minWidth: 18,
-                height: 18,
-                borderRadius: 999,
-                background: `${item.tone}18`,
-                color: item.tone,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 10,
-                fontWeight: 900,
-              }}
-            >
-              1
-            </span>
-          </div>
-        ))}
-        {!warnings.length && (
-          <div style={{ color: '#16a34a', fontSize: 10.5, fontWeight: 800 }}>
-            Kritik uyarı görünmüyor.
-          </div>
-        )}
-      </div>
-    </div>
+            Katmanlar
+          </span>
+          <LayerAction icon="add" label="Yeni katman" onClick={addLayer} />
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            borderTop: `1px solid ${mapChrome.borderSoft}`,
+            paddingTop: 4,
+          }}
+        >
+          {layers.map((layer) => {
+            const layerId = layer.id || 'base';
+            const isBase = layerId === 'base' || layer.kind === 'base';
+            const active = activeLayerId === layerId;
+            const displayName = getLayerDisplayName(layer, resolvedNames);
+            const objectCount = objects.filter(
+              (object) => (object.layerId || 'base') === layerId
+            ).length;
+            return (
+              <div
+                key={layerId}
+                onClick={() => selectLayer(layerId)}
+                onDoubleClick={() => {
+                  if (!isBase) {
+                    setEditingLayerId(layerId);
+                    setEditingLayerKey((value) => value + 1);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    selectLayer(layerId);
+                  }
+                  if (event.key === 'F2' && !isBase) {
+                    event.preventDefault();
+                    setEditingLayerId(layerId);
+                    setEditingLayerKey((value) => value + 1);
+                  }
+                }}
+                style={{
+                  minHeight: 25,
+                  display: 'grid',
+                  gridTemplateColumns: '18px minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 4,
+                  borderRadius: 6,
+                  background: active ? '#eaf2ff' : 'transparent',
+                  border: `1px solid ${active ? '#bfdbfe' : 'transparent'}`,
+                  color: active ? mapChrome.blueDark : mapChrome.text,
+                  cursor: 'pointer',
+                  padding: '2px 3px',
+                }}
+              >
+                <LayerAction
+                  active={layer.visible !== false}
+                  icon={layer.visible === false ? 'eyeOff' : 'eye'}
+                  label={layer.visible === false ? 'Göster' : 'Gizle'}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    patchLayer(layerId, { visible: layer.visible === false });
+                  }}
+                />
+                <InlineRename
+                  active={active}
+                  displayValue={displayName}
+                  editKey={editingLayerId === layerId ? editingLayerKey : 0}
+                  onCancel={() => setEditingLayerId('')}
+                  onCommit={(value) => {
+                    setEditingLayerId('');
+                    if (isBase) return;
+                    patchLayer(layerId, value ? { name: value, autoName: false } : { name: '', autoName: true });
+                  }}
+                  placeholder="Katman"
+                  readOnly={isBase}
+                />
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 2,
+                    minWidth: 54,
+                  }}
+                >
+                  <span
+                    title={`${objectCount} nesne`}
+                    style={{
+                      minWidth: 20,
+                      height: 17,
+                      padding: '0 5px',
+                      borderRadius: 999,
+                      background: active ? '#dbeafe' : '#f1f5f9',
+                      color: active ? mapChrome.blue : mapChrome.muted,
+                      fontSize: 9,
+                      fontWeight: 900,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {objectCount}
+                  </span>
+                  <LayerAction
+                    active={!!layer.locked}
+                    icon={layer.locked ? 'lock' : 'unlock'}
+                    label={layer.locked ? 'Kilidi aç' : 'Kilitle'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      patchLayer(layerId, { locked: !layer.locked });
+                    }}
+                  />
+                  {isBase ? (
+                    <span
+                      aria-hidden="true"
+                      style={{ width: 18, height: 18, display: 'inline-block' }}
+                    />
+                  ) : (
+                    <DeleteLayerButton
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteLayer(layerId);
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+    </section>
   );
 }
 
 export default function ActivityMapPanel({
   activity,
-  activities,
-  currentBook,
-  onSelectActivity,
   onSelectionChange,
   onUpdateActivity,
-  selectedIds,
 }) {
-  const [activeRail, setActiveRail] = useState('map');
   const [query, setQuery] = useState('');
   const slides = getActivitySlides(activity || {});
   const currentSlideId = activity?.currentSlideId || slides[0]?.id || '';
@@ -170,12 +396,18 @@ export default function ActivityMapPanel({
 
   const selectSlide = (slideId) => {
     if (!activity || !slideId) return;
+    onSelectionChange?.(new Set());
     onUpdateActivity?.(selectActivitySlide(activity, slideId));
   };
 
   const addSlide = () => {
     if (!activity) return;
-    const nextSlide = createSlide(`Slider ${slides.length + 1}`, slides.length);
+    const nextName = `Slide ${slides.length + 1}`;
+    const nextSlide = normalizeSlide(
+      { ...createSlide(nextName, slides.length), name: nextName, sceneName: nextName },
+      slides.length
+    );
+    onSelectionChange?.(new Set());
     onUpdateActivity?.(
       selectActivitySlide(
         { ...activity, slides: [...slides, nextSlide], currentSlideId: nextSlide.id },
@@ -188,15 +420,17 @@ export default function ActivityMapPanel({
     if (!activity) return;
     const source = slides[currentSlideIndex] || slides[0];
     if (!source) return;
+    const copyName = `${getSlideDisplayName(source, currentSlideIndex)} Kopya`;
     const copy = normalizeSlide(
       {
         ...source,
         id: uid(),
-        name: `${source.name || 'Slider'} Kopya`,
-        sceneName: source.sceneName || source.name || 'Sahne',
+        name: copyName,
+        sceneName: copyName,
       },
       slides.length
     );
+    onSelectionChange?.(new Set());
     onUpdateActivity?.(
       selectActivitySlide(
         { ...activity, slides: [...slides, copy], currentSlideId: copy.id },
@@ -210,7 +444,11 @@ export default function ActivityMapPanel({
     const nextSlides = slides
       .filter((slide) => slide.id !== currentSlideId)
       .map((slide, index) => normalizeSlide(slide, index));
-    onUpdateActivity?.(selectActivitySlide({ ...activity, slides: nextSlides }, nextSlides[0]?.id));
+    const nextIndex = clamp(currentSlideIndex, 0, nextSlides.length - 1);
+    onSelectionChange?.(new Set());
+    onUpdateActivity?.(
+      selectActivitySlide({ ...activity, slides: nextSlides }, nextSlides[nextIndex]?.id)
+    );
   };
 
   const moveSlide = (direction) => {
@@ -228,26 +466,52 @@ export default function ActivityMapPanel({
     );
   };
 
-  const filteredSlides = slides.filter((slide) => {
-    const haystack = `${slide.name || ''} ${slide.sceneName || ''}`.toLocaleLowerCase('tr-TR');
-    return !query.trim() || haystack.includes(query.trim().toLocaleLowerCase('tr-TR'));
-  });
+  const renameActivity = (nextName) => {
+    const cleanName = String(nextName || '').trim();
+    if (!activity || !cleanName) return;
+    onUpdateActivity?.({ ...activity, name: cleanName });
+  };
+
+  const renameSlide = (slideId, nextName) => {
+    const cleanName = String(nextName || '').trim();
+    if (!activity || !slideId || !cleanName) return;
+    const nextSlides = slides.map((slide, index) =>
+      normalizeSlide(
+        slide.id === slideId ? { ...slide, name: cleanName, sceneName: cleanName } : slide,
+        index
+      )
+    );
+    onUpdateActivity?.(
+      selectActivitySlide({ ...activity, slides: nextSlides, currentSlideId: slideId }, slideId)
+    );
+  };
+
+  const handleKeyDown = (event) => {
+    if (isTextEditingTarget(event.target)) return;
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    if (!activity || slides.length <= 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    deleteSlide();
+  };
 
   return (
     <div
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       style={{
         height: '100%',
         minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: '42px minmax(0, 1fr)',
-        background: '#f7faff',
-        color: '#172033',
+        gridTemplateColumns: '38px minmax(0, 1fr)',
+        background: '#f7f9fc',
+        color: mapChrome.text,
       }}
     >
       <div
         style={{
-          borderRight: '1px solid #d8e2ef',
-          background: '#f2f6fb',
+          borderRight: `1px solid ${mapChrome.border}`,
+          background: '#eef3f8',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -259,9 +523,8 @@ export default function ActivityMapPanel({
           <RailButton
             key={item.id}
             item={item}
-            active={activeRail === item.id}
+            active={item.id === 'map'}
             onClick={() => {
-              setActiveRail(item.id);
               if (item.id === 'add') addSlide();
             }}
           />
@@ -274,46 +537,54 @@ export default function ActivityMapPanel({
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          background: '#ffffff',
+          background: mapChrome.panel,
         }}
       >
-        <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid #e5edf6' }}>
+        <div
+          style={{
+            padding: '12px 12px 10px',
+            borderBottom: `1px solid ${mapChrome.borderSoft}`,
+            background: '#ffffff',
+          }}
+        >
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 8,
-              marginBottom: 9,
+              marginBottom: 10,
             }}
           >
             <div
               style={{
-                fontSize: 12,
+                minWidth: 0,
+                color: mapChrome.text,
+                fontSize: 12.5,
                 fontWeight: 950,
-                color: '#172033',
                 letterSpacing: 0.2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
             >
               ETKİNLİK HARİTASI
             </div>
-            <TinyButton title="Yeni slide" onClick={addSlide}>
-              +
-            </TinyButton>
           </div>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Ara (etkinlik, katman...)"
+            placeholder="Ara (sahne...)"
             style={{
               width: '100%',
-              height: 28,
-              border: '1px solid #d8e2ef',
+              height: 31,
+              border: `1px solid ${mapChrome.border}`,
               borderRadius: 7,
               background: '#ffffff',
-              color: '#172033',
-              fontSize: 10.5,
-              padding: '0 9px',
+              color: mapChrome.text,
+              fontSize: 12,
+              fontWeight: 650,
+              padding: '0 10px',
               outline: 'none',
               boxSizing: 'border-box',
             }}
@@ -334,121 +605,21 @@ export default function ActivityMapPanel({
         >
           <ActivityStructureTree
             activity={activity}
-            activities={activities}
-            currentBook={currentBook}
-            onSelectActivity={onSelectActivity}
+            onAddSlide={addSlide}
+            onDeleteSlide={deleteSlide}
+            onDuplicateSlide={duplicateSlide}
+            onMoveSlide={moveSlide}
+            onRenameActivity={renameActivity}
+            onRenameSlide={renameSlide}
             onSelectSlide={selectSlide}
+            query={query}
           />
 
-          <div style={{ borderTop: '1px solid #e5edf6', paddingTop: 9 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                marginBottom: 7,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 900,
-                  color: '#64748b',
-                  letterSpacing: 0.45,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Slide Listesi
-              </div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <TinyButton disabled={currentSlideIndex <= 0} onClick={() => moveSlide(-1)}>
-                  ↑
-                </TinyButton>
-                <TinyButton
-                  disabled={currentSlideIndex >= slides.length - 1}
-                  onClick={() => moveSlide(1)}
-                >
-                  ↓
-                </TinyButton>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {filteredSlides.map((slide, index) => {
-                const realIndex = slides.findIndex((item) => item.id === slide.id);
-                const isActive = slide.id === currentSlideId;
-                return (
-                  <button
-                    key={slide.id}
-                    type="button"
-                    onClick={() => selectSlide(slide.id)}
-                    style={{
-                      width: '100%',
-                      border: `1px solid ${isActive ? '#38bdf8' : '#d8e2ef'}`,
-                      background: isActive ? '#eefbff' : '#ffffff',
-                      borderRadius: 8,
-                      padding: 5,
-                      display: 'grid',
-                      gridTemplateColumns: '72px 1fr',
-                      gap: 8,
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      boxShadow: isActive ? '0 0 0 2px rgba(56,189,248,.16)' : 'none',
-                    }}
-                  >
-                    <SlideThumbnail slide={slide} width={68} height={38} showBadges={false} />
-                    <span style={{ minWidth: 0 }}>
-                      <span
-                        style={{
-                          display: 'block',
-                          color: '#172033',
-                          fontSize: 10.5,
-                          fontWeight: 900,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Slide {realIndex + 1}
-                      </span>
-                      <span
-                        style={{
-                          display: 'block',
-                          color: '#64748b',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          marginTop: 2,
-                        }}
-                      >
-                        {slide.name || slide.sceneName || `Slider ${index + 1}`}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 7 }}>
-              <TinyButton onClick={duplicateSlide}>Çoğalt</TinyButton>
-              <TinyButton disabled={slides.length <= 1} onClick={deleteSlide}>
-                Sil
-              </TinyButton>
-            </div>
-          </div>
-
-          <ActiveLayerSummary
+          <LayerManager
             activity={activity}
             onSelectionChange={onSelectionChange}
             onUpdateActivity={onUpdateActivity}
-            selectedIds={selectedIds}
           />
-
-          <WorkspaceWarnings activity={activity} />
         </div>
       </div>
     </div>

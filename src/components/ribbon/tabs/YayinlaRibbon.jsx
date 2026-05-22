@@ -4,6 +4,7 @@ import {
   RibbonColorInput,
   RibbonGroup,
   RibbonNumberInput,
+  RibbonPopoverButton,
   RibbonRow,
   RibbonSelect,
   RibbonStack,
@@ -61,82 +62,74 @@ export default function YayinlaRibbon({ controller }) {
         </RibbonStack>
       </RibbonGroup>
 
-      <RibbonGroup title="İzleme" width={182}>
-        <RibbonStack>
-          <RibbonRow>
-            <span style={{ fontSize: 10, color: '#475569' }}>Geçme</span>
-            <RibbonNumberInput
-              value={lms.passingScore ?? 70}
-              onChange={(event) => commands.patchLms({ passingScore: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })}
-              width={50}
-              min={0}
-              max={100}
-            />
-          </RibbonRow>
-          <RibbonSelect
-            value={lms.trackingMode || 'completion+score'}
-            onChange={(event) => commands.patchLms({ trackingMode: event.target.value })}
-            options={[
-              { value: 'completion', label: 'Tamamlama' },
-              { value: 'score', label: 'Puan' },
-              { value: 'completion+score', label: 'Tamamlama + Puan' },
-            ]}
-            width={138}
-          />
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="SCORM Kapsamı" width={150}>
-        <RibbonStack>
-          <RibbonSelect
-            value={lms.scormExportScope || 'activity'}
-            onChange={(event) => commands.patchLms({ scormExportScope: event.target.value })}
-            options={[
-              { value: 'activity', label: 'Seçili etkinlik' },
-              { value: 'book', label: 'Tüm kitap' },
-            ]}
-            width={116}
-          />
-          <span style={{ fontSize: 9, color: '#64748b' }}>SCORM 1.2 ZIP</span>
-        </RibbonStack>
-      </RibbonGroup>
-
-      <RibbonGroup title="Player Chrome" width={314}>
-        <RibbonStack>
-          <RibbonRow>
-            {[
-              ['Menü', 'showMenu', true],
-              ['Notlar', 'showNotes', false],
-              ['Sözlük', 'showGlossary', false],
-              ['Seekbar', 'showSeekbar', true],
-              ['CC', 'closedCaptionsEnabled', false],
-            ].map(([label, key, defaultValue]) => (
-              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#475569' }}>
-                <input
-                  type="checkbox"
-                  checked={lms[key] ?? defaultValue}
-                  onChange={(event) => commands.patchLms({ [key]: event.target.checked })}
-                />
-                {label}
-              </label>
-            ))}
-          </RibbonRow>
-          <RibbonRow>
-            <RibbonColorInput value={lms.primaryColor || '#2563eb'} onChange={(event) => commands.patchLms({ primaryColor: event.target.value })} title="Ana renk" />
-            <RibbonColorInput value={lms.backgroundColor || '#0f172a'} onChange={(event) => commands.patchLms({ backgroundColor: event.target.value })} title="Arka plan" />
-            <RibbonColorInput value={lms.textColor || '#ffffff'} onChange={(event) => commands.patchLms({ textColor: event.target.value })} title="Metin" />
-            {galleries.playerSkins.slice(0, 3).map((skin) => (
-              <CompactRibbonButton
-                key={skin.id}
-                label={skin.name}
-                icon="palette"
-                onClick={() => commands.patchLms({ playerTheme: skin.id, primaryColor: skin.primaryColor, backgroundColor: skin.backgroundColor, textColor: skin.textColor })}
-                active={(lms.playerTheme || 'modern-dark') === skin.id}
-                width={66}
+      <RibbonGroup title="Paket Ayarları" width={150}>
+        <RibbonPopoverButton label="İzleme / Player" icon="settings" width={112} variant="large" tone="slate">
+          <RibbonStack>
+            <RibbonRow>
+              <span style={{ fontSize: 10, color: '#475569' }}>Geçme</span>
+              <RibbonNumberInput
+                value={lms.passingScore ?? 70}
+                onChange={(event) => commands.patchLms({ passingScore: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })}
+                width={50}
+                min={0}
+                max={100}
               />
-            ))}
-          </RibbonRow>
-        </RibbonStack>
+              <RibbonSelect
+                value={lms.scormExportScope || 'activity'}
+                onChange={(event) => commands.patchLms({ scormExportScope: event.target.value })}
+                options={[
+                  { value: 'activity', label: 'Seçili etkinlik' },
+                  { value: 'book', label: 'Tüm kitap' },
+                ]}
+                width={116}
+              />
+            </RibbonRow>
+            <RibbonSelect
+              value={lms.trackingMode || 'completion+score'}
+              onChange={(event) => commands.patchLms({ trackingMode: event.target.value })}
+              options={[
+                { value: 'completion', label: 'Tamamlama' },
+                { value: 'score', label: 'Puan' },
+                { value: 'completion+score', label: 'Tamamlama + Puan' },
+              ]}
+              width={162}
+            />
+            <RibbonRow>
+              {[
+                ['Menü', 'showMenu', true],
+                ['Notlar', 'showNotes', false],
+                ['Sözlük', 'showGlossary', false],
+                ['Seekbar', 'showSeekbar', true],
+                ['CC', 'closedCaptionsEnabled', false],
+              ].map(([label, key, defaultValue]) => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#475569' }}>
+                  <input
+                    type="checkbox"
+                    checked={lms[key] ?? defaultValue}
+                    onChange={(event) => commands.patchLms({ [key]: event.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </RibbonRow>
+            <RibbonRow>
+              <RibbonColorInput value={lms.primaryColor || '#2563eb'} onChange={(event) => commands.patchLms({ primaryColor: event.target.value })} title="Ana renk" />
+              <RibbonColorInput value={lms.backgroundColor || '#0f172a'} onChange={(event) => commands.patchLms({ backgroundColor: event.target.value })} title="Arka plan" />
+              <RibbonColorInput value={lms.textColor || '#ffffff'} onChange={(event) => commands.patchLms({ textColor: event.target.value })} title="Metin" />
+              {galleries.playerSkins.slice(0, 3).map((skin) => (
+                <CompactRibbonButton
+                  key={skin.id}
+                  label={skin.name}
+                  icon="palette"
+                  onClick={() => commands.patchLms({ playerTheme: skin.id, primaryColor: skin.primaryColor, backgroundColor: skin.backgroundColor, textColor: skin.textColor })}
+                  active={(lms.playerTheme || 'modern-dark') === skin.id}
+                  width={66}
+                />
+              ))}
+            </RibbonRow>
+            <span style={{ fontSize: 9, color: '#64748b' }}>SCORM 1.2 ZIP</span>
+          </RibbonStack>
+        </RibbonPopoverButton>
       </RibbonGroup>
 
       <RibbonGroup title="Yayınla" width={220}>

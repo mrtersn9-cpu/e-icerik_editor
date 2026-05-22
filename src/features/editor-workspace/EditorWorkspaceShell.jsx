@@ -9,7 +9,7 @@ export default function EditorWorkspaceShell({
         flex: 1,
         minHeight: 0,
         overflow: 'auto',
-        background: 'linear-gradient(180deg,#dce8f4,#121b2a)',
+        background: '#f3f7fc',
       }}
     >
       {children}

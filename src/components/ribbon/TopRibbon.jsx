@@ -1,3 +1,6 @@
+import { workspaceChrome } from '../../features/editor-workspace/chromeTokens';
+
+import { RibbonPopoverProvider } from './RibbonPrimitives';
 import AnimasyonRibbon from './tabs/AnimasyonRibbon';
 import BicimRibbon from './tabs/BicimRibbon';
 import EkleRibbon from './tabs/EkleRibbon';
@@ -33,7 +36,9 @@ export default function TopRibbon({ controller, fullscreen = false }) {
     ? controller.activeTab
     : 'home';
   const ActiveComponent = tabs.find((tab) => tab.id === activeTab)?.Component || GirisRibbon;
-  const ribbonHeight = fullscreen ? 120 : 120;
+  const ribbonHeight = fullscreen
+    ? workspaceChrome.ribbon.tabHeight + workspaceChrome.ribbon.commandHeight
+    : workspaceChrome.ribbon.tabHeight + workspaceChrome.ribbon.commandHeight;
 
   return (
     <div
@@ -42,7 +47,7 @@ export default function TopRibbon({ controller, fullscreen = false }) {
         display: 'flex',
         flexDirection: 'column',
         background: '#ffffff',
-        borderBottom: '1px solid #d7e0eb',
+        borderBottom: `1px solid ${workspaceChrome.ribbon.border}`,
         height: ribbonHeight,
         minHeight: ribbonHeight,
         maxHeight: ribbonHeight,
@@ -55,12 +60,12 @@ export default function TopRibbon({ controller, fullscreen = false }) {
         style={{
           display: 'flex',
           alignItems: 'flex-end',
-          height: 32,
-          minHeight: 32,
-          maxHeight: 32,
+          height: workspaceChrome.ribbon.tabHeight,
+          minHeight: workspaceChrome.ribbon.tabHeight,
+          maxHeight: workspaceChrome.ribbon.tabHeight,
           padding: '0 16px',
           background: '#ffffff',
-          borderBottom: '1px solid #d8e1ee',
+          borderBottom: `1px solid ${workspaceChrome.ribbon.border}`,
           gap: 6,
           flexShrink: 0,
           overflow: 'visible',
@@ -127,9 +132,9 @@ export default function TopRibbon({ controller, fullscreen = false }) {
 
       <div
         style={{
-          height: 88,
-          minHeight: 88,
-          maxHeight: 88,
+          height: workspaceChrome.ribbon.commandHeight,
+          minHeight: workspaceChrome.ribbon.commandHeight,
+          maxHeight: workspaceChrome.ribbon.commandHeight,
           display: 'flex',
           alignItems: 'stretch',
           overflow: 'visible',
@@ -143,14 +148,16 @@ export default function TopRibbon({ controller, fullscreen = false }) {
           style={{
             width: '100%',
             minWidth: 0,
-            height: 88,
+            height: workspaceChrome.ribbon.commandHeight,
             display: 'flex',
             alignItems: 'stretch',
             overflow: 'visible',
             flexWrap: 'nowrap',
           }}
         >
-          <ActiveComponent controller={controller} />
+          <RibbonPopoverProvider activeTab={activeTab}>
+            <ActiveComponent controller={controller} />
+          </RibbonPopoverProvider>
         </div>
       </div>
     </div>

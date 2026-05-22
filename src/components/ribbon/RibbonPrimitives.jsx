@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+
+import { workspaceChrome } from '../../features/editor-workspace/chromeTokens';
 
 const toneColors = {
   blue: '#1d4ed8',
@@ -13,6 +15,76 @@ const disabledStyle = {
   opacity: 0.36,
   cursor: 'default',
 };
+
+const RibbonPopoverContext = createContext(null);
+
+export function RibbonPopoverProvider({ children, activeTab }) {
+  const [openPopoverId, setOpenPopoverId] = useState('');
+
+  useEffect(() => {
+    setOpenPopoverId('');
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!openPopoverId || typeof document === 'undefined') return undefined;
+    const close = (event) => {
+      if (event.key === 'Escape') setOpenPopoverId('');
+    };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [openPopoverId]);
+
+  return (
+    <RibbonPopoverContext.Provider value={{ openPopoverId, setOpenPopoverId }}>
+      {children}
+    </RibbonPopoverContext.Provider>
+  );
+}
+
+function useDeferredColor({ value, onCommit, eventMode = false, delay = 120 }) {
+  const [draft, setDraft] = useState(value || '#ffffff');
+  const timerRef = useRef(null);
+  const latestValueRef = useRef(value || '#ffffff');
+
+  useEffect(() => {
+    const nextValue = value || '#ffffff';
+    latestValueRef.current = nextValue;
+    setDraft(nextValue);
+  }, [value]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    []
+  );
+
+  const commit = (nextValue) => {
+    if (!nextValue || nextValue === latestValueRef.current) return;
+    latestValueRef.current = nextValue;
+    if (eventMode) {
+      onCommit?.({ target: { value: nextValue }, currentTarget: { value: nextValue } });
+      return;
+    }
+    onCommit?.(nextValue);
+  };
+
+  const scheduleCommit = (nextValue) => {
+    setDraft(nextValue);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => commit(nextValue), delay);
+  };
+
+  const flush = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    commit(draft);
+  };
+
+  return { draft, flush, scheduleCommit };
+}
 
 const iconStroke = {
   fill: 'none',
@@ -474,7 +546,7 @@ export function RibbonGroup({ title, children, width = 'auto', grow = false }) {
         minHeight: 88,
         maxHeight: 88,
         padding: '7px 9px 5px',
-        borderRight: '1px solid #e4ebf5',
+        borderRight: `1px solid ${workspaceChrome.ribbon.separator}`,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -763,11 +835,20 @@ export function RibbonNumberInput({
 }
 
 export function RibbonColorInput({ value, onChange, disabled = false, title }) {
+  const { draft, flush, scheduleCommit } = useDeferredColor({
+    value,
+    onCommit: onChange,
+    eventMode: true,
+  });
+
   return (
     <input
       type="color"
-      value={value}
-      onChange={onChange}
+      value={draft}
+      onInput={(event) => scheduleCommit(event.target.value)}
+      onChange={(event) => scheduleCommit(event.target.value)}
+      onBlur={flush}
+      onPointerUp={flush}
       disabled={disabled}
       title={title}
       style={{
@@ -796,12 +877,34 @@ export function RibbonPopoverButton({
   variant = 'compact',
   tone = 'blue',
 }) {
-  const [open, setOpen] = useState(false);
+  const generatedId = useId();
+  const context = useContext(RibbonPopoverContext);
+  const fallbackOpen = useState(false);
+  const [localOpen, setLocalOpen] = fallbackOpen;
+  const popoverId = `${label}-${generatedId}`;
+  const open = context ? context.openPopoverId === popoverId : localOpen;
+  const setOpen = useCallback((nextOpen) => {
+    if (context) {
+      context.setOpenPopoverId(nextOpen ? popoverId : '');
+      return;
+    }
+    setLocalOpen(nextOpen);
+  }, [context, popoverId, setLocalOpen]);
+  const rootRef = useRef(null);
   const ButtonComponent = variant === 'large' ? RibbonButton : CompactRibbonButton;
   const popupTop = variant === 'large' ? 62 : 24;
 
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [open, setOpen]);
+
   return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
+    <div ref={rootRef} style={{ position: 'relative', flexShrink: 0 }}>
       <ButtonComponent
         label={label}
         icon={icon}
@@ -810,7 +913,7 @@ export function RibbonPopoverButton({
         active={open}
         tone={tone}
         title={title || label}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       />
       {open && (
         <div

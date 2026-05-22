@@ -1,27 +1,33 @@
 // ─── Aktivite Tipleri ─────────────────────────────────────────────────────────
 
 export const ACTIVITY_TYPES = [
-  { id: 'selection', label: 'Secim Etkinligi', icon: '□', desc: 'Coktan secmeli, dogru/yanlis' },
-  { id: 'drag-drop', label: 'Surukle & Birak', icon: '↕', desc: 'Eslesme ve siralama' },
-  { id: 'hotspot', label: 'Hotspot', icon: '⊕', desc: 'Gorsel uzerinde etkin alan' },
-  { id: 'sequence', label: 'Siralama', icon: '⇅', desc: 'Ogeleri dogru siraya diz' },
-  { id: 'matching', label: 'Eslestirme', icon: '⇔', desc: 'Sol-sag cift eslestirme' },
-  { id: 'text-entry', label: 'Metin Girisi', icon: '✎', desc: 'Serbest metin cevap' },
-  { id: 'numeric', label: 'Sayisal Giris', icon: '#', desc: 'Sayi tabanlı cevap' },
-  { id: 'fill-blank', label: 'Bosluk Doldurma', icon: '___', desc: 'Cumle ici bosluk' },
-  { id: 'survey', label: 'Anket', icon: '◩', desc: 'Puansiz geri bildirim toplama' },
+  { id: 'selection', label: 'Seçim Etkinliği', icon: '□', desc: 'Çoktan seçmeli, doğru/yanlış' },
+  { id: 'drag-drop', label: 'Sürükle-Bırak', icon: '↕', desc: 'Eşleştirme ve sıralama' },
+  { id: 'hotspot', label: 'Etkin Alan', icon: '⊕', desc: 'Görsel üzerinde etkin alan' },
+  { id: 'sequence', label: 'Sıralama', icon: '⇅', desc: 'Öğeleri doğru sıraya diz' },
+  { id: 'matching', label: 'Eşleştirme', icon: '⇔', desc: 'Sol-sağ çift eşleştirme' },
+  { id: 'text-entry', label: 'Kısa Cevap', icon: '✎', desc: 'Serbest metin yanıtı' },
+  { id: 'numeric', label: 'Sayısal Cevap', icon: '#', desc: 'Sayı tabanlı yanıt' },
+  { id: 'fill-blank', label: 'Boşluk Doldurma', icon: '___', desc: 'Cümle içi boşluk' },
+  { id: 'survey', label: 'Anket', icon: '◩', desc: 'Puansız geri bildirim toplama' },
   { id: 'mixed', label: 'Karma', icon: '⊞', desc: 'Birden fazla soru tipi' },
-  { id: 'puzzle', label: 'Bulmaca', icon: '🧩', desc: 'Kare bulmaca, kelime avi, sudoku, labirent, hafiza' },
+  { id: 'puzzle', label: 'Bulmaca', icon: '▦', desc: 'Kare bulmaca, kelime avı, sudoku, labirent, hafıza' },
+  {
+    id: 'custom-interaction',
+    label: 'Özel Etkileşim',
+    icon: '✦',
+    desc: 'Widget tabanlı özel etkileşim iskeleti',
+  },
 ];
 
 export const DRAG_DROP_MODES = [
-  { id: 'single', label: 'Tekli', desc: 'Her suruklenebilir kendi birakma alanina gider (1:1)' },
-  { id: 'multi-single', label: 'Coklu Tekli', desc: 'Birden fazla oge ayni alana birakilabilir' },
-  { id: 'group', label: 'Gruplu', desc: 'Grup etiketine gore otomatik eslesir' },
+  { id: 'single', label: 'Tekli', desc: 'Her sürüklenebilir kendi bırakma alanına gider (1:1)' },
+  { id: 'multi-single', label: 'Çoklu Tekli', desc: 'Birden fazla öğe aynı alana bırakılabilir' },
+  { id: 'group', label: 'Gruplu', desc: 'Grup etiketine göre otomatik eşleşir' },
   {
     id: 'multi-group',
-    label: 'Coklu Gruplu',
-    desc: 'Bir alan ayni gruptaki tum ogeleri kabul eder',
+    label: 'Çoklu Gruplu',
+    desc: 'Bir alan aynı gruptaki tüm öğeleri kabul eder',
   },
 ];
 
@@ -76,7 +82,7 @@ export const DEFAULT_ACTIVITY_SETTINGS = {
   reviewQuizEnabled: false,
   showMenuScreen: true,
   showAnswerLayer: true,
-  answerButtonText: 'Cevabi Goster',
+  answerButtonText: 'Cevabı Göster',
   showButtonPackageIntro: true,
   guideButtonText: 'Tanıtım',
   menuButtonText: '☰ MENÜ',
@@ -102,7 +108,7 @@ export const DEFAULT_ACTIVITY_SETTINGS = {
 };
 
 export const DEFAULT_LMS_CONFIG = {
-  packageName: 'E-Icerik Paketi',
+  packageName: 'E-İçerik Paketi',
   packageCode: 'EIC-001',
   version: '1.0.0',
   standard: 'scorm12',

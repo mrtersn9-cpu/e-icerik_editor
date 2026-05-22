@@ -51,14 +51,6 @@ export default function EkleRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Medya" width={190}>
-        <RibbonRow>
-          <RibbonButton label="Ses" icon="audio" onClick={commands.insertAudio} tone="slate" />
-          <RibbonButton label="Video" icon="video" onClick={commands.insertVideo} tone="slate" />
-          <RibbonButton label="Web" icon="web" onClick={() => commands.insertObject('embed')} tone="slate" />
-        </RibbonRow>
-      </RibbonGroup>
-
       <RibbonGroup title="Etkileşim" width={220}>
         <RibbonRow>
           <RibbonButton label="Buton" icon="button" onClick={() => commands.insertButtonPreset('btn-blue')} tone="slate" />
@@ -73,17 +65,15 @@ export default function EkleRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="İçerik" width={132}>
+      <RibbonGroup title="Diğer Ekle" width={150}>
         <RibbonRow>
-          <RibbonButton label="Soru" icon="question" onClick={commands.openAnswerCenter} tone="slate" />
-          <RibbonButton label="Etiket" icon="tag" onClick={commands.insertLabel} tone="slate" />
-        </RibbonRow>
-      </RibbonGroup>
-
-      <RibbonGroup title="Bileşenler" width={142}>
-        <RibbonRow>
-          <RibbonPopoverButton label="Hazır Bileşen" icon="components" width={82} variant="large" tone="slate">
-            <RibbonMenuGrid columns="repeat(2, 118px)">
+          <RibbonButton label="Soru" icon="question" onClick={commands.openAnswerCenter} tone="slate" width={58} />
+          <RibbonPopoverButton label="Medya / Bileşen" icon="components" width={92} variant="large" tone="slate">
+            <RibbonMenuGrid columns="repeat(2, 124px)">
+              <CompactRibbonButton label="Ses" icon="audio" onClick={commands.insertAudio} width={118} />
+              <CompactRibbonButton label="Video" icon="video" onClick={commands.insertVideo} width={118} />
+              <CompactRibbonButton label="Web Embed" icon="web" onClick={() => commands.insertObject('embed')} width={118} />
+              <CompactRibbonButton label="Etiket" icon="tag" onClick={commands.insertLabel} width={118} />
               <CompactRibbonButton label="Bilgi Kutusu" icon="i" onClick={() => commands.insertComponent('info-box')} width={112} />
               <CompactRibbonButton label="Uyarı" icon="!" onClick={() => commands.insertComponent('warning-box')} width={112} />
               <CompactRibbonButton label="Kart" icon="▤" onClick={() => commands.insertComponent('card')} width={112} />

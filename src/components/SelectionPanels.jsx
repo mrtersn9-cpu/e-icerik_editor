@@ -1,12 +1,152 @@
 import { useState, useCallback } from 'react';
 
-import { BUTTON_PACKAGES, ACTIVITY_TYPES, ANSWER_LAYER_STYLE_PRESETS } from '../constants';
+import { generateDiceBirdDemoTemplate } from '../activity-types/custom-interaction/customInteractionTemplates';
+import {
+  BUTTON_PACKAGES,
+  ACTIVITY_TYPES,
+  ANSWER_LAYER_STYLE_PRESETS,
+  STANDARD_ACTIVITY_CREATE_PRESETS,
+  OTHER_ACTIVITY_CREATE_PRESETS,
+  CUSTOM_INTERACTION_TEMPLATES,
+  DEFAULT_ACTIVITY_CREATE_PRESET_ID,
+  DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID,
+} from '../constants';
+import { getActivityLayers, getActivitySlides, selectActivitySlide } from '../logic/activityHelpers';
+import {
+  ensureStandardActivityScaffold,
+  SCENE_TEMPLATE_LAUNCH_PAGE_ID,
+} from '../logic/activityTemplateGenerators';
+import {
+  getButtonPackageMotion,
+  restyleAllButtonsForPackage,
+  restyleAnswerLayerObjectsForPreset,
+} from '../logic/buttonStyling';
+import { buildResolvedLayerNameMap } from '../logic/factories';
+import { normalizeSlide } from '../logic/slideNormalization';
 import PdfCleanStudio from '../PdfCleanStudio';
 import { EDITOR_THEME } from '../theme';
 import { uid, getActivityProgressSummary, resolveWorkflowStatusMeta } from '../utils/editorHelpers';
 
 import { Inp, Btn, Modal } from './ui';
 
+const ACTIVITY_CREATE_PRESETS = [
+  ...STANDARD_ACTIVITY_CREATE_PRESETS,
+  ...OTHER_ACTIVITY_CREATE_PRESETS,
+  { id: 'custom-interaction', activityType: 'custom-interaction', label: 'Özel Etkileşim Oluştur' },
+];
+
+function findActivityCreatePreset(presetId) {
+  return (
+    ACTIVITY_CREATE_PRESETS.find((preset) => preset.id === presetId) ||
+    ACTIVITY_CREATE_PRESETS.find((preset) => preset.id === DEFAULT_ACTIVITY_CREATE_PRESET_ID) ||
+    ACTIVITY_CREATE_PRESETS[0]
+  );
+}
+
+function patchCurrentSlide(activity = {}, patch = {}) {
+  const slides = Array.isArray(activity.slides)
+    ? activity.slides.map((slide) =>
+        slide.id === activity.currentSlideId ? { ...slide, ...patch } : slide
+      )
+    : activity.slides;
+  return { ...activity, ...patch, slides };
+}
+
+function applyActivityCreatePreset(activity = {}, preset = {}, customTemplate = null) {
+  if (preset.id === 'true-false') {
+    return patchCurrentSlide(activity, {
+      mcQuestion: activity.mcQuestion || 'Aşağıdaki ifadenin doğruluğunu seçiniz.',
+      mcMode: 'single',
+      mcOptions: [
+        { id: uid(), label: 'Doğru', isCorrect: true },
+        { id: uid(), label: 'Yanlış', isCorrect: false },
+      ],
+    });
+  }
+
+  if (preset.activityType === 'custom-interaction') {
+    const template = customTemplate || CUSTOM_INTERACTION_TEMPLATES[0];
+    if (template?.id === 'dice-animation') {
+      return generateDiceBirdDemoTemplate(activity);
+    }
+    return {
+      ...activity,
+      customInteraction: {
+        templateId: template?.id || DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID,
+        templateName: template?.label || 'Boş Özel Etkileşim',
+        widgets: [],
+        settings: {
+          zipImportReady: false,
+          runtimeReady: false,
+        },
+        events: [],
+        commands: [],
+        variables: [],
+        triggers: [],
+        test: {
+          status: 'not-run',
+        },
+      },
+    };
+  }
+
+  return activity;
+}
+
+function applyBookDefaultsToActivity(activity = {}, selectedBook = null) {
+  const buttonPackageId =
+    selectedBook?.buttonPackageId || activity.buttonPackageId || BUTTON_PACKAGES[0]?.id || '';
+  const buttonPackage =
+    BUTTON_PACKAGES.find((pkg) => pkg.id === buttonPackageId) || BUTTON_PACKAGES[0] || {};
+  const answerLayerStylePresetId =
+    selectedBook?.defaultAnswerLayerStylePresetId ||
+    activity.answerLayerStylePresetId ||
+    ANSWER_LAYER_STYLE_PRESETS[0]?.id ||
+    '';
+  const motion =
+    getButtonPackageMotion(buttonPackageId) ||
+    getButtonPackageMotion(buttonPackage?.id) ||
+    null;
+  const activityWithDefaults = {
+    ...activity,
+    buttonPackageId,
+    answerLayerStylePresetId,
+  };
+  const scaffoldedActivity = ensureStandardActivityScaffold(activityWithDefaults, {
+    select: SCENE_TEMPLATE_LAUNCH_PAGE_ID,
+  });
+  const slides = getActivitySlides(scaffoldedActivity);
+  const currentSlideId = scaffoldedActivity.currentSlideId || slides[0]?.id || '';
+  const nextSlides = slides.map((slide, index) => {
+    const layers = getActivityLayers(slide);
+    const resolvedNames = buildResolvedLayerNameMap(layers, slide);
+    const buttonObjects = restyleAllButtonsForPackage(slide.objects || [], buttonPackageId).map(
+      (object) => (object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object)
+    );
+    const objects = restyleAnswerLayerObjectsForPreset(
+      buttonObjects,
+      layers,
+      resolvedNames,
+      answerLayerStylePresetId
+    );
+    return normalizeSlide({ ...slide, answerLayerStylePresetId, objects }, index);
+  });
+  return selectActivitySlide(
+    {
+      ...scaffoldedActivity,
+      buttonPackageId: buttonPackage?.id || buttonPackageId,
+      buttonAnimationProfileId:
+        scaffoldedActivity.buttonAnimationProfileId ||
+        buttonPackage?.animationProfileId ||
+        'calmLift',
+      answerLayerStylePresetId,
+      slides: nextSlides,
+      currentSlideId,
+      startSlideId: nextSlides[0]?.id || scaffoldedActivity.startSlideId || '',
+    },
+    currentSlideId
+  );
+}
 
 // ─── EditorToolRail ───────────────────────────────────────────────────────────
 
@@ -25,7 +165,7 @@ export function EditorToolRail({
       id: 'svg',
       icon: 'SVG',
       label: 'Zemin',
-      title: 'SVG zemin yukle',
+      title: 'SVG zemin yükle',
       onClick: () => canvasRef.current?.loadSVG(),
     },
     {
@@ -45,8 +185,8 @@ export function EditorToolRail({
     {
       id: 'shape-rect',
       icon: 'K',
-      label: 'Sekil',
-      title: 'Sekil ekle',
+      label: 'Şekil',
+      title: 'Şekil ekle',
       onClick: () => canvasRef.current?.addObject('shape'),
     },
     {
@@ -142,7 +282,7 @@ export function EditorToolRail({
   const toolGroups = [
     {
       id: 'flow',
-      label: 'Akis',
+      label: 'Akış',
       items: tools.filter((tool) => ['stage', 'texts'].includes(tool.id)),
     },
     {
@@ -156,7 +296,7 @@ export function EditorToolRail({
     },
     {
       id: 'edit',
-      label: 'Duzen',
+      label: 'Düzen',
       items: tools.filter((tool) => ['copy', 'delete'].includes(tool.id)),
     },
   ].filter((group) => group.items.length);
@@ -295,224 +435,248 @@ export function SelectionStepShell({
   allowOverflow = false,
   stats = [],
   guidance = '',
+  activeStep = 2,
 }) {
-  const visibleStats = stats.filter(Boolean).slice(0, 4);
+  void badge;
+  void compact;
+  void stats;
+  void guidance;
+  const steps = [
+    { id: 1, label: 'Giriş', note: 'Proje bilgileri' },
+    { id: 2, label: 'Yayınevi', note: 'Yayınevi seç' },
+    { id: 3, label: 'Kitap', note: 'Kitap seç' },
+    { id: 4, label: 'Etkinlik', note: 'Etkinlik seç' },
+  ];
   return (
     <div
       style={{
         flex: 1,
         minHeight: 0,
         height: '100%',
-        background: '#f1f5f9',
+        background: '#f6f8fc',
         display: 'flex',
         flexDirection: 'column',
         overflow: allowOverflow ? 'auto' : 'hidden',
+        color: '#101b33',
       }}
     >
       <div
         style={{
-          padding: compact ? '14px 18px 12px' : '26px 30px 22px',
-          color: EDITOR_THEME.shellText,
-          position: 'relative',
+          height: 54,
           flexShrink: 0,
-          background: '#0f172a',
-          borderBottom: '1px solid rgba(125,211,252,.18)',
-          boxShadow: '0 4px 12px rgba(15,23,42,.12)',
-          overflow: 'hidden',
+          background: 'linear-gradient(180deg,#07182a 0%,#06111f 100%)',
+          borderBottom: '1px solid rgba(148,163,184,.24)',
+          color: '#eef6ff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 18px',
+          boxSizing: 'border-box',
         }}
       >
-        {/* Dekoratif zemin katmanı kaldırıldı — TTKB sade görünüm */}
-        <div
-          style={{
-            position: 'relative',
-            zIndex: 1,
-            display: 'grid',
-            gridTemplateColumns: compact ? '1fr' : 'minmax(0,1fr) minmax(320px,520px)',
-            gap: 18,
-            alignItems: 'center',
-          }}
-        >
-          <div style={{ minWidth: 0, paddingLeft: onBack && !compact ? 116 : 0 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-                marginBottom: 10,
-              }}
-            >
-              {badge && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    color: '#bfe7ff',
-                    textTransform: 'uppercase',
-                    fontWeight: 900,
-                    border: '1px solid rgba(125,211,252,.30)',
-                    background: 'rgba(56,189,248,.13)',
-                    borderRadius: 999,
-                    padding: '6px 10px',
-                  }}
-                >
-                  <span style={{ width: 7, height: 7, borderRadius: 999, background: '#4ade80' }} />
-                  {badge}
-                </span>
-              )}
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  color: '#8fdcff',
-                  letterSpacing: 1.4,
-                  textTransform: 'uppercase',
-                }}
-              >
-                E-İçerik Editör
-              </span>
-            </div>
-            {onBack && (
-              <button
-                onClick={onBack}
-                style={{
-                  position: compact ? 'static' : 'absolute',
-                  left: compact ? 'auto' : 26,
-                  top: compact ? 'auto' : 54,
-                  border: '1px solid rgba(191,231,255,.24)',
-                  background: 'rgba(255,255,255,.08)',
-                  color: '#d7f1ff',
-                  borderRadius: 999,
-                  padding: compact ? '5px 12px' : '8px 16px',
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: 900,
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,.10)',
-                }}
-              >
-                ← Geri
-              </button>
-            )}
-            <div
-              style={{
-                fontSize: compact ? 22 : 30,
-                fontWeight: 950,
-                lineHeight: 1.08,
-                color: '#f8fbff',
-                letterSpacing: -0.7,
-              }}
-            >
-              {title}
-            </div>
-            {subtitle && (
-              <div
-                style={{
-                  fontSize: compact ? 11 : 13,
-                  color: '#b7c9e3',
-                  marginTop: compact ? 7 : 12,
-                  maxWidth: 820,
-                  lineHeight: 1.65,
-                }}
-              >
-                {subtitle}
-              </div>
-            )}
-            {guidance && (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  border: '1px solid rgba(251,191,36,.25)',
-                  background: 'rgba(251,191,36,.10)',
-                  color: '#fde68a',
-                  borderRadius: 14,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 800,
-                }}
-              >
-                Rehber: {guidance}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 10 }}>
-            {visibleStats.map((stat, index) => (
-              <div
-                key={`${stat.label}-${index}`}
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid rgba(191,231,255,.18)',
-                  background: 'rgba(255,255,255,.06)',
-                  boxShadow: '0 2px 6px rgba(0,0,0,.10)',
-                  padding: 12,
-                  minHeight: 72,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 900,
-                    color: '#8fb5d9',
-                    textTransform: 'uppercase',
-                    letterSpacing: 1.1,
-                  }}
-                >
-                  {stat.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 950,
-                    color: stat.color || '#ffffff',
-                    marginTop: 6,
-                    lineHeight: 1,
-                  }}
-                >
-                  {stat.value}
-                </div>
-                {stat.note && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: '#a9bdd8',
-                      marginTop: 6,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {stat.note}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, minWidth: 0 }}>
+          <span
+            style={{
+              width: 31,
+              height: 31,
+              borderRadius: 9,
+              border: '1px solid rgba(147,197,253,.44)',
+              background: 'rgba(37,99,235,.22)',
+              color: '#93c5fd',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 16,
+              fontWeight: 950,
+            }}
+          >
+            ▣
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 950,
+              letterSpacing: 0.2,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            E-İÇERİK EDİTÖRÜ
+          </span>
+          <span style={{ width: 1, height: 24, background: 'rgba(226,232,240,.22)' }} />
+          <span
+            style={{
+              color: 'rgba(226,232,240,.72)',
+              fontSize: 11,
+              fontWeight: 760,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Kütüphane
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <span style={{ color: '#22c55e', fontSize: 11, fontWeight: 900 }}>✓ Kaydedildi</span>
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 999,
+              background: '#7c3aed',
+              color: '#fff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 900,
+            }}
+          >
+            K
+          </span>
         </div>
       </div>
+
       <div
         style={{
           flex: 1,
           minHeight: 0,
-          padding: compact ? '12px' : '18px',
           overflow: allowOverflow ? 'auto' : 'hidden',
+          padding: 18,
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
         }}
       >
         <div
           style={{
-            height: allowOverflow ? 'auto' : '100%',
+            border: '1px solid #dbe6f3',
+            borderRadius: 16,
+            background: '#ffffff',
+            minHeight: 82,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, minmax(0,1fr))',
+            alignItems: 'center',
+            padding: '12px 22px',
+            boxSizing: 'border-box',
+            gap: 16,
+          }}
+        >
+          {steps.map((step, index) => {
+            const active = activeStep === step.id;
+            const done = activeStep > step.id;
+            return (
+              <div
+                key={step.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '34px minmax(0,1fr)',
+                  gap: 9,
+                  alignItems: 'center',
+                  position: 'relative',
+                }}
+              >
+                {index > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: -16,
+                      right: 'calc(100% + 8px)',
+                      top: 17,
+                      height: 1,
+                      background: done || active ? '#93c5fd' : '#d8e2ef',
+                    }}
+                  />
+                )}
+                <span
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: `1px solid ${active || done ? '#2563eb' : '#cbd5e1'}`,
+                    background: active ? '#2563eb' : done ? '#eff6ff' : '#ffffff',
+                    color: active ? '#ffffff' : done ? '#2563eb' : '#64748b',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    fontWeight: 950,
+                  }}
+                >
+                  {done ? '✓' : step.id}
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      color: active ? '#0f5bff' : '#172033',
+                      fontSize: 12,
+                      fontWeight: 900,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                  <span
+                    style={{
+                      display: 'block',
+                      color: '#64748b',
+                      fontSize: 10.5,
+                      fontWeight: 650,
+                      marginTop: 2,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {step.note}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: '#2563eb',
+                cursor: 'pointer',
+                fontSize: 11.5,
+                fontWeight: 850,
+                padding: 0,
+              }}
+            >
+              ← Geri dön
+            </button>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 21, fontWeight: 950, color: '#172033', lineHeight: 1.1 }}>
+              {title}
+            </div>
+            {subtitle ? (
+              <div style={{ color: '#64748b', fontSize: 12, fontWeight: 650, marginTop: 5 }}>
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
             minHeight: 0,
             border: '1px solid rgba(191,212,234,.86)',
-            borderRadius: compact ? 18 : 26,
-            background: 'linear-gradient(180deg,rgba(255,255,255,.96),rgba(244,249,255,.96))',
+            borderRadius: 14,
+            background: '#ffffff',
             boxShadow: '0 2px 8px rgba(15,23,42,.08)',
-            padding: compact ? 12 : 20,
+            padding: 16,
             boxSizing: 'border-box',
-            overflow: allowOverflow ? 'visible' : 'hidden',
+            overflow: 'hidden',
           }}
         >
           {children}
@@ -534,41 +698,39 @@ export function SelectionGridLayout({
   fillHeight = false,
 }) {
   return (
-    <div style={{ height: fillHeight ? '100%' : 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: fillHeight ? '100%' : 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
-          gap: 14,
-          marginBottom: 14,
-          alignItems: 'stretch',
+          gridTemplateColumns: 'minmax(260px, 1fr) auto',
+          gap: 10,
+          marginBottom: 12,
+          alignItems: 'center',
         }}
       >
         <div
           style={{
-            borderRadius: 22,
-            border: '1px solid #c7d9f1',
-            background: 'linear-gradient(135deg,#ffffff,#eef7ff)',
-            boxShadow: '0 1px 4px rgba(15,23,42,.06)',
-            padding: 12,
+            borderRadius: 8,
+            border: '1px solid #d8e2ef',
+            background: '#ffffff',
+            padding: '0 10px',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 8,
             minWidth: 0,
+            height: 40,
           }}
         >
           <span
             style={{
-              width: 34,
-              height: 34,
-              borderRadius: 12,
+              width: 20,
+              height: 20,
+              borderRadius: 6,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#0f5d8e',
-              background: 'rgba(56,189,248,.14)',
-              border: '1px solid rgba(56,189,248,.22)',
-              fontSize: 15,
+              color: '#64748b',
+              fontSize: 14,
               flexShrink: 0,
             }}
           >
@@ -580,16 +742,15 @@ export function SelectionGridLayout({
             placeholder="Bu adımda ara..."
             style={{
               width: '100%',
-              height: 42,
-              borderRadius: 14,
-              border: '1px solid #d7e4f2',
+              height: 38,
+              borderRadius: 0,
+              border: 'none',
               background: '#ffffff',
               color: EDITOR_THEME.lightText,
-              fontSize: 13,
-              padding: '0 13px',
+              fontSize: 12,
+              padding: 0,
               outline: 'none',
               boxSizing: 'border-box',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.95)',
             }}
           />
         </div>
@@ -598,7 +759,7 @@ export function SelectionGridLayout({
             display: 'flex',
             alignItems: 'stretch',
             justifyContent: 'flex-end',
-            gap: 10,
+            gap: 8,
             flexWrap: 'wrap',
             minWidth: 0,
           }}
@@ -607,32 +768,31 @@ export function SelectionGridLayout({
           <button
             onClick={onAdd}
             style={{
-              minWidth: 210,
-              height: 68,
-              borderRadius: 22,
-              border: '1px solid rgba(14,165,233,.32)',
-              background: 'linear-gradient(135deg,#0ea5e9,#38bdf8)',
-              color: '#03111f',
-              fontSize: 13,
-              fontWeight: 950,
+              minWidth: 150,
+              height: 40,
+              borderRadius: 8,
+              border: '1px solid #1d4ed8',
+              background: '#2563eb',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 900,
               cursor: 'pointer',
-              boxShadow: '0 4px 10px rgba(14,165,233,.18)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 10,
+              gap: 7,
             }}
           >
             <span
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 10,
-                background: 'rgba(255,255,255,.36)',
+                width: 18,
+                height: 18,
+                borderRadius: 6,
+                background: 'rgba(255,255,255,.16)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 17,
+                fontSize: 14,
               }}
             >
               +
@@ -645,12 +805,11 @@ export function SelectionGridLayout({
         style={{
           flex: fillHeight ? 1 : '0 0 auto',
           minHeight: fillHeight ? 0 : 340,
-          border: '1px solid #d7e4f2',
-          borderRadius: 24,
-          padding: 16,
+          border: 'none',
+          borderRadius: 0,
+          padding: 0,
           overflowY: 'auto',
-          background: 'linear-gradient(180deg,#ffffff,#f4f9ff)',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,.95)',
+          background: 'transparent',
         }}
       >
         {children}
@@ -679,27 +838,31 @@ export function SelectionGridCards({ items, selectedId, onSelect, onEdit, onDele
     );
   }
 
+  const gradients = [
+    ['#10b981', '#0ea5e9'],
+    ['#f59e0b', '#ef4444'],
+    ['#8b5cf6', '#ec4899'],
+    ['#2563eb', '#06b6d4'],
+    ['#14b8a6', '#84cc16'],
+  ];
+  const typeLabels = Object.fromEntries(ACTIVITY_TYPES.map((type) => [type.id, type.label]));
+
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))',
-        gap: 18,
+        gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))',
+        gap: 12,
       }}
     >
       {items.map((item, index) => {
-        const gradients = [
-          ['#22c55e', '#06b6d4'],
-          ['#f59e0b', '#ef4444'],
-          ['#8b5cf6', '#ec4899'],
-          ['#0ea5e9', '#6366f1'],
-          ['#14b8a6', '#84cc16'],
-        ];
         const [start, end] = gradients[index % gradients.length];
         const isSelected = selectedId === item.id;
         const initial = (item.name || '?').trim().charAt(0).toUpperCase() || '?';
         const itemKind = item.bookId ? 'Etkinlik' : item.publisherId ? 'Kitap' : 'Yayınevi';
         const activitySummary = item.bookId ? getActivityProgressSummary(item) : null;
+        const isBook = !!item.publisherId && !item.bookId;
+        const isActivity = !!item.bookId;
         const slideCount =
           activitySummary?.slideCount ?? (Array.isArray(item.slides) ? item.slides.length : 0);
         const objectCount =
@@ -710,298 +873,204 @@ export function SelectionGridCards({ items, selectedId, onSelect, onEdit, onDele
             ? resolveWorkflowStatusMeta(item.autoBuildStatus)
             : null;
         const quality = activitySummary?.quality ?? 0;
+        const metaLine = isActivity
+          ? `${item.subject || item.lesson || 'Etkinlik'} · ${item.grade || item.gradeLevel || ''}`.replace(/ · $/, '')
+          : isBook
+            ? `${item.grade || item.gradeLevel || 'Ders kitabı'}`
+            : item.description || 'Yayınevi kütüphanesi';
+        const primaryMetric = isActivity
+          ? `${slideCount || 1} slide`
+          : isBook
+            ? `${items.filter((activity) => activity.bookId === item.id).length || ''}`.trim()
+            : '';
         return (
           <div key={item.id} style={{ position: 'relative' }}>
             <button
               onClick={() => onSelect(item.id)}
               style={{
                 width: '100%',
-                border: 'none',
-                background: 'transparent',
+                minHeight: isActivity ? 154 : 132,
+                border: `1px solid ${isSelected ? '#2563eb' : '#dbe6f3'}`,
+                borderRadius: 12,
+                background: isSelected ? '#f8fbff' : '#ffffff',
                 cursor: 'pointer',
-                padding: 0,
+                padding: 14,
+                textAlign: 'left',
+                boxShadow: isSelected ? '0 0 0 2px rgba(37,99,235,.10)' : '0 2px 7px rgba(15,23,42,.05)',
+                transition: 'border-color .14s, box-shadow .14s, transform .14s',
               }}
             >
               <div
                 style={{
-                  borderRadius: 16,
-                  padding: 12,
-                  background: isSelected ? 'linear-gradient(180deg,#eef8ff,#ffffff)' : '#ffffff',
-                  border: `1px solid ${isSelected ? '#60c8ff' : '#dbe7f3'}`,
-                  transition: 'all .15s',
-                  boxShadow: isSelected
-                    ? '0 6px 14px rgba(56,189,248,.14)'
-                    : '0 3px 8px rgba(15,35,64,.06)',
-                  overflow: 'hidden',
-                  position: 'relative',
+                  display: 'grid',
+                  gridTemplateColumns: isActivity || isBook ? '112px minmax(0,1fr)' : '72px minmax(0,1fr)',
+                  gap: 14,
+                  alignItems: 'center',
                 }}
               >
                 <div
                   style={{
-                    position: 'absolute',
-                    inset: 'auto 0 0 0',
-                    height: 4,
+                    width: isActivity || isBook ? 112 : 72,
+                    height: isActivity ? 96 : isBook ? 108 : 72,
+                    borderRadius: isActivity ? 10 : 14,
+                    border: '1px solid #dbe6f3',
                     background: `linear-gradient(90deg,${start},${end})`,
-                    opacity: isSelected ? 1 : 0.72,
-                  }}
-                />
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '74px minmax(0,1fr)',
-                    gap: 12,
+                    display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ffffff',
+                    overflow: 'hidden',
+                    flexShrink: 0,
                   }}
                 >
                   <div
                     style={{
-                      width: 74,
-                      height: 74,
-                      borderRadius: 22,
-                      border: `1px solid ${isSelected ? '#8fd3ff' : '#dbe7f3'}`,
-                      background: `linear-gradient(135deg,${start},${end})`,
+                      width: isActivity ? 58 : isBook ? 64 : 42,
+                      height: isActivity ? 58 : isBook ? 64 : 42,
+                      borderRadius: isActivity ? 18 : 999,
+                      background: 'rgba(255,255,255,.18)',
+                      border: '1px solid rgba(255,255,255,.36)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.28)',
+                      color: '#ffffff',
+                      fontSize: isActivity ? 28 : 22,
+                      fontWeight: 950,
                     }}
                   >
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 15,
-                        background: 'rgba(255,255,255,.20)',
-                        border: '1px solid rgba(255,255,255,.38)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#ffffff',
-                        fontSize: 22,
-                        fontWeight: 950,
-                      }}
-                    >
-                      {initial}
-                    </div>
-                  </div>
-                  <div style={{ minWidth: 0, textAlign: 'left' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        marginBottom: 6,
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 900,
-                          color: isSelected ? '#0f5d8e' : '#64748b',
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.8,
-                        }}
-                      >
-                        {itemKind}
-                      </span>
-                      {statusMeta && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            fontSize: 11,
-                            fontWeight: 900,
-                            color: statusMeta.color,
-                            background: statusMeta.bg,
-                            border: `1px solid ${statusMeta.border}`,
-                            borderRadius: 999,
-                            padding: '3px 7px',
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 5,
-                              height: 5,
-                              borderRadius: 999,
-                              background: statusMeta.color,
-                            }}
-                          />
-                          {statusMeta.label}
-                        </span>
-                      )}
-                      <span
-                        style={{
-                          width: 5,
-                          height: 5,
-                          borderRadius: 999,
-                          background:
-                            quality >= 80 ? '#22c55e' : quality >= 60 ? '#f59e0b' : '#ef4444',
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        color: isSelected ? '#0f5d8e' : EDITOR_THEME.lightText,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        fontWeight: 950,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {item.name}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: '#64748b',
-                          background: '#f1f5f9',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: 999,
-                          padding: '3px 7px',
-                          fontWeight: 800,
-                        }}
-                      >
-                        {quality}% hazır
-                      </span>
-                      {slideCount > 0 && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: '#2563eb',
-                            background: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            borderRadius: 999,
-                            padding: '3px 7px',
-                            fontWeight: 800,
-                          }}
-                        >
-                          {slideCount} slide
-                        </span>
-                      )}
-                      {objectCount > 0 && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: '#15803d',
-                            background: '#f0fdf4',
-                            border: '1px solid #bbf7d0',
-                            borderRadius: 999,
-                            padding: '3px 7px',
-                            fontWeight: 800,
-                          }}
-                        >
-                          {objectCount} nesne
-                        </span>
-                      )}
-                      {activitySummary?.timelineCount > 0 && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: '#7c3aed',
-                            background: '#f5f3ff',
-                            border: '1px solid #ddd6fe',
-                            borderRadius: 999,
-                            padding: '3px 7px',
-                            fontWeight: 800,
-                          }}
-                        >
-                          {activitySummary.timelineCount} klip
-                        </span>
-                      )}
-                    </div>
+                    {initial}
                   </div>
                 </div>
-                {activitySummary && (
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      marginTop: 12,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      gap: 8,
+                      gap: 6,
+                      marginBottom: 7,
                       flexWrap: 'wrap',
                     }}
                   >
                     <span
                       style={{
-                        fontSize: 11,
-                        color: '#475569',
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
+                        fontSize: 10,
+                        fontWeight: 900,
+                        color: '#2563eb',
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
                         borderRadius: 999,
-                        padding: '4px 8px',
-                        fontWeight: 800,
+                        padding: '3px 7px',
                       }}
                     >
-                      {activitySummary.readyChecks}/{activitySummary.totalChecks} kontrol
+                      {itemKind}
                     </span>
+                    {statusMeta && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 900,
+                          color: statusMeta.color,
+                          background: statusMeta.bg,
+                          border: `1px solid ${statusMeta.border}`,
+                          borderRadius: 999,
+                          padding: '3px 7px',
+                        }}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    )}
+                    {isActivity && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 850,
+                          color: '#64748b',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 999,
+                          padding: '3px 7px',
+                        }}
+                      >
+                        {typeLabels[item.type] || item.type || 'Etkinlik'}
+                      </span>
+                    )}
                   </div>
-                )}
-                {item.automationMeta?.pageCount ? (
                   <div
                     style={{
-                      marginTop: 6,
-                      fontSize: 11,
-                      color: EDITOR_THEME.lightMuted,
-                      textAlign: 'center',
+                      color: '#172033',
+                      fontSize: isActivity ? 14 : 15,
+                      fontWeight: 950,
+                      lineHeight: 1.25,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {item.automationMeta.pageCount} slide · {item.automationMeta.kind}
+                    {item.name}
                   </div>
-                ) : null}
+                  <div
+                    style={{
+                      color: '#64748b',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      marginTop: 6,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {metaLine}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 11,
+                      display: 'flex',
+                      gap: 7,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    {itemKind === 'Yayınevi' && (
+                      <>
+                        <span style={libraryMetricStyle}>Kitap</span>
+                        <span style={libraryMetricStyle}>Etkinlik</span>
+                      </>
+                    )}
+                    {isBook && (
+                      <>
+                        <span style={libraryMetricStyle}>Kitap</span>
+                        {primaryMetric && <span style={libraryMetricStyle}>{primaryMetric} etkinlik</span>}
+                      </>
+                    )}
+                    {isActivity && (
+                      <>
+                        <span style={libraryMetricStyle}>{slideCount || 1} slide</span>
+                        <span style={libraryMetricStyle}>{objectCount} nesne</span>
+                        <span style={libraryMetricStyle}>{quality}% hazır</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </button>
-            <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 6 }}>
+            <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 5 }}>
               <button
+                title="Düzenle"
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(item);
                 }}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 9,
-                  border: `1px solid ${EDITOR_THEME.lightBorderStrong}`,
-                  background: 'rgba(255,255,255,.92)',
-                  color: EDITOR_THEME.lightMuted,
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: 800,
-                  boxShadow: '0 6px 12px rgba(15,23,42,.08)',
-                }}
+                style={libraryIconButtonStyle}
               >
-                E
+                ✎
               </button>
               <button
+                title="Sil"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(item.id);
                 }}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 9,
-                  border: '1px solid rgba(248,113,113,.25)',
-                  background: '#fff5f5',
-                  color: '#dc2626',
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: 800,
-                  boxShadow: '0 6px 12px rgba(15,23,42,.08)',
-                }}
+                style={{ ...libraryIconButtonStyle, color: '#dc2626', borderColor: '#fecaca' }}
               >
                 ×
               </button>
@@ -1012,6 +1081,29 @@ export function SelectionGridCards({ items, selectedId, onSelect, onEdit, onDele
     </div>
   );
 }
+
+const libraryMetricStyle = {
+  color: '#475569',
+  background: '#f8fafc',
+  border: '1px solid #e2e8f0',
+  borderRadius: 999,
+  padding: '4px 7px',
+  fontSize: 10.5,
+  fontWeight: 820,
+};
+
+const libraryIconButtonStyle = {
+  width: 26,
+  height: 26,
+  borderRadius: 8,
+  border: '1px solid #dbe6f3',
+  background: 'rgba(255,255,255,.94)',
+  color: '#64748b',
+  cursor: 'pointer',
+  fontSize: 11,
+  fontWeight: 900,
+  boxShadow: '0 2px 7px rgba(15,23,42,.08)',
+};
 
 // ─── PublisherPanel ───────────────────────────────────────────────────────────
 
@@ -1192,34 +1284,33 @@ export function BookPanel({
           <button
             onClick={() => setPdfStudioOpen(true)}
             style={{
-              minWidth: 210,
-              height: 68,
-              borderRadius: 22,
-              border: '1px solid rgba(14,165,233,.34)',
-              background: 'linear-gradient(135deg,#ffffff,#e0f7ff)',
+              minWidth: 126,
+              height: 40,
+              borderRadius: 8,
+              border: '1px solid #bfdbfe',
+              background: '#ffffff',
               color: '#075985',
-              fontSize: 13,
-              fontWeight: 950,
+              fontSize: 12,
+              fontWeight: 900,
               cursor: 'pointer',
-              boxShadow: '0 4px 10px rgba(14,165,233,.12)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 10,
+              gap: 7,
             }}
-            title="Tam ekran PDF duzenleme studyosunu ac"
+            title="Tam ekran PDF düzenleme stüdyosunu aç"
           >
             <span
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 10,
+                width: 18,
+                height: 18,
+                borderRadius: 6,
                 background: 'rgba(14,165,233,.14)',
-                border: '1px solid rgba(14,165,233,.24)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#0284c7',
+                fontSize: 10,
               }}
             >
               P
@@ -1369,7 +1460,8 @@ export function ActivityPanel({
 }) {
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState('selection');
+  const [newPresetId, setNewPresetId] = useState(DEFAULT_ACTIVITY_CREATE_PRESET_ID);
+  const [customTemplateId, setCustomTemplateId] = useState(DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID);
   const [search, setSearch] = useState('');
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -1379,17 +1471,30 @@ export function ActivityPanel({
     (a.name || '').toLowerCase().includes(search.trim().toLowerCase())
   );
   const selectedBook = books.find((book) => book.id === selBookId) || null;
+  const selectedCreatePreset = findActivityCreatePreset(newPresetId);
+  const selectedCustomTemplate =
+    CUSTOM_INTERACTION_TEMPLATES.find((item) => item.id === customTemplateId) ||
+    CUSTOM_INTERACTION_TEMPLATES[0];
+  const resetAddModal = () => {
+    setShowModal(false);
+    setNewName('');
+    setNewPresetId(DEFAULT_ACTIVITY_CREATE_PRESET_ID);
+    setCustomTemplateId(DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID);
+  };
   const add = () => {
     if (!newName.trim()) return;
-    const a = createActivity(newName.trim(), newType);
+    const activityType = selectedCreatePreset?.activityType || 'selection';
+    const created = createActivity(newName.trim(), activityType);
+    const withBookDefaults = applyBookDefaultsToActivity(created, selectedBook);
+    const a = applyActivityCreatePreset(
+      withBookDefaults,
+      selectedCreatePreset,
+      selectedCustomTemplate
+    );
     a.bookId = selBookId;
-    a.answerLayerStylePresetId =
-      selectedBook?.defaultAnswerLayerStylePresetId || ANSWER_LAYER_STYLE_PRESETS[0]?.id || '';
     onChange([...activities, a]);
     onSelect(a.id);
-    setNewName('');
-    setNewType('selection');
-    setShowModal(false);
+    resetAddModal();
   };
   const remove = (id) => {
     onChange(activities.filter((a) => a.id !== id));
@@ -1402,7 +1507,7 @@ export function ActivityPanel({
   if (!selBookId)
     return (
       <div style={{ fontSize: 11, color: '#444', textAlign: 'center', padding: 8 }}>
-        Kitap secin
+        Kitap seçin
       </div>
     );
   return (
@@ -1416,34 +1521,33 @@ export function ActivityPanel({
           <button
             onClick={() => setPdfStudioOpen(true)}
             style={{
-              minWidth: 210,
-              height: 68,
-              borderRadius: 22,
-              border: '1px solid rgba(14,165,233,.34)',
-              background: 'linear-gradient(135deg,#ffffff,#e0f7ff)',
+              minWidth: 126,
+              height: 40,
+              borderRadius: 8,
+              border: '1px solid #bfdbfe',
+              background: '#ffffff',
               color: '#075985',
-              fontSize: 13,
-              fontWeight: 950,
+              fontSize: 12,
+              fontWeight: 900,
               cursor: 'pointer',
-              boxShadow: '0 4px 10px rgba(14,165,233,.12)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 10,
+              gap: 7,
             }}
-            title="Tam ekran PDF duzenleme studyosunu ac"
+            title="Tam ekran PDF düzenleme stüdyosunu aç"
           >
             <span
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 10,
+                width: 18,
+                height: 18,
+                borderRadius: 6,
                 background: 'rgba(14,165,233,.14)',
-                border: '1px solid rgba(14,165,233,.24)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#0284c7',
+                fontSize: 10,
               }}
             >
               P
@@ -1475,49 +1579,122 @@ export function ActivityPanel({
       )}
 
       {showModal && (
-        <Modal title="Yeni Etkinlik" onClose={() => setShowModal(false)}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Modal title="Yeni Etkinlik" onClose={resetAddModal} width={760}>
+          <div className="eic-modal-stack">
             <Inp
-              label="Etkinlik Adi"
+              label="Etkinlik Adı"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Etkinlik adi..."
+              placeholder="Etkinlik adı..."
             />
-            <div>
-              <label style={{ fontSize: 11, color: '#78909C', display: 'block', marginBottom: 8 }}>
-                Etkinlik Turu
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {ACTIVITY_TYPES.map((at) => (
-                  <div
-                    key={at.id}
-                    onClick={() => setNewType(at.id)}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      border: `1px solid ${newType === at.id ? '#4CAF50' : '#333'}`,
-                      background: newType === at.id ? '#4CAF5022' : '#1a1a30',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 18 }}>{at.icon}</span>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: newType === at.id ? '#4CAF50' : '#E0E0E0',
-                        }}
-                      >
-                        {at.label}
+
+            <div className="eic-activity-create-section">
+              <div className="eic-activity-create-header">
+                <span>Standart Etkinlikler</span>
+                <span>Mevcut motorlarla oluşturulur</span>
+              </div>
+              <div className="eic-activity-create-grid">
+                {STANDARD_ACTIVITY_CREATE_PRESETS.map((preset) => {
+                  const active = newPresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`eic-activity-preset-card${active ? ' is-active' : ''}`}
+                      onClick={() => setNewPresetId(preset.id)}
+                      aria-pressed={active}
+                    >
+                      <span className="eic-activity-preset-icon">{preset.icon}</span>
+                      <span className="eic-activity-preset-copy">
+                        <span className="eic-activity-preset-title">{preset.label}</span>
+                        <span className="eic-activity-preset-desc">{preset.desc}</span>
                       </span>
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowModal(false)} color="#555">
+
+            <div className="eic-activity-create-section">
+              <div className="eic-activity-create-header">
+                <span>Diğer Mevcut Etkinlikler</span>
+                <span>Önceki akışlarla uyumlu</span>
+              </div>
+              <div className="eic-activity-create-grid eic-activity-create-grid--compact">
+                {OTHER_ACTIVITY_CREATE_PRESETS.map((preset) => {
+                  const active = newPresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`eic-activity-preset-card${active ? ' is-active' : ''}`}
+                      onClick={() => setNewPresetId(preset.id)}
+                      aria-pressed={active}
+                    >
+                      <span className="eic-activity-preset-icon">{preset.icon}</span>
+                      <span className="eic-activity-preset-copy">
+                        <span className="eic-activity-preset-title">{preset.label}</span>
+                        <span className="eic-activity-preset-desc">{preset.desc}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="eic-activity-create-section">
+              <div className="eic-activity-create-header">
+                <span>Özel Etkileşimler</span>
+                <span>Önizleme hazırlığı yok, UI iskeleti</span>
+              </div>
+              <button
+                type="button"
+                className={`eic-activity-preset-card eic-activity-preset-card--wide${
+                  newPresetId === 'custom-interaction' ? ' is-active' : ''
+                }`}
+                onClick={() => setNewPresetId('custom-interaction')}
+                aria-pressed={newPresetId === 'custom-interaction'}
+              >
+                <span className="eic-activity-preset-icon">✦</span>
+                <span className="eic-activity-preset-copy">
+                  <span className="eic-activity-preset-title">Özel Etkileşim Oluştur</span>
+                  <span className="eic-activity-preset-desc">
+                    Widget tabanlı yeni etkileşim ekranına hazırlık
+                  </span>
+                </span>
+              </button>
+
+              {newPresetId === 'custom-interaction' && (
+                <div className="eic-custom-create-shell">
+                  <div className="eic-custom-create-title">Hazır Etkileşimler</div>
+                  <div className="eic-custom-template-grid">
+                    {CUSTOM_INTERACTION_TEMPLATES.map((template) => {
+                      const active = customTemplateId === template.id;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          className={`eic-custom-template-card${active ? ' is-active' : ''}`}
+                          onClick={() => setCustomTemplateId(template.id)}
+                          aria-pressed={active}
+                        >
+                          <span>{template.icon}</span>
+                          <strong>{template.label}</strong>
+                          <small>{template.desc}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="eic-custom-create-title">Yeni Etkileşim</div>
+                  <button type="button" className="eic-zip-placeholder-button" disabled>
+                    + ZIP ile Yeni Özel Etkileşim Yükle
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="eic-actions-row">
+              <Btn onClick={resetAddModal} color="#555">
                 İptal
               </Btn>
               <Btn onClick={add} color={EDITOR_THEME.shellAccentStrong} disabled={!newName.trim()}>
@@ -1529,14 +1706,14 @@ export function ActivityPanel({
       )}
       {editId && (
         <Modal title="Etkinliği Düzenle" onClose={() => setEditId(null)} width={420}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="eic-modal-stack">
             <Inp
-              label="Etkinlik Adi"
+              label="Etkinlik Adı"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              placeholder="Etkinlik adi..."
+              placeholder="Etkinlik adı..."
             />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div className="eic-actions-row">
               <Btn onClick={() => setEditId(null)} color="#555">
                 İptal
               </Btn>

@@ -1,33 +1,12 @@
+// eslint-disable-next-line no-unused-vars
 function ProductLogo() {
   return (
     <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id="topbarLogoBg" x1="8" y1="6" x2="56" y2="58">
-          <stop stopColor="#1d4ed8" />
-          <stop offset="1" stopColor="#0f172a" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M32 4 56 17.5v29L32 60 8 46.5v-29L32 4Z"
-        fill="url(#topbarLogoBg)"
-        stroke="#e0f2fe"
-        strokeWidth="2.4"
-      />
-      <path
-        d="M32 13 47.5 22v20L32 51 16.5 42V22L32 13Z"
-        fill="none"
-        stroke="#93c5fd"
-        strokeWidth="2.2"
-      />
-      <path d="M32 20 42 25.8v12.4L32 44 22 38.2V25.8L32 20Z" fill="#0b1b35" />
-      <path
-        d="M32 20v24M22 25.8 32 31.6l10-5.8M22 38.2l10-6.6 10 6.6"
-        fill="none"
-        stroke="#bfdbfe"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect x="4" y="4" width="56" height="56" rx="14" fill="#1e293b" />
+      <rect x="12" y="12" width="18" height="18" rx="4" fill="#2563eb" />
+      <rect x="34" y="12" width="18" height="18" rx="4" fill="#3b82f6" />
+      <rect x="12" y="34" width="18" height="18" rx="4" fill="#60a5fa" />
+      <rect x="34" y="34" width="18" height="18" rx="4" fill="#f59e0b" />
     </svg>
   );
 }
@@ -113,6 +92,33 @@ function TopBarPillButton({ label, onClick, active = false }) {
   );
 }
 
+function TopBarCrumbButton({ label, onClick, title }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title || label}
+      style={{
+        height: 25,
+        padding: '0 7px',
+        borderRadius: 7,
+        border: '1px solid rgba(148,163,184,.26)',
+        background: 'rgba(255,255,255,.06)',
+        color: '#dbeafe',
+        fontSize: 10,
+        fontWeight: 850,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        maxWidth: 82,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function EditorTopBar({
   activeUser,
   currentProject,
@@ -129,8 +135,12 @@ export default function EditorTopBar({
   selActivity,
   selBook,
   selPub,
+  onBackToActivities,
+  onBackToBooks,
+  onBackToPublishers,
   setAnswerDrawerOpen,
   setCanvasExpanded,
+  setDesignToolsOpen,
   setShowAdminManagement,
   setShowProjectManager,
   setShowReviewThreads,
@@ -158,18 +168,7 @@ export default function EditorTopBar({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <ProductLogo />
-        <div
-          style={{
-            fontSize: 15,
-            fontWeight: 900,
-            letterSpacing: 0,
-            color: '#ffffff',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          E-İÇERİK EDİTÖRÜ
-        </div>
+        <img src="/logo-light.svg" height={28} alt="E-İçerik Studio" style={{ display: 'block' }} />
       </div>
 
       <div style={{ width: 1, height: 24, background: 'rgba(226,232,240,.26)', flexShrink: 0 }} />
@@ -179,8 +178,8 @@ export default function EditorTopBar({
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          minWidth: 140,
-          maxWidth: 250,
+          minWidth: 120,
+          maxWidth: 220,
           overflow: 'hidden',
         }}
       >
@@ -212,6 +211,30 @@ export default function EditorTopBar({
           {savedLabel}
         </span>
       </div>
+
+      {currentView === 'editor' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            flexShrink: 0,
+            minWidth: 0,
+          }}
+        >
+          <TopBarCrumbButton
+            label="Yayınevi"
+            title="Yayınevi seçimine dön"
+            onClick={onBackToPublishers}
+          />
+          <TopBarCrumbButton label="Kitap" title="Kitap seçimine dön" onClick={onBackToBooks} />
+          <TopBarCrumbButton
+            label="Etkinlik"
+            title="Etkinlik listesine dön"
+            onClick={onBackToActivities}
+          />
+        </div>
+      )}
 
       {currentView === 'editor' && (
         <div
@@ -282,6 +305,29 @@ export default function EditorTopBar({
             }}
           >
             Cevap
+          </button>
+        )}
+
+        {currentView === 'editor' && (
+          <button
+            type="button"
+            onClick={() => setDesignToolsOpen?.(true)}
+            disabled={!selActivity}
+            title="Tasarım üretim araçları"
+            style={{
+              height: 30,
+              padding: '0 11px',
+              borderRadius: 9,
+              border: `1px solid ${selActivity ? 'rgba(124,58,237,.72)' : 'rgba(148,163,184,.3)'}`,
+              background: selActivity ? 'rgba(124,58,237,.18)' : 'rgba(255,255,255,.05)',
+              color: selActivity ? '#ede9fe' : 'rgba(226,232,240,.45)',
+              fontSize: 11,
+              fontWeight: 900,
+              cursor: selActivity ? 'pointer' : 'default',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Tasarım
           </button>
         )}
 
