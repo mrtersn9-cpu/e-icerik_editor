@@ -266,6 +266,23 @@ export function getTimelineMotionStyle(activity = {}, objectId = '', currentTime
     if (effect === 'scale') {
       const nextScale = reverse ? 1 - 0.28 * eased : 0.72 + 0.28 * eased;
       scaleValue *= nextScale;
+      return;
+    }
+    if (effect === 'grow') {
+      scaleValue *= reverse ? 1 - 0.6 * eased : 0.4 + 0.6 * eased;
+      opacity *= reverse ? Math.max(0, 1 - eased) : eased;
+      return;
+    }
+    if (effect === 'shrink') {
+      scaleValue *= reverse ? 1 + 0.5 * eased : 1.5 - 0.5 * eased;
+      opacity *= reverse ? Math.max(0, 1 - eased) : eased;
+      return;
+    }
+    if (effect === 'fly') {
+      const offset = getTimelineDirectionOffset(direction, 220);
+      translateX += offset.x * amount;
+      translateY += offset.y * amount;
+      opacity *= reverse ? Math.max(0, 1 - eased) : eased;
     }
   };
 

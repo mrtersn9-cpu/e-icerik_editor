@@ -1686,6 +1686,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                         height: '100%',
                         objectFit: 'contain',
                         pointerEvents: 'none',
+                        filter: o.imageFilter || undefined,
                       }}
                     />
                   ) : o.icon?.svg && o.iconPosition && o.iconPosition !== 'none' ? (

@@ -11,6 +11,14 @@ import {
 
 const themeSwatches = ['#ffffff', '#eff6ff', '#f0fdf4', '#fff7ed', '#f8fafc', '#111827'];
 const paletteSwatches = ['#2563eb', '#16a34a', '#f97316', '#7c3aed', '#db2777', '#334155'];
+const backgroundGradients = [
+  'linear-gradient(135deg, #667eea, #764ba2)',
+  'linear-gradient(135deg, #11998e, #38ef7d)',
+  'linear-gradient(135deg, #f093fb, #f5576c)',
+  'linear-gradient(135deg, #4facfe, #00f2fe)',
+  'linear-gradient(135deg, #0f0c29, #302b63, #24243e)',
+  'linear-gradient(135deg, #fdfcfb, #e2d1c3)',
+];
 
 export default function TasarimRibbon({ controller }) {
   const { activity, commands, galleries } = controller;
@@ -35,6 +43,19 @@ export default function TasarimRibbon({ controller }) {
             title="Özel zemin rengi"
           />
         </RibbonStack>
+      </RibbonGroup>
+
+      <RibbonGroup title="Arka Plan Stilleri" width={150}>
+        <RibbonRow>
+          {backgroundGradients.map((gradient) => (
+            <RibbonSwatch
+              key={gradient}
+              color={gradient}
+              active={(activity?.backgroundColor || '') === gradient}
+              onClick={() => commands.patchActivity({ backgroundColor: gradient })}
+            />
+          ))}
+        </RibbonRow>
       </RibbonGroup>
 
       <RibbonGroup title="Stil Paketleri" width={156}>

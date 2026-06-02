@@ -19,9 +19,9 @@ export default function AnimasyonRibbon({ controller }) {
         <RibbonButton label="Önizle" icon="play" onClick={commands.restartAnimationPreview} tone="slate" width={62} />
       </RibbonGroup>
 
-      <RibbonGroup title="Giriş" width={210}>
+      <RibbonGroup title="Giriş" width={282}>
         <RibbonRow>
-          {['fade', 'slide', 'zoom-in'].map((effect) => (
+          {['fade', 'slide', 'scale'].map((effect) => (
             <RibbonButton
               key={effect}
               label={galleries.effectLabel(effect)}
@@ -33,6 +33,20 @@ export default function AnimasyonRibbon({ controller }) {
               width={56}
             />
           ))}
+          <RibbonPopoverButton label="Diğer" icon="more" width={62} variant="large" tone="green" disabled={!can.selection}>
+            <RibbonStack>
+              {['none', 'grow', 'shrink', 'fly'].map((effect) => (
+                <CompactRibbonButton
+                  key={effect}
+                  label={galleries.effectLabel(effect)}
+                  icon="star"
+                  onClick={() => commands.updateSelectedTimeline({ entryEffect: effect })}
+                  active={selectedTimelineItem?.entryEffect === effect}
+                  width={120}
+                />
+              ))}
+            </RibbonStack>
+          </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
 
@@ -66,7 +80,7 @@ export default function AnimasyonRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Çıkış" width={220}>
+      <RibbonGroup title="Çıkış" width={282}>
         <RibbonRow>
           {['none', 'fade', 'slide'].map((effect) => (
             <RibbonButton
@@ -80,6 +94,20 @@ export default function AnimasyonRibbon({ controller }) {
               width={54}
             />
           ))}
+          <RibbonPopoverButton label="Diğer" icon="more" width={62} variant="large" tone="red" disabled={!can.selection}>
+            <RibbonStack>
+              {['scale', 'grow', 'shrink', 'fly'].map((effect) => (
+                <CompactRibbonButton
+                  key={effect}
+                  label={galleries.effectLabel(effect)}
+                  icon="spark"
+                  onClick={() => commands.updateSelectedTimeline({ exitEffect: effect })}
+                  active={selectedTimelineItem?.exitEffect === effect}
+                  width={120}
+                />
+              ))}
+            </RibbonStack>
+          </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
 

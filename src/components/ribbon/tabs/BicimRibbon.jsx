@@ -23,6 +23,16 @@ import {
   RibbonStack,
 } from '../RibbonPrimitives';
 
+// Görsel (Picture Format) filtre ön ayarları — img'e CSS filter olarak uygulanır (editör+runtime parite).
+const IMAGE_FILTER_PRESETS = [
+  { label: 'Orijinal', value: '' },
+  { label: 'Parlak', value: 'brightness(1.2)' },
+  { label: 'Koyu', value: 'brightness(0.8)' },
+  { label: 'Kontrast', value: 'contrast(1.3)' },
+  { label: 'Gri Ton', value: 'grayscale(1)' },
+  { label: 'Sepya', value: 'sepia(0.7)' },
+];
+
 // Efekt ön ayarları — editör/runtime paritesi için boxShadow tabanlı (gölge, parlama, bevel).
 const EFFECT_PRESETS = [
   { label: 'Efekt Yok', patch: { boxShadow: 'none' } },
@@ -248,6 +258,25 @@ export default function BicimRibbon({ controller }) {
             <CompactRibbonButton label="Başlık" icon="text" onClick={() => commands.patchObject({ hotspotPopupTitle: object.hotspotPopupTitle || 'Bilgi' })} width={94} />
             <CompactRibbonButton label="Açıklama" icon="note" onClick={() => commands.patchObject({ hotspotPopupBody: object.hotspotPopupBody || 'Açıklama metni' })} width={94} />
           </RibbonStack>
+        </RibbonGroup>
+      )}
+
+      {object?.type === 'image' && (
+        <RibbonGroup title="Görsel" width={236}>
+          <RibbonPopoverButton label="Filtre" icon="image" width={96} disabled={disabled}>
+            <RibbonMenuGrid columns="repeat(2, 110px)">
+              {IMAGE_FILTER_PRESETS.map((filter) => (
+                <CompactRibbonButton
+                  key={filter.label}
+                  label={filter.label}
+                  icon="image"
+                  onClick={() => commands.patchObject({ imageFilter: filter.value })}
+                  active={(object.imageFilter || '') === filter.value}
+                  width={104}
+                />
+              ))}
+            </RibbonMenuGrid>
+          </RibbonPopoverButton>
         </RibbonGroup>
       )}
 
