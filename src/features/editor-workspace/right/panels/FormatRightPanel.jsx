@@ -526,6 +526,54 @@ export function FormatRightPanelContent({ controller }) {
         </PanelCard>
       )}
 
+      {object.type === 'button' && (
+        <PanelCard title="İkon" collapsible>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <ButtonGrid
+              actions={[
+                {
+                  label: object.icon?.svg ? 'İkonu Değiştir' : 'İkon Seç',
+                  onClick: () =>
+                    commands.openIconPicker?.((selection) =>
+                      patchObject({
+                        icon: { name: selection.iconName, svg: selection.iconSvg },
+                        iconPosition:
+                          object.iconPosition && object.iconPosition !== 'none'
+                            ? object.iconPosition
+                            : 'left',
+                      })
+                    ),
+                },
+                ...(object.icon?.svg
+                  ? [
+                      {
+                        label: 'İkonu Kaldır',
+                        onClick: () => patchObject({ icon: null, iconPosition: 'none' }),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            {object.icon?.svg && (
+              <FieldLabel>
+                Konum
+                <NativeSelect
+                  value={object.iconPosition || 'left'}
+                  options={[
+                    { value: 'left', label: 'Sol (metinden önce)' },
+                    { value: 'right', label: 'Sağ (metinden sonra)' },
+                    { value: 'only', label: 'Yalnız ikon' },
+                    { value: 'none', label: 'Gizli' },
+                  ]}
+                  onChange={(value) => patchObject({ iconPosition: value })}
+                />
+              </FieldLabel>
+            )}
+            {object.icon?.name && <InspectorRow label="Seçili ikon" value={object.icon.name} />}
+          </div>
+        </PanelCard>
+      )}
+
       <PanelCard title="0. Nesne kimlik" collapsible>
         <div style={{ display: 'grid', gap: 7 }}>
           <InspectorRow label="ID" value={object.id || '-'} />

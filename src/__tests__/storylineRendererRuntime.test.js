@@ -373,6 +373,51 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(html).toContain('Basla');
   });
 
+  test('renders icon objects and button icons as inline svg in export html', () => {
+    const renderer = loadRuntimeRenderer();
+    const iconSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke="currentColor"><path d="M5 12h14"/></svg>';
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      objects: [
+        { id: 'icon-1', type: 'text', label: 'İkon', iconSvg, x: 40, y: 40, width: 80, height: 80 },
+        {
+          id: 'btn-1',
+          type: 'button',
+          label: 'Devam',
+          icon: { name: 'arrow-right', svg: iconSvg },
+          iconPosition: 'left',
+          x: 200,
+          y: 40,
+          width: 160,
+          height: 48,
+        },
+      ],
+    };
+    const state = {
+      activeLayerId: 'base',
+      hidden: {},
+      objectStates: {},
+      dragPositions: {},
+      dropAssignments: {},
+      variables: {},
+    };
+
+    const objects = renderer.storylineRendererVisibleObjects({ slide, state });
+    const iconHtml = renderer.storylineRendererObjectHtml(objects[0], { slide, state });
+    const buttonHtml = renderer.storylineRendererObjectHtml(objects[1], { slide, state });
+
+    // İkon nesnesi: SVG render edilir, metin etiketi gösterilmez.
+    expect(iconHtml).toContain('<svg');
+    expect(iconHtml).toContain('d="M5 12h14"');
+    expect(iconHtml).not.toContain('İkon');
+
+    // Buton: hem ikon SVG'si hem metin yan yana.
+    expect(buttonHtml).toContain('d="M5 12h14"');
+    expect(buttonHtml).toContain('Devam');
+  });
+
   test('keeps overlay objects above base without adding runtime-only dim layers', () => {
     const runtimeApi = getSharedStorylineRendererRuntimeApi();
     const stage = document.createElement('div');

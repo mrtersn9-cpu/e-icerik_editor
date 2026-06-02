@@ -118,6 +118,7 @@ export default function useRibbonController({
   setShowBranchDiagram,
   setShowGlossaryEditor,
   setShowVariablesManager,
+  openIconPicker,
   showBaseLayer,
   onShowBaseLayerChange,
   setTimelineDockOpen,
@@ -934,7 +935,18 @@ export default function useRibbonController({
         };
         insertObject('text', componentMap[kind] || componentMap.card);
       },
-      insertIcon: () => insertObject('text', { label: 'İkon', text: '★', fontSize: 64, fontWeight: 900, color: '#2563eb' }),
+      insertIcon: () =>
+        openIconPicker?.((selection) =>
+          insertObject('text', {
+            label: selection?.iconName ? `${selection.iconName} ikonu` : 'İkon',
+            iconName: selection?.iconName || '',
+            iconSvg: selection?.iconSvg || '',
+            width: 120,
+            height: 120,
+            color: '#2563eb',
+          })
+        ),
+      openIconPicker: (onSelect) => openIconPicker?.(onSelect),
       insertImage,
       insertLabel: () => insertObject('text', { label: 'Etiket', text: 'Etiket', fontSize: 18, fontWeight: 800, background: '#eff6ff', borderColor: '#93c5fd', borderRadius: 999 }),
       insertObject,

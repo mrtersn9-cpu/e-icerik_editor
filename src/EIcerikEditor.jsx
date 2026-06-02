@@ -19,6 +19,7 @@ import AdminManagementModal from './components/AdminManagementModal';
 import BranchingDiagramModal from './components/BranchingDiagramModal';
 import RuntimeVideoElement from './components/editor/RuntimeVideoElement';
 import GlossaryEditorModal from './components/GlossaryEditorModal';
+import IconPickerModal from './components/IconPickerModal';
 import ProjectVersionManagerModal from './components/ProjectVersionManagerModal';
 import ReviewThreadsModal from './components/ReviewThreadsModal';
 import EditorTopBar from './components/ribbon/EditorTopBar';
@@ -1391,6 +1392,8 @@ export default function EIcerikEditor() {
   const [showVariablesManager, setShowVariablesManager] = useState(false);
   const [showBranchDiagram, setShowBranchDiagram] = useState(false);
   const [showGlossaryEditor, setShowGlossaryEditor] = useState(false);
+  // İkon Seçici: { onSelect } veya null. onSelect, seçilen { iconName, iconSvg } ile çağrılır.
+  const [iconPicker, setIconPicker] = useState(null);
   const [showDesignTools, setShowDesignTools] = useState(false);
   const [showAdminManagement, setShowAdminManagement] = useState(false);
   const [adminSessionToken, setAdminSessionTokenState] = useState('');
@@ -3706,6 +3709,7 @@ export default function EIcerikEditor() {
     setShowBranchDiagram,
     setShowGlossaryEditor,
     setShowVariablesManager,
+    openIconPicker: (onSelect) => setIconPicker({ onSelect }),
     setStoryRibbonTab,
     setZoom,
     setTimelineDockOpen,
@@ -4243,6 +4247,16 @@ export default function EIcerikEditor() {
         onClose={() => setShowGlossaryEditor(false)}
         glossaryTerms={present.glossaryTerms || []}
         onChange={(nextTerms) => commit((p) => ({ ...p, glossaryTerms: nextTerms }))}
+      />
+
+      <IconPickerModal
+        open={!!iconPicker}
+        onClose={() => setIconPicker(null)}
+        onSelect={(selection) => {
+          const callback = iconPicker?.onSelect;
+          setIconPicker(null);
+          callback?.(selection);
+        }}
       />
 
       {currentView !== 'editor' && (

@@ -1534,6 +1534,19 @@ const StageCanvas = forwardRef(function StageCanvas(
                     >
                       {' '}
                     </span>
+                  ) : o.iconSvg ? (
+                    <span
+                      style={{
+                        pointerEvents: 'none',
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: st.color || '#111',
+                      }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(o.iconSvg) }}
+                    />
                   ) : o.type === 'video' && o.mediaUrl ? (
                     <video
                       src={o.mediaUrl}
@@ -1654,6 +1667,32 @@ const StageCanvas = forwardRef(function StageCanvas(
                         pointerEvents: 'none',
                       }}
                     />
+                  ) : o.icon?.svg && o.iconPosition && o.iconPosition !== 'none' ? (
+                    <span
+                      style={{
+                        pointerEvents: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: o.iconPosition === 'only' ? 0 : '.4em',
+                        padding: '0 6px',
+                        width: '100%',
+                      }}
+                    >
+                      {(o.iconPosition === 'left' || o.iconPosition === 'only') && (
+                        <span
+                          style={{ width: '1.15em', height: '1.15em', flexShrink: 0, display: 'inline-flex' }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(o.icon.svg) }}
+                        />
+                      )}
+                      {o.iconPosition !== 'only' && <span>{o.label}</span>}
+                      {o.iconPosition === 'right' && (
+                        <span
+                          style={{ width: '1.15em', height: '1.15em', flexShrink: 0, display: 'inline-flex' }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(o.icon.svg) }}
+                        />
+                      )}
+                    </span>
                   ) : (
                     <span
                       style={{

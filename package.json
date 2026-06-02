@@ -26,7 +26,8 @@
     "format": "prettier --write \"src/**/*.{js,jsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx}\"",
     "pdf:storyboard": "node scripts/pdf-storyboard/parse-storyboard-pdf.mjs",
-    "pdf:storyboard:help": "node scripts/pdf-storyboard/parse-storyboard-pdf.mjs --help"
+    "pdf:storyboard:help": "node scripts/pdf-storyboard/parse-storyboard-pdf.mjs --help",
+    "icons:catalog": "node scripts/build-icon-catalog.mjs"
   },
   "browserslist": {
     "production": [
