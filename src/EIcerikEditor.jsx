@@ -3,6 +3,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   forwardRef,
@@ -23,14 +24,6 @@ import ReviewThreadsModal from './components/ReviewThreadsModal';
 import EditorTopBar from './components/ribbon/EditorTopBar';
 import TopRibbon from './components/ribbon/TopRibbon';
 import useRibbonController from './components/ribbon/useRibbonController';
-import { RightInspector, RightInspectorPhase2 } from './components/RightInspector';
-import {
-  EditorToolRail,
-  SelectionStepShell,
-  PublisherPanel,
-  BookPanel,
-  ActivityPanel,
-} from './components/SelectionPanels';
 import { LayerThumbnail, SlideStrip, SlideThumbnail } from './components/SlideStrip';
 import {
   StorylineSystemPreview,
@@ -44,10 +37,32 @@ import {
 } from './components/storyline-preview';
 import TimelineDock from './components/TimelineDock';
 import { Inp, SelectInp, Btn, ShapePreviewIcon } from './components/ui';
-import ActivityMapPanel from './features/editor-workspace/left/ActivityMapPanel';
+import LoginScreen from './features/auth/LoginScreen';
+import ActivityMapPanel, { LayerManager } from './features/editor-workspace/left/ActivityMapPanel';
 import ContextRightPanel from './features/editor-workspace/right/ContextRightPanel';
 import EditorWorkspaceShell from './features/editor-workspace/EditorWorkspaceShell';
 import useWorkspaceChromeController from './features/editor-workspace/useWorkspaceChromeController';
+import CanvasWorkspaceCenter from './features/editor-workspace/CanvasWorkspaceCenter';
+import DesignToolsDialog from './features/editor-workspace/DesignToolsDialog';
+import LibraryWorkspace from './features/library/LibraryWorkspace';
+import {
+  buildEditorHashRoute,
+  buildEditorUrl,
+  createEditorHistoryState,
+  deriveLibraryMobileColumn,
+  getEditorHistoryState,
+  getParentEditorRoute,
+  parseEditorHashRoute,
+  resolveEditorRoute,
+  routeFromSelection,
+  routesEqual,
+  shouldWarnBeforeLeavingEditor,
+} from './features/navigation/editorRoute';
+import { orderBackDismissEntries } from './features/navigation/backDismissStack';
+import useBackDismissible from './features/navigation/useBackDismissible';
+import WorkspaceStageCanvas from './logic/StageCanvas';
+import { getDeviceMode } from './mobile/useDeviceMode';
+import MobileEditorShell from './mobile/MobileEditorShell';
 import VariablesManagerModal from './components/VariablesManagerModal';
 import {
   FIXED_EDITOR_USERS,
@@ -98,6 +113,7 @@ import {
   ANSWER_LAYER_STYLE_PRESETS,
   GRADE_GROUPS,
   BUTTON_PACKAGE_MOTION_PRESETS,
+  PANEL_LIMITS,
 } from './constants';
 import {
   parseCssColorSamples,
@@ -247,6 +263,10 @@ import {
   normalizeSlide,
   pickSlideState,
 } from './logic/slideNormalization';
+import {
+  ensureAnswerSceneLayerSet,
+  ensureSceneTemplateSlide,
+} from './logic/activityTemplateGenerators';
 import useEditorStore from './store/useEditorStore';
 import {
   normalizePdfText,
@@ -310,6 +330,7 @@ import {
   distributeActivitySelection,
 } from './logic/objectLayout';
 import { createLearnerSafeStateForExport } from './utils/learnerSecurity';
+import { readWorkspaceCache, writeWorkspaceCache } from './utils/workspaceCache';
 import {
   buildStorylinePlayerHtml,
   downloadScorm12Zip,
@@ -344,6 +365,22 @@ import {
   enforceTtkbActivityCompliance,
   enforceTtkbEditorState,
 } from './utils/ttkbCompliance';
+import {
+  saveSessionResume,
+  getSessionResume,
+  clearSessionResume,
+  saveActiveSessionNavigation,
+  getActiveSessionNavigation,
+  clearActiveSessionNavigation,
+  resetNavigationForResumePrompt,
+  restoreActiveSessionNavigation,
+  validateSessionResumeTarget,
+} from './utils/sessionResume';
+import {
+  isRemoteWorkspaceMutationLocked,
+  requiresFreshEditorSession,
+  shouldKeepBootVisibleForWorkspace,
+} from './utils/bootReadiness';
 
 // Eagerly initialize AI worker (non-blocking)
 initAIWorker().catch(() => {});
@@ -351,6 +388,9 @@ initAIWorker().catch(() => {});
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 
 const EDUCATION_BUTTON_ICON_SIZE_LARGE = 30;
+const REMOTE_STATUS_REQUEST_TIMEOUT_MS = 15000;
+const REMOTE_SAVE_REQUEST_TIMEOUT_MS = 30000;
+const BOOK_LOCK_REQUEST_TIMEOUT_MS = 12000;
 
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
@@ -417,51 +457,54 @@ function readStoredEditorHistory(userId, fallbackState) {
   return { past: [], present: normalizeState(fallbackState), future: [] };
 }
 
+// --- Hash Route Parser ---
+// Supports:
+//   #/publisher/:pubId/book/:bookId/activity/:actId  -> editor
+//   #/publisher/:pubId/book/:bookId                  -> activities
+//   #/publisher/:pubId                               -> books
+//   (empty / other)                                  -> publishers
+function parseHashRoute(hash) {
+  const route = parseEditorHashRoute(hash);
+  return route.textStudio || route.pubId || route.bookId || route.actId ? route : null;
+}
 
+function buildHashRoute(pubId, bookId, actId) {
+  return buildEditorHashRoute({ pubId, bookId, actId });
+}
 
-
-
-
-
-
-
-
-
-
-
-function syncAnswerPlacementObjects(activity = {}) {
-  const objects = Array.isArray(activity.objects) ? activity.objects : [];
-  if (!objects.some((item) => item.generatedBy === 'answer-placement')) return activity;
-  const frames = getAnswerPlacementFrames(activity);
-  const frameEntries = Object.entries(frames);
-  const usedFrameKeys = new Set();
+function syncAnswerPlacementObjects(activity) {
+  if (activity === undefined) activity = {};
+  var objects = Array.isArray(activity.objects) ? activity.objects : [];
+  if (!objects.some(function(item) { return item.generatedBy === 'answer-placement'; })) return activity;
+  var frames = getAnswerPlacementFrames(activity);
+  var frameEntries = Object.entries(frames);
+  var usedFrameKeys = new Set();
 
   return {
     ...activity,
-    objects: objects.map((item) => {
+    objects: objects.map(function(item) {
       if (item.generatedBy !== 'answer-placement') return item;
-      const baseItem = {
+      var baseItem = {
         ...item,
         answerStatic: true,
         disableDrag: false,
         locked: false,
       };
       if (!frameEntries.length) return baseItem;
-      let pairKey =
+      var pairKey =
         item.answerPairKey ||
         getDragDropPairKey(
           item.sourceDragId || item.dragId || '',
           item.targetDropId || item.dropId || ''
         );
-      let frame = frames[pairKey];
+      var frame = frames[pairKey];
       if (!frame) {
-        const legacyMatch = frameEntries.find(
-          ([key, entry]) =>
-            !usedFrameKeys.has(key) &&
+        var legacyMatch = frameEntries.find(function([key, entry]) {
+          return !usedFrameKeys.has(key) &&
             (entry.drag.id === item.sourceDragId ||
               (String(entry.drag.label || '').trim() &&
-                String(entry.drag.label || '').trim() === String(item.label || '').trim()))
-        );
+                String(entry.drag.label || '').trim() === String(item.label || '').trim()));
+        });
         if (legacyMatch) {
           pairKey = legacyMatch[0];
           frame = legacyMatch[1];
@@ -469,7 +512,7 @@ function syncAnswerPlacementObjects(activity = {}) {
       }
       if (!frame) return baseItem;
       usedFrameKeys.add(pairKey);
-      const manualPlacement = item.answerPlacementManual === true;
+      var manualPlacement = item.answerPlacementManual === true;
       return {
         ...baseItem,
         x: manualPlacement ? item.x : frame.x,
@@ -483,8 +526,6 @@ function syncAnswerPlacementObjects(activity = {}) {
     }),
   };
 }
-
-
 
 
 
@@ -537,28 +578,28 @@ function buildBuiltInVariableRows({ activity = {}, projectName = '', bookName = 
       id: 'builtin.project',
       name: 'Project.Title',
       type: 'text',
-      value: projectName || 'Untitled Project',
+      value: projectName || 'İsimsiz Proje',
       useCount: 0,
     },
     {
       id: 'builtin.book',
       name: 'Book.Title',
       type: 'text',
-      value: bookName || 'Untitled Book',
+      value: bookName || 'İsimsiz Kitap',
       useCount: 0,
     },
     {
       id: 'builtin.activity',
       name: 'Activity.Name',
       type: 'text',
-      value: activity?.name || 'Untitled Activity',
+      value: activity?.name || 'İsimsiz Etkinlik',
       useCount: 0,
     },
     {
       id: 'builtin.scene',
       name: 'Scene.Name',
       type: 'text',
-      value: activity?.sceneName || 'Untitled Scene',
+      value: activity?.sceneName || 'İsimsiz Sahne',
       useCount: 0,
     },
     {
@@ -1718,7 +1759,7 @@ function EditorScenesPanel({
 
   const handleAddSlide = () => {
     if (!activity) return;
-    const newSlide = createSlide(`Slider ${slides.length + 1}`, slides.length);
+    const newSlide = createSlide(`Sahne ${slides.length + 1}`, slides.length);
     onUpdateActivity(
       selectActivitySlide(
         { ...activity, slides: [...slides, newSlide], currentSlideId: newSlide.id },
@@ -1735,7 +1776,7 @@ function EditorScenesPanel({
       {
         ...source,
         id: uid(),
-        name: `${source.name || 'Slider'} Kopya`,
+        name: `${source.name || 'Sahne'} Kopya`,
         sceneName: source.sceneName || source.name || 'Sahne',
       },
       slides.length
@@ -1833,7 +1874,7 @@ function EditorScenesPanel({
             marginBottom: 5,
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>Scenes</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>Sahneler</div>
           <div style={{ width: 16, height: 16, position: 'relative', opacity: 0.5 }}>
             <span
               style={{
@@ -1877,7 +1918,7 @@ function EditorScenesPanel({
             <option
               key={item.id}
               value={item.id}
-            >{`${index + 1} ${item.name || item.sceneName || 'Untitled Scene'}`}</option>
+            >{`${index + 1} ${item.name || item.sceneName || 'İsimsiz Sahne'}`}</option>
           ))}
         </select>
         <div style={{ display: 'flex', gap: 3, marginTop: 5, overflowX: 'auto', paddingBottom: 1 }}>
@@ -1901,7 +1942,7 @@ function EditorScenesPanel({
                 onDrop={(event) => handleSceneDrop(event, item.id)}
                 onDragEnd={clearSceneDrag}
                 onClick={() => handleSelectSlide(item.id)}
-                title={`${index + 1}. ${item.name || item.sceneName || 'Untitled Scene'} - sürükleyip sırala`}
+                title={`${index + 1}. ${item.name || item.sceneName || 'İsimsiz Sahne'} - sürükleyip sırala`}
                 style={{
                   flex: '0 0 auto',
                   minWidth: 24,
@@ -2135,7 +2176,7 @@ function EditorScenesPanel({
                     lineHeight: 1.15,
                   }}
                 >
-                  {`1.${index + 1} ${slide.name || slide.sceneName || 'Untitled'}`}
+                  {`1.${index + 1} ${slide.name || slide.sceneName || 'İsimsiz Sahne'}`}
                 </div>
                 <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                   <button
@@ -5087,1923 +5128,6 @@ function TextStudioWorkspace({
   );
 }
 
-// ─── Stage Canvas ─────────────────────────────────────────────────────────────
-
-const StageCanvas = forwardRef(function StageCanvas(
-  {
-    activity,
-    onUpdate,
-    zoom = 'fit',
-    onZoomChange,
-    selectedIds,
-    onSelectionChange,
-    timelineTime = 0,
-    showBaseLayer = true,
-  },
-  ref
-) {
-  const viewportRef = useRef(null);
-  const stageRef = useRef(null);
-  const latestRef = useRef(activity);
-  const interactRef = useRef(null);
-  const fileRef = useRef(null);
-  const imgRef = useRef(null);
-  const videoRef = useRef(null);
-  const audioRef = useRef(null);
-  const zoomRef = useRef(zoom);
-  const latestSelectedIdsRef = useRef(selectedIds);
-  const clipboardRef = useRef(null);
-  const rubberStartRef = useRef(null);
-  const rubberHandlersRef = useRef(null);
-  const dragSnapshotRef = useRef(null);
-  const vectorEditRef = useRef(null);
-  const [rubberBand, setRubberBand] = useState(null);
-  const [selectedVectorAnchor, setSelectedVectorAnchor] = useState({ objectId: null, indices: [] });
-  const [viewportSize, setViewportSize] = useState({ width: 1280, height: 760 });
-
-  useEffect(() => {
-    latestRef.current = activity;
-  }, [activity]);
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-  useEffect(() => {
-    latestSelectedIdsRef.current = selectedIds;
-  }, [selectedIds]);
-  useEffect(
-    () => () => {
-      if (interactRef.current) {
-        interactRef.current();
-        interactRef.current = null;
-      }
-    },
-    []
-  );
-  useEffect(() => {
-    return () => {
-      if (vectorEditRef.current) {
-        window.removeEventListener('pointermove', vectorEditRef.current.move);
-        window.removeEventListener('pointerup', vectorEditRef.current.up);
-        vectorEditRef.current = null;
-      }
-    };
-  }, []);
-  // Cleanup rubber-band listeners on unmount
-  useEffect(() => {
-    return () => {
-      if (rubberHandlersRef.current) {
-        window.removeEventListener('pointermove', rubberHandlersRef.current.move);
-        window.removeEventListener('pointerup', rubberHandlersRef.current.up);
-        rubberHandlersRef.current = null;
-      }
-    };
-  }, []);
-  useEffect(() => {
-    const node = viewportRef.current;
-    if (!node) return undefined;
-
-    const updateViewport = () => {
-      const rect = node.getBoundingClientRect();
-      setViewportSize({
-        width: Math.max(260, rect.width),
-        height: Math.max(240, rect.height),
-      });
-    };
-
-    updateViewport();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateViewport);
-      return () => window.removeEventListener('resize', updateViewport);
-    }
-
-    const observer = new ResizeObserver(updateViewport);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const objects = getCanvasObjects(activity);
-  const hasSvg = !!activity.svgMarkup;
-  const hasObjects = objects.length > 0;
-  const pdfBackgroundObject = useMemo(
-    () => objects.find((object) => object?.isPdfBackground && object?.imageData) || null,
-    [objects]
-  );
-  const renderObjects = useMemo(
-    () => objects.filter((object) => !pdfBackgroundObject || object.id !== pdfBackgroundObject.id),
-    [objects, pdfBackgroundObject]
-  );
-  const currentLayerId = activity.activeLayerId || 'base';
-  const overlayLayerActive = currentLayerId !== 'base';
-  const hasExplicitLayerBackdrop = useMemo(() => {
-    if (!overlayLayerActive) return false;
-    return renderObjects.some((object) => {
-      const layerId = object.layerId || 'base';
-      if (layerId !== currentLayerId || object.type !== 'shape' || object.visible === false)
-        return false;
-      const bg = String(object.style?.background || '').toLowerCase();
-      const coversStage =
-        (Number(object.x) || 0) <= 2 &&
-        (Number(object.y) || 0) <= 2 &&
-        (Number(object.width) || 0) >= (Number(activity.stageWidth) || 1920) - 2 &&
-        (Number(object.height) || 0) >= (Number(activity.stageHeight) || 1080) - 2;
-      const darkBackdrop =
-        bg.includes('rgba(0,0,0') ||
-        bg.includes('rgba(15,23,42') ||
-        bg === '#000' ||
-        bg === '#000000';
-      const alphaMatch = bg.match(/rgba\([^)]*,\s*([.\d]+)\s*\)/);
-      const alpha = alphaMatch ? Number(alphaMatch[1]) : 1;
-      return coversStage && darkBackdrop && alpha >= 0.05;
-    });
-  }, [
-    activity.stageHeight,
-    activity.stageWidth,
-    currentLayerId,
-    overlayLayerActive,
-    renderObjects,
-  ]);
-
-  const baseScale = useMemo(() => {
-    return getFitScale(
-      activity.stageWidth || 1920,
-      activity.stageHeight || 1080,
-      viewportSize.width - 20,
-      viewportSize.height - 52
-    );
-  }, [activity.stageWidth, activity.stageHeight, viewportSize.height, viewportSize.width]);
-
-  useEffect(() => {
-    const node = viewportRef.current;
-    if (!node || !onZoomChange) return undefined;
-
-    const onNativeWheel = (event) => {
-      if (!(event.ctrlKey || event.metaKey)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const delta = event.deltaY < 0 ? 0.1 : -0.1;
-      onZoomChange((current) => {
-        const currentScale = current === 'fit' ? baseScale : Number(current) || baseScale;
-        return clamp(Number((currentScale + delta).toFixed(2)), 0.1, 4);
-      });
-    };
-
-    node.addEventListener('wheel', onNativeWheel, { passive: false });
-    return () => node.removeEventListener('wheel', onNativeWheel, { passive: false });
-  }, [baseScale, onZoomChange]);
-
-  const resolvedZoom = zoom === 'fit' ? baseScale : Number(zoom) || baseScale;
-  const scale = resolvedZoom;
-  const vw = Math.round((activity.stageWidth || 1920) * scale);
-  const vh = Math.round((activity.stageHeight || 1080) * scale);
-  const zoomPercent = Math.round(scale * 100);
-
-  const toStage = useCallback(
-    (cx, cy) => {
-      const r = stageRef.current?.getBoundingClientRect();
-      if (!r) return { x: 0, y: 0 };
-      const sw = latestRef.current.stageWidth || 1920;
-      const sh = latestRef.current.stageHeight || 1080;
-      const sc = zoomRef.current === 'fit' ? baseScale : Number(zoomRef.current) || baseScale;
-      return {
-        x: Math.min(Math.max((cx - r.left) / sc, 0), sw),
-        y: Math.min(Math.max((cy - r.top) / sc, 0), sh),
-      };
-    },
-    [baseScale]
-  );
-
-  const patchAct = useCallback(
-    (p) => {
-      const a = latestRef.current;
-      onUpdate({ ...a, ...p });
-    },
-    [onUpdate]
-  );
-
-  const patchObj = useCallback(
-    (id, p, options = {}) => {
-      const a = latestRef.current;
-      onUpdate(updateActivityObject(a, id, p, options));
-    },
-    [onUpdate]
-  );
-
-  const applyVectorPoints = useCallback(
-    (objectId, points) => {
-      const normalized = points.map((point) => normalizeVectorPoint(point));
-      patchObj(objectId, {
-        vectorPoints: normalized,
-        vectorPath: buildVectorPathFromPoints(normalized, true),
-      });
-    },
-    [patchObj]
-  );
-
-  const addObject = useCallback(
-    (type, options = {}) => {
-      const a = latestRef.current;
-      const objs = a.objects || [];
-      const o =
-        type === 'shape'
-          ? createShapeObject(options.shapeKind || 'roundedRect')
-          : type === 'button'
-            ? createButtonPresetObject(options.buttonPresetId || 'btn-blue')
-            : createObjectFromActivity(a, type);
-      o.zIndex = objs.length + 1;
-      o.layerId = a.activeLayerId || 'base';
-      // draggable/dropzone presets already have correct default colors — no override needed
-      onUpdate({
-        ...a,
-        objects: [...objs, o],
-        selectedObjectId: o.id,
-        timeline: syncTimelineWithObjects({ ...a, objects: [...objs, o] }),
-      });
-      onSelectionChange(new Set([o.id]));
-    },
-    [onUpdate, onSelectionChange]
-  );
-
-  const addImageFile = useCallback(
-    (file) => {
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const a = latestRef.current;
-        const objs = a.objects || [];
-        const o = createObject('image');
-        o.imageData = ev.target.result;
-        o.label = file.name.replace(/\.[^.]+$/, '');
-        o.zIndex = objs.length + 1;
-        o.layerId = a.activeLayerId || 'base';
-        onUpdate({
-          ...a,
-          objects: [...objs, o],
-          selectedObjectId: o.id,
-          timeline: syncTimelineWithObjects({ ...a, objects: [...objs, o] }),
-        });
-        onSelectionChange(new Set([o.id]));
-      };
-      reader.readAsDataURL(file);
-    },
-    [onUpdate, onSelectionChange]
-  );
-
-  const addVideoFile = useCallback(
-    async (file) => {
-      if (!file) return;
-      const mediaUrl = await uploadMediaFile(file);
-      const a = latestRef.current;
-      const objs = a.objects || [];
-      const o = createObject('video');
-      o.mediaUrl = mediaUrl;
-      o.mediaName = file.name;
-      o.label = file.name.replace(/\.[^.]+$/, '') || 'Video';
-      o.zIndex = objs.length + 1;
-      o.layerId = a.activeLayerId || 'base';
-      onUpdate({
-        ...a,
-        objects: [...objs, o],
-        selectedObjectId: o.id,
-        timeline: syncTimelineWithObjects({ ...a, objects: [...objs, o] }),
-      });
-      onSelectionChange(new Set([o.id]));
-    },
-    [onUpdate, onSelectionChange]
-  );
-
-  const addAudioFile = useCallback(
-    async (file) => {
-      if (!file) return;
-      const mediaUrl = await uploadMediaFile(file);
-      const a = latestRef.current;
-      const objs = a.objects || [];
-      const o = createObject('audio');
-      o.mediaUrl = mediaUrl;
-      o.mediaName = file.name;
-      o.label = file.name.replace(/\.[^.]+$/, '') || 'Ses';
-      o.showPlayerControls = false;
-      o.autoPlay = true;
-      o.mediaEndAction = 'none';
-      o.zIndex = objs.length + 1;
-      o.layerId = a.activeLayerId || 'base';
-      onUpdate({
-        ...a,
-        objects: [...objs, o],
-        selectedObjectId: o.id,
-        timeline: syncTimelineWithObjects({ ...a, objects: [...objs, o] }),
-      });
-      onSelectionChange(new Set([o.id]));
-    },
-    [onUpdate, onSelectionChange]
-  );
-
-  const loadSvgFile = useCallback(
-    (file) => {
-      if (!file) return;
-      file
-        .text()
-        .then((markup) => patchAct({ svgMarkup: sanitizeSvgMarkup(markup), svgName: file.name }));
-    },
-    [patchAct]
-  );
-
-  const deleteSelected = useCallback(() => {
-    const a = latestRef.current;
-    const ids = latestSelectedIdsRef.current;
-    const toDelete =
-      ids.size > 0 ? ids : a.selectedObjectId ? new Set([a.selectedObjectId]) : new Set();
-    if (toDelete.size === 0) return;
-    const rest = (a.objects || []).filter(
-      (o) => !toDelete.has(o.id) || (o.locked && o.generatedBy !== 'answer-placement')
-    );
-    onUpdate({
-      ...a,
-      objects: rest,
-      selectedObjectId: rest[rest.length - 1]?.id || null,
-      timeline: syncTimelineWithObjects({ ...a, objects: rest }),
-    });
-    onSelectionChange(new Set());
-  }, [onUpdate, onSelectionChange]);
-
-  const copySelected = useCallback(() => {
-    const a = latestRef.current;
-    const ids =
-      latestSelectedIdsRef.current.size > 0
-        ? latestSelectedIdsRef.current
-        : a.selectedObjectId
-          ? new Set([a.selectedObjectId])
-          : new Set();
-    if (ids.size === 0) return false;
-
-    const selectedObjects = (a.objects || [])
-      .filter((item) => ids.has(item.id))
-      .sort((left, right) => (left.zIndex || 0) - (right.zIndex || 0));
-    if (!selectedObjects.length) return false;
-
-    const timelineByObject = new Map(getActivityTimeline(a).map((item) => [item.objectId, item]));
-    clipboardRef.current = {
-      objects: selectedObjects.map((item) => ({
-        ...item,
-        style: item.style ? { ...item.style } : item.style,
-      })),
-      timeline: selectedObjects
-        .map((item) => timelineByObject.get(item.id))
-        .filter(Boolean)
-        .map((item) => ({
-          ...item,
-          keyframes: Array.isArray(item.keyframes)
-            ? item.keyframes.map((frame) => ({ ...frame }))
-            : [],
-        })),
-      copiedAt: Date.now(),
-    };
-    return true;
-  }, []);
-
-  const pasteClipboard = useCallback(() => {
-    const clipboard = clipboardRef.current;
-    if (!clipboard?.objects?.length) return false;
-
-    const a = latestRef.current;
-    const existingObjects = a.objects || [];
-    const existingTimeline = getActivityTimeline(a);
-    const idMap = new Map();
-    const groupIdMap = new Map();
-    const newSelection = new Set();
-    const duplicatedObjects = clipboard.objects.map((item, index) => {
-      const newId = uid();
-      idMap.set(item.id, newId);
-      newSelection.add(newId);
-      const sourceGroupId = String(item.groupId || '').trim();
-      if (sourceGroupId && !groupIdMap.has(sourceGroupId)) groupIdMap.set(sourceGroupId, uid());
-      return {
-        ...item,
-        id: newId,
-        groupId: sourceGroupId ? groupIdMap.get(sourceGroupId) : item.groupId || '',
-        x: Math.max(0, (Number(item.x) || 0) + 24),
-        y: Math.max(0, (Number(item.y) || 0) + 24),
-        zIndex: existingObjects.length + index + 1,
-        style: item.style ? { ...item.style } : item.style,
-      };
-    });
-    const duplicatedTimeline = (clipboard.timeline || []).map((item, index) => ({
-      ...item,
-      id: uid(),
-      objectId: idMap.get(item.objectId) || '',
-      track: existingTimeline.length + index,
-      keyframes: Array.isArray(item.keyframes)
-        ? item.keyframes.map((frame) => ({ ...frame, id: uid() }))
-        : [],
-    }));
-    const nextObjects = [...existingObjects, ...duplicatedObjects];
-    const nextTimeline = syncTimelineWithObjects({
-      ...a,
-      objects: nextObjects,
-      timeline: [...existingTimeline, ...duplicatedTimeline],
-    });
-    const lastId = duplicatedObjects[duplicatedObjects.length - 1]?.id || null;
-    onUpdate({ ...a, objects: nextObjects, selectedObjectId: lastId, timeline: nextTimeline });
-    onSelectionChange(newSelection);
-    return true;
-  }, [onSelectionChange, onUpdate]);
-
-  const duplicateSelected = useCallback(() => {
-    if (!copySelected()) return;
-    pasteClipboard();
-  }, [copySelected, pasteClipboard]);
-
-  const bringFront = useCallback(() => {
-    const a = latestRef.current;
-    const id = a.selectedObjectId;
-    if (!id) return;
-    onUpdate({
-      ...a,
-      objects: (a.objects || []).map((o) =>
-        o.id === id ? { ...o, zIndex: (a.objects || []).length + 1 } : o
-      ),
-    });
-  }, [onUpdate]);
-
-  const sendBack = useCallback(() => {
-    const a = latestRef.current;
-    const id = a.selectedObjectId;
-    if (!id) return;
-    onUpdate({
-      ...a,
-      objects: (a.objects || []).map((o) =>
-        o.id === id ? { ...o, zIndex: 1 } : { ...o, zIndex: o.zIndex + 1 }
-      ),
-    });
-  }, [onUpdate]);
-
-  const nudge = useCallback(
-    (dx, dy) => {
-      const a = latestRef.current;
-      const ids = latestSelectedIdsRef.current;
-      const targetIds =
-        ids.size > 0 ? ids : a.selectedObjectId ? new Set([a.selectedObjectId]) : new Set();
-      if (targetIds.size === 0) return;
-      onUpdate({
-        ...a,
-        objects: (a.objects || []).map((o) =>
-          targetIds.has(o.id) && !o.locked ? { ...o, x: o.x + dx, y: o.y + dy } : o
-        ),
-      });
-    },
-    [onUpdate]
-  );
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      getActivitySnapshot: () => normalizeActivityForRuntimeSnapshot(latestRef.current || {}),
-      addObject,
-      addImage: () => imgRef.current?.click(),
-      addVideo: () => videoRef.current?.click(),
-      addAudio: () => audioRef.current?.click(),
-      loadSVG: () => fileRef.current?.click(),
-      deleteSelected,
-      copySelected,
-      pasteClipboard,
-      duplicateSelected,
-      bringFront,
-      sendBack,
-      nudge,
-    }),
-    [
-      addObject,
-      deleteSelected,
-      copySelected,
-      pasteClipboard,
-      duplicateSelected,
-      bringFront,
-      sendBack,
-      nudge,
-    ]
-  );
-
-  const startInteract = (e, objId, mode, handle = '') => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.currentTarget?.setPointerCapture?.(e.pointerId);
-    const a = latestRef.current;
-    const obj = (a.objects || []).find((o) => o.id === objId);
-    if (!obj || obj.visible === false) return;
-    // Layer isolation: block interaction with objects not on the active layer
-    const objLayer = obj.layerId || 'base';
-    const curLayer = a.activeLayerId || 'base';
-    if (objLayer !== curLayer) return;
-
-    // Update selection
-    const currentIds = latestSelectedIdsRef.current;
-    const forceSingleObjectEdit = e.altKey || e.ctrlKey || e.metaKey;
-    const linkedSelectionIds = (
-      forceSingleObjectEdit ? [objId] : [...getEditorLinkedSelectionIds(a, objId)]
-    ).filter((id) => {
-      const item = (a.objects || []).find((candidate) => candidate.id === id);
-      return item?.visible !== false && (item?.layerId || 'base') === curLayer;
-    });
-    const primaryObjectId = forceSingleObjectEdit
-      ? objId
-      : getEditorPrimaryObjectId(a, objId) || objId;
-    const wasAlreadySelected = linkedSelectionIds.every((id) => currentIds.has(id));
-    let newIds;
-    if (e.shiftKey) {
-      newIds = new Set(currentIds);
-      if (wasAlreadySelected) linkedSelectionIds.forEach((id) => newIds.delete(id));
-      else linkedSelectionIds.forEach((id) => newIds.add(id));
-    } else {
-      // Keep existing multi-selection if clicking an already-selected object (supports group drag)
-      // Will be reduced to single on pointerup if no drag movement occurred
-      newIds =
-        wasAlreadySelected && currentIds.size > 1
-          ? currentIds
-          : new Set(linkedSelectionIds.length > 1 ? linkedSelectionIds : [objId]);
-    }
-    onSelectionChange(newIds);
-    // selectedObjectId: the primary object for inspector (must be in selection)
-    onUpdate({
-      ...a,
-      selectedObjectId: newIds.has(primaryObjectId) ? primaryObjectId : [...newIds][0] || null,
-    });
-    const isEditableAnswerPlacement = obj.generatedBy === 'answer-placement';
-    if (obj.locked && !isEditableAnswerPlacement) return;
-
-    const origin = toStage(e.clientX, e.clientY);
-    let hasMoved = false;
-    const isShift = e.shiftKey;
-    // Flag: we deferred single-selection reduce until pointerup (no drag)
-    const deferredSingleSelect =
-      !forceSingleObjectEdit && !isShift && wasAlreadySelected && currentIds.size > 1;
-
-    // Snapshot selected objects' initial positions for drag
-    const snapIds = newIds.has(objId) ? newIds : new Set([objId]);
-    dragSnapshotRef.current = Object.fromEntries(
-      (a.objects || [])
-        .filter((o) => snapIds.has(o.id) && (!o.locked || o.generatedBy === 'answer-placement'))
-        .map((o) => [o.id, { x: o.x, y: o.y, width: o.width, height: o.height }])
-    );
-
-    const onMove = (me) => {
-      const pt = toStage(me.clientX, me.clientY);
-      const dx = pt.x - origin.x,
-        dy = pt.y - origin.y;
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
-      const curr = latestRef.current;
-      const sw = curr.stageWidth || 1920,
-        sh = curr.stageHeight || 1080;
-      const MIN = 30;
-
-      if (mode === 'move') {
-        const snap = dragSnapshotRef.current || {};
-        const updatedObjects = (curr.objects || []).map((o) => {
-          if (!snap[o.id]) return o;
-          const s = snap[o.id];
-          const moved = {
-            ...o,
-            x: Math.min(Math.max(s.x + dx, 0), Math.max(0, sw - o.width)),
-            y: Math.min(Math.max(s.y + dy, 0), Math.max(0, sh - o.height)),
-          };
-          return o.generatedBy === 'answer-placement'
-            ? { ...moved, answerPlacementManual: true, disableDrag: false, locked: false }
-            : moved;
-        });
-        onUpdate({ ...curr, objects: updatedObjects });
-      } else {
-        const s = dragSnapshotRef.current?.[objId] || obj;
-        const r = s.x + s.width,
-          b = s.y + s.height;
-        let next = { x: s.x, y: s.y, width: s.width, height: s.height };
-        if (handle.includes('e')) next.width = Math.max(MIN, s.width + dx);
-        if (handle.includes('s')) next.height = Math.max(MIN, s.height + dy);
-        if (handle.includes('w')) {
-          next.x = Math.max(0, Math.min(s.x + dx, r - MIN));
-          next.width = Math.max(MIN, r - next.x);
-        }
-        if (handle.includes('n')) {
-          next.y = Math.max(0, Math.min(s.y + dy, b - MIN));
-          next.height = Math.max(MIN, b - next.y);
-        }
-        patchObj(
-          objId,
-          obj.generatedBy === 'answer-placement'
-            ? { ...next, answerPlacementManual: true, disableDrag: false, locked: false }
-            : next
-        );
-      }
-    };
-
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      interactRef.current = null;
-      dragSnapshotRef.current = null;
-      // Plain click (no drag) on a multi-selected object → reduce to single selection
-      if (!hasMoved && deferredSingleSelect) {
-        const singleSet = getEditorLinkedSelectionIds(latestRef.current, objId);
-        const singlePrimaryId = getEditorPrimaryObjectId(latestRef.current, objId) || objId;
-        onSelectionChange(singleSet);
-        onUpdate({ ...latestRef.current, selectedObjectId: singlePrimaryId });
-      }
-    };
-    interactRef.current = onUp;
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  // Rubber-band selection
-  const startRubber = (e) => {
-    if (e.target !== stageRef.current) return;
-    e.preventDefault();
-    e.currentTarget?.setPointerCapture?.(e.pointerId);
-    const r = stageRef.current.getBoundingClientRect();
-    const x0 = e.clientX - r.left,
-      y0 = e.clientY - r.top;
-    const isShift = e.shiftKey;
-    // Snapshot pre-existing selection for shift+rubber-band additive mode
-    const prevIds = new Set(latestSelectedIdsRef.current);
-    rubberStartRef.current = { x0, y0, r };
-
-    if (!isShift) {
-      onSelectionChange(new Set());
-      patchAct({ selectedObjectId: null });
-    }
-
-    const onMove = (me) => {
-      if (!rubberStartRef.current) return;
-      const x1 = me.clientX - rubberStartRef.current.r.left;
-      const y1 = me.clientY - rubberStartRef.current.r.top;
-      setRubberBand({ x0: rubberStartRef.current.x0, y0: rubberStartRef.current.y0, x1, y1 });
-    };
-    const onUp = (me) => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      rubberHandlersRef.current = null;
-      if (!rubberStartRef.current) return;
-      const rc = rubberStartRef.current.r;
-      const sc = zoomRef.current === 'fit' ? baseScale : Number(zoomRef.current) || baseScale;
-      const rx0 = rubberStartRef.current.x0 / sc,
-        ry0 = rubberStartRef.current.y0 / sc;
-      const rx1 = (me.clientX - rc.left) / sc,
-        ry1 = (me.clientY - rc.top) / sc;
-      const minX = Math.min(rx0, rx1),
-        maxX = Math.max(rx0, rx1);
-      const minY = Math.min(ry0, ry1),
-        maxY = Math.max(ry0, ry1);
-      const dist = Math.sqrt(
-        Math.pow(me.clientX - rc.left - rubberStartRef.current.x0, 2) +
-          Math.pow(me.clientY - rc.top - rubberStartRef.current.y0, 2)
-      );
-      if (dist > 5) {
-        const bandHits = new Set(
-          getCanvasObjects(latestRef.current)
-            .filter(
-              (o) =>
-                o.visible !== false &&
-                o.x < maxX &&
-                o.x + o.width > minX &&
-                o.y < maxY &&
-                o.y + o.height > minY
-            )
-            .map((o) => o.id)
-        );
-        // Shift: merge with previous; normal: replace
-        const selected = isShift ? new Set([...prevIds, ...bandHits]) : bandHits;
-        const expandedSelection = new Set();
-        selected.forEach((id) => {
-          getEditorLinkedSelectionIds(latestRef.current, id).forEach((linkedId) =>
-            expandedSelection.add(linkedId)
-          );
-        });
-        const canonicalSelectedIds = new Set(
-          [...expandedSelection]
-            .map((id) => getEditorPrimaryObjectId(latestRef.current, id))
-            .filter(Boolean)
-        );
-        onSelectionChange(expandedSelection);
-        if (canonicalSelectedIds.size === 1)
-          onUpdate({ ...latestRef.current, selectedObjectId: [...canonicalSelectedIds][0] });
-        else if (canonicalSelectedIds.size > 1)
-          onUpdate({ ...latestRef.current, selectedObjectId: null });
-      }
-      rubberStartRef.current = null;
-      setRubberBand(null);
-    };
-    rubberHandlersRef.current = { move: onMove, up: onUp };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  const addImage = (e) => {
-    addImageFile(e.target.files[0]);
-    e.target.value = '';
-  };
-  const addVideo = (e) => {
-    addVideoFile(e.target.files[0]);
-    e.target.value = '';
-  };
-  const addAudio = (e) => {
-    addAudioFile(e.target.files[0]);
-    e.target.value = '';
-  };
-  const loadSVG = (e) => {
-    loadSvgFile(e.target.files[0]);
-    e.target.value = '';
-  };
-  const zoomStep = useCallback(
-    (delta) => {
-      if (!onZoomChange) return;
-      onZoomChange((current) => {
-        const currentScale = current === 'fit' ? baseScale : Number(current) || baseScale;
-        return clamp(Number((currentScale + delta).toFixed(2)), 0.1, 4);
-      });
-    },
-    [baseScale, onZoomChange]
-  );
-  const fitZoom = useCallback(() => {
-    if (!onZoomChange) return;
-    onZoomChange('fit');
-  }, [onZoomChange]);
-  const actualZoom = useCallback(() => {
-    if (!onZoomChange) return;
-    onZoomChange(1);
-  }, [onZoomChange]);
-  const renderShapeContent = (o, st, scaleValue) => {
-    const kind = o.shapeKind || 'roundedRect';
-    const fill = st.background || '#0ea5e9';
-    const stroke = st.borderColor || '#0284c7';
-    const strokeWidth = Math.max(
-      1,
-      Number(
-        st.borderWidth ??
-          (kind.startsWith('line') || kind.includes('arrow') || kind === 'curve' ? 7 : 4)
-      ) || 1
-    );
-    const strokeLinejoin = st.strokeLinejoin || 'round';
-    const strokeLinecap = st.strokeLinecap || 'round';
-    const minShapeSide = Math.max(1, Math.min(Number(o.width) || 1, Number(o.height) || 1));
-    const cornerRadius = Math.max(
-      0,
-      Math.min(34, ((Number(st.borderRadius || 0) || 0) / minShapeSide) * 100)
-    );
-    const vectorPath =
-      kind === 'customPath'
-        ? buildVectorPathFromPoints(getObjectVectorPoints(o), true)
-        : o.vectorPath || '';
-    const showLabel =
-      o.showShapeLabel !== false &&
-      !kind.startsWith('line') &&
-      !kind.includes('arrow') &&
-      kind !== 'curve';
-    return (
-      <>
-        <ShapePreviewIcon
-          kind={kind}
-          fill={fill}
-          stroke={stroke}
-          strokeWidth={strokeWidth}
-          strokeLinejoin={strokeLinejoin}
-          strokeLinecap={strokeLinecap}
-          cornerRadius={cornerRadius}
-          nonScalingStroke
-          fullBleed
-          vectorPath={vectorPath}
-        />
-        {showLabel && (
-          <span
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              padding: '0 8px',
-              textAlign: 'center',
-              color: st.color || '#ffffff',
-              fontSize: (st.fontSize || 13) * scaleValue,
-              fontWeight: 700,
-            }}
-          >
-            {o.label}
-          </span>
-        )}
-      </>
-    );
-  };
-  return (
-    <div
-      ref={viewportRef}
-      data-stage-zoom-scope="true"
-      style={{
-        flex: 1,
-        overflow: 'auto',
-        background: 'linear-gradient(180deg,#dbe5f0,#cfd9e6)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: 14,
-      }}
-    >
-      <div style={{ position: 'relative' }}>
-        <div
-          style={{
-            position: 'sticky',
-            top: 12,
-            zIndex: 20,
-            display: 'flex',
-            justifyContent: 'flex-end',
-            pointerEvents: 'none',
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              pointerEvents: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 10px',
-              borderRadius: 14,
-              border: '1px solid rgba(148,163,184,.45)',
-              background: 'rgba(255,255,255,.92)',
-              boxShadow: '0 14px 30px rgba(15,23,42,.12)',
-              backdropFilter: 'blur(10px)',
-            }}
-          >
-            <button
-              onClick={() => zoomStep(-0.1)}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 999,
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#0f172a',
-                color: '#e2e8f0',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-            >
-              -
-            </button>
-            <button
-              onClick={fitZoom}
-              style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#0f172a',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 800,
-                minWidth: 64,
-              }}
-            >
-              {zoomPercent}%
-            </button>
-            <button
-              onClick={() => zoomStep(0.1)}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#0f172a',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-            <button
-              onClick={fitZoom}
-              style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#334155',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              Sığdır
-            </button>
-            <button
-              onClick={actualZoom}
-              style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#334155',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              1:1
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: '#52667a',
-            marginBottom: 6,
-            textAlign: 'right',
-            fontWeight: 700,
-          }}
-        >
-          {activity.stageWidth} x {activity.stageHeight} | x{scale.toFixed(2)}
-        </div>
-        <div
-          ref={stageRef}
-          onPointerDown={startRubber}
-          style={{
-            width: vw,
-            height: vh,
-            position: 'relative',
-            background: activity.backgroundColor || '#fff',
-            border: '1px solid rgba(148,163,184,.45)',
-            borderRadius: 18,
-            overflow: 'hidden',
-            cursor: 'crosshair',
-            boxShadow: '0 24px 50px rgba(15,23,42,.16)',
-            touchAction: 'none',
-          }}
-        >
-          {pdfBackgroundObject && (
-            <img
-              src={pdfBackgroundObject.imageData}
-              alt={pdfBackgroundObject.label || 'PDF Zemin'}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                pointerEvents: 'none',
-                userSelect: 'none',
-                zIndex: 0,
-              }}
-            />
-          )}
-          {/* Izgara */}
-          {activity.viewOptions?.showGrid !== false && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                backgroundImage:
-                  'linear-gradient(rgba(15,23,42,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.035) 1px,transparent 1px)',
-                backgroundSize: `${40 * scale}px ${40 * scale}px`,
-                pointerEvents: 'none',
-                opacity: 0.65,
-              }}
-            />
-          )}
-          {activity.viewOptions?.showGuides && (
-            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3 }}>
-              <div
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: 0,
-                  bottom: 0,
-                  borderLeft: '1px dashed rgba(37,99,235,.55)',
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: 0,
-                  right: 0,
-                  borderTop: '1px dashed rgba(37,99,235,.55)',
-                }}
-              />
-            </div>
-          )}
-          {/* SVG zemin */}
-          {activity.svgMarkup && (
-            <div
-              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-              dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
-            />
-          )}
-          {overlayLayerActive && showBaseLayer && !hasExplicitLayerBackdrop && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: Math.max(
-                  99999000,
-                  renderObjects.reduce(
-                    (max, item) =>
-                      (item?.layerId || 'base') === 'base'
-                        ? Math.max(max, Number(item.zIndex) || 0)
-                        : max,
-                    0
-                  ) + 99999
-                ),
-                pointerEvents: 'none',
-                background: 'rgba(15,23,42,.07)',
-                backdropFilter: 'none',
-              }}
-            />
-          )}
-          {!hasSvg && !hasObjects && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 24,
-                zIndex: 2,
-                background: 'rgba(255,255,255,.92)',
-              }}
-            >
-              <div
-                style={{
-                  width: Math.min(vw - 40, 520),
-                  maxWidth: '100%',
-                  borderRadius: 18,
-                  border: '1px solid rgba(148,163,184,.35)',
-                  background: 'rgba(255,255,255,.98)',
-                  boxShadow: '0 24px 50px rgba(15,23,42,.16)',
-                  padding: 24,
-                  textAlign: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: '#2563eb',
-                    letterSpacing: 0.4,
-                    textTransform: 'uppercase',
-                    marginBottom: 10,
-                  }}
-                >
-                  SVG-first başlangıç
-                </div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 800,
-                    color: '#0f172a',
-                    lineHeight: 1.2,
-                    marginBottom: 10,
-                  }}
-                >
-                  Önce SVG zemin yükle
-                </div>
-                <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, marginBottom: 18 }}>
-                  Bu editörde en rahat akış, önce zemini yükleyip sonra buton, hotspot, video ve
-                  metinleri onun üstüne yerleştirmektir.
-                </div>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3,minmax(0,1fr))',
-                    gap: 8,
-                    marginBottom: 18,
-                    textAlign: 'left',
-                  }}
-                >
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>1.</strong> SVG zemin yükle
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>2.</strong> Nesneleri yerleştir
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>3.</strong> Timeline ve trigger ver
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    style={{
-                      border: 'none',
-                      background: 'linear-gradient(135deg,#0f172a,#1e293b)',
-                      color: '#ffffff',
-                      borderRadius: 12,
-                      padding: '10px 18px',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      boxShadow: '0 12px 24px rgba(15,23,42,.16)',
-                    }}
-                  >
-                    SVG Zemin Yükle
-                  </button>
-                  <button
-                    onClick={() => imgRef.current?.click()}
-                    style={{
-                      border: '1px solid rgba(148,163,184,.45)',
-                      background: '#ffffff',
-                      color: '#0f172a',
-                      borderRadius: 12,
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Resim ile Başla
-                  </button>
-                </div>
-                {!hasObjects && (
-                  <div style={{ marginTop: 12, fontSize: 11, color: '#64748b' }}>
-                    SVG olmadan da devam edebilirsin ama sistemin ana akışı zemin üstünden ilerler.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {/* Rubber-band seçim dikdörtgeni */}
-          {rubberBand &&
-            (() => {
-              const { x0, y0, x1, y1 } = rubberBand;
-              return (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: Math.min(x0, x1),
-                    top: Math.min(y0, y1),
-                    width: Math.abs(x1 - x0),
-                    height: Math.abs(y1 - y0),
-                    border: '1px dashed #111111',
-                    background: 'rgba(17,17,17,.08)',
-                    pointerEvents: 'none',
-                    zIndex: 9999,
-                  }}
-                />
-              );
-            })()}
-          {/* Nesneler */}
-          {[...renderObjects]
-            .filter((o) => o.visible !== false)
-            .filter((o) => {
-              const oL = o.layerId || 'base';
-              const cL = activity.activeLayerId || 'base';
-              if (oL === 'base' && cL !== 'base' && !showBaseLayer) return false;
-              return true;
-            })
-            .sort((a, b) => a.zIndex - b.zIndex)
-            .map((o) => {
-              const objLayer = o.layerId || 'base';
-              const curLayer = activity.activeLayerId || 'base';
-              const isOtherLayerObj = objLayer !== curLayer;
-              const isSel =
-                !isOtherLayerObj && (selectedIds.has(o.id) || activity.selectedObjectId === o.id);
-              const isEditorLocked = o.locked && o.generatedBy !== 'answer-placement';
-              const st =
-                o.type === 'draggable' || o.type === 'dropzone'
-                  ? upgradeDragDropStyle(o.type, o.style || {})
-                  : o.style || {};
-              const shapeKind = o.type === 'shape' ? o.shapeKind || 'roundedRect' : '';
-              const shapeBackground = String(st.background || '');
-              const canRenderShapeAsCssBox =
-                o.type === 'shape' &&
-                ['rect', 'roundedRect', 'ellipse'].includes(shapeKind) &&
-                /gradient|url\(/i.test(shapeBackground);
-              const usesShapeSvg = o.type === 'shape' && !!shapeKind && !canRenderShapeAsCssBox;
-              const selectionColor = '#0ea5e9';
-              const vectorPoints =
-                o.type === 'shape' && shapeKind === 'customPath' ? getObjectVectorPoints(o) : [];
-              const isTimelineActive = isObjectTimelineActive(activity, o.id, timelineTime);
-              const isSceneTemplateObject = isGeneratedSceneTemplateObject(o);
-              const motionStyle = getTimelineMotionStyle(activity, o.id, timelineTime, {
-                suppressBoundaryEffects: timelineTime <= 0.01,
-              });
-              const inactiveOpacity = isSceneTemplateObject
-                ? 1
-                : o.type === 'draggable' || o.type === 'dropzone'
-                  ? 0.72
-                  : 0.18;
-              const maxBaseLayerZ = overlayLayerActive
-                ? renderObjects.reduce(
-                    (max, item) =>
-                      (item?.layerId || 'base') === 'base'
-                        ? Math.max(max, Number(item.zIndex) || 0)
-                        : max,
-                    0
-                  )
-                : 0;
-              const layerBoost =
-                overlayLayerActive && objLayer === curLayer
-                  ? Math.max(100000000, maxBaseLayerZ + 100000)
-                  : 0;
-              return (
-                <div
-                  key={o.id}
-                  onPointerDown={
-                    isOtherLayerObj ? undefined : (e) => startInteract(e, o.id, 'move')
-                  }
-                  style={{
-                    position: 'absolute',
-                    left: o.x * scale,
-                    top: o.y * scale,
-                    width: o.width * scale,
-                    height: o.height * scale,
-                    transform: `translate(${motionStyle.translateX * scale}px, ${motionStyle.translateY * scale}px) rotate(${o.rotation || 0}deg) scale(${motionStyle.scale})`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: isOtherLayerObj ? 'default' : isEditorLocked ? 'pointer' : 'move',
-                    userSelect: 'none',
-                    zIndex: layerBoost + Math.max(1, Number(o.zIndex) || 1),
-                    pointerEvents: isOtherLayerObj ? 'none' : 'auto',
-                    background:
-                      o.imageData || usesShapeSvg ? 'transparent' : st.background || 'transparent',
-                    border: usesShapeSvg
-                      ? 'none'
-                      : `${isSel ? Math.max(2, Number(st.borderWidth || 1)) : Math.max(1, Number(st.borderWidth || 1))}px ${st.borderStyle || 'solid'} ${isSel ? selectionColor : st.borderColor || 'transparent'}`,
-                    borderRadius: usesShapeSvg
-                      ? 0
-                      : shapeKind === 'ellipse'
-                        ? 999
-                        : (st.borderRadius || 0) * scale,
-                    outline: isSel ? `2px solid ${selectionColor}` : 'none',
-                    outlineOffset: usesShapeSvg ? 2 : 0,
-                    boxSizing: 'border-box',
-                    fontSize: (st.fontSize || 13) * scale,
-                    color: st.color || '#111',
-                    fontWeight: 600,
-                    overflow: usesShapeSvg ? 'visible' : 'hidden',
-                    textShadow: st.textShadow || 'none',
-                    textDecoration: st.textDecoration || 'none',
-                    opacity: isOtherLayerObj
-                      ? 1
-                      : isTimelineActive
-                        ? motionStyle.opacity
-                        : inactiveOpacity,
-                    filter:
-                      isOtherLayerObj || isSceneTemplateObject
-                        ? 'none'
-                        : isTimelineActive
-                          ? 'none'
-                          : o.type === 'draggable' || o.type === 'dropzone'
-                            ? 'none'
-                            : 'grayscale(.5)',
-                    touchAction: 'none',
-                    boxShadow: st.boxShadow || 'none',
-                  }}
-                >
-                  {o.selectionQuestionId ? (
-                    <span
-                      style={{
-                        pointerEvents: 'none',
-                        fontWeight: 900,
-                        fontSize: Math.max(18, (st.fontSize || 13) * scale),
-                        color: 'rgba(37,99,235,.18)',
-                      }}
-                    >
-                      {' '}
-                    </span>
-                  ) : o.type === 'video' && o.mediaUrl ? (
-                    <video
-                      src={o.mediaUrl}
-                      muted
-                      loop={!!o.loop}
-                      autoPlay={!!o.autoPlay}
-                      playsInline
-                      preload="metadata"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        pointerEvents: 'none',
-                        background: '#020617',
-                      }}
-                    />
-                  ) : o.type === 'audio' && o.mediaUrl ? (
-                    <div
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '0 12px',
-                        background: 'linear-gradient(135deg,#f8fbff,#e0f2fe)',
-                        color: '#0f172a',
-                        border: '1px solid rgba(14,165,233,.35)',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 999,
-                          background: 'rgba(14,165,233,.14)',
-                          border: '1px solid rgba(14,165,233,.42)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 16,
-                          flexShrink: 0,
-                        }}
-                      >
-                        🔊
-                      </div>
-                      <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
-                        <div
-                          style={{
-                            fontSize: Math.max(10, 12 * scale),
-                            fontWeight: 700,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {o.label || 'Ses'}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: Math.max(9, 10 * scale),
-                            color: '#0284c7',
-                            opacity: 0.92,
-                          }}
-                        >
-                          Sahne dışı ses
-                        </div>
-                      </div>
-                    </div>
-                  ) : o.type === 'shape' ? (
-                    usesShapeSvg ? (
-                      renderShapeContent(o, st, scale)
-                    ) : o.showShapeLabel !== false && o.label ? (
-                      <span
-                        style={{ pointerEvents: 'none', padding: '0 6px', textAlign: 'center' }}
-                      >
-                        {o.label}
-                      </span>
-                    ) : null
-                  ) : o.imageData ? (
-                    <img
-                      src={o.imageData}
-                      alt={o.label}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'contain',
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  ) : (
-                    <span
-                      style={{
-                        pointerEvents: 'none',
-                        padding: '0 6px',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {o.label}
-                    </span>
-                  )}
-                  {isSel &&
-                    !isEditorLocked &&
-                    HANDLE_DIRS.map((dir) => {
-                      const p = HANDLE_POS[dir];
-                      return (
-                        <div
-                          key={dir}
-                          onPointerDown={(e) => startInteract(e, o.id, 'resize', dir)}
-                          style={{
-                            position: 'absolute',
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            background: '#ffffff',
-                            border: '2px solid #111111',
-                            cursor: HANDLE_CURSOR[dir],
-                            zIndex: 10,
-                            touchAction: 'none',
-                            ...Object.fromEntries(
-                              Object.entries(p).filter(([k]) => !['ml', 'mt'].includes(k))
-                            ),
-                            ...(p.ml ? { marginLeft: p.ml } : {}),
-                            ...(p.mt ? { marginTop: p.mt } : {}),
-                          }}
-                        />
-                      );
-                    })}
-                  {isSel && activity.selectedObjectId === o.id && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: -20,
-                        left: 0,
-                        background: '#ffffff',
-                        color: '#111111',
-                        fontSize: 11,
-                        padding: '2px 6px',
-                        borderRadius: 0,
-                        border: '1px solid #111111',
-                        whiteSpace: 'nowrap',
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      {isEditorLocked ? 'Kilitli · ' : ''}
-                      {Math.round(o.x)},{Math.round(o.y)} · {Math.round(o.width)}×
-                      {Math.round(o.height)}
-                    </div>
-                  )}
-                  {isSel && shapeKind === 'customPath' && !isEditorLocked && (
-                    <>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: 0,
-                          top: -22,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        <button
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const nextPoint = vectorPoints.length
-                              ? {
-                                  x: Number(
-                                    (
-                                      (vectorPoints[vectorPoints.length - 1].x +
-                                        vectorPoints[0].x) /
-                                      2
-                                    ).toFixed(2)
-                                  ),
-                                  y: Number(
-                                    (
-                                      (vectorPoints[vectorPoints.length - 1].y +
-                                        vectorPoints[0].y) /
-                                      2
-                                    ).toFixed(2)
-                                  ),
-                                  mode: 'line',
-                                }
-                              : { x: 50, y: 50, mode: 'line' };
-                            const nextPoints = [...vectorPoints, nextPoint];
-                            applyVectorPoints(o.id, nextPoints);
-                            setSelectedVectorAnchor({
-                              objectId: o.id,
-                              indices: [nextPoints.length - 1],
-                            });
-                          }}
-                          title="Nokta ekle"
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 999,
-                            border: '1px solid #111111',
-                            background: '#ffffff',
-                            color: '#111111',
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            fontWeight: 900,
-                            lineHeight: 1,
-                            padding: 0,
-                          }}
-                        >
-                          +
-                        </button>
-                        <button
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (vectorPoints.length <= 2) return;
-                            const selectedIndices =
-                              selectedVectorAnchor.objectId === o.id
-                                ? selectedVectorAnchor.indices
-                                : [];
-                            const targetIndices = selectedIndices.length
-                              ? selectedIndices
-                              : [vectorPoints.length - 1];
-                            if (vectorPoints.length - targetIndices.length < 2) return;
-                            const nextPoints = vectorPoints.filter(
-                              (_, pointIndex) => !targetIndices.includes(pointIndex)
-                            );
-                            applyVectorPoints(o.id, nextPoints);
-                            setSelectedVectorAnchor({ objectId: o.id, indices: [] });
-                          }}
-                          title="Seçili noktayı sil"
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 999,
-                            border: '1px solid #ef4444',
-                            background: '#ffffff',
-                            color: '#ef4444',
-                            cursor: vectorPoints.length <= 2 ? 'not-allowed' : 'pointer',
-                            fontSize: 14,
-                            fontWeight: 900,
-                            lineHeight: 1,
-                            padding: 0,
-                            opacity: vectorPoints.length <= 2 ? 0.45 : 1,
-                          }}
-                        >
-                          -
-                        </button>
-                        <button
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const selectedIndices =
-                              selectedVectorAnchor.objectId === o.id
-                                ? selectedVectorAnchor.indices
-                                : [];
-                            const targetIndices = selectedIndices.length
-                              ? selectedIndices
-                              : [vectorPoints.length - 1];
-                            const nextPoints = vectorPoints.map((entry, pointIndex) => {
-                              if (!targetIndices.includes(pointIndex)) return entry;
-                              const normalized = normalizeVectorPoint(entry);
-                              const nextMode = normalized.mode === 'curve' ? 'line' : 'curve';
-                              if (nextMode === 'line') {
-                                return { ...normalized, mode: 'line', cpIn: null, cpOut: null };
-                              }
-                              return {
-                                ...normalized,
-                                mode: 'curve',
-                                cpIn: normalized.cpIn || {
-                                  x: clamp(normalized.x - 8, 0, 100),
-                                  y: normalized.y,
-                                },
-                                cpOut: normalized.cpOut || {
-                                  x: clamp(normalized.x + 8, 0, 100),
-                                  y: normalized.y,
-                                },
-                              };
-                            });
-                            applyVectorPoints(o.id, nextPoints);
-                          }}
-                          title="Bezier modu"
-                          style={{
-                            minWidth: 38,
-                            height: 20,
-                            borderRadius: 999,
-                            border: '1px solid #1d4ed8',
-                            background: '#eff6ff',
-                            color: '#1d4ed8',
-                            cursor: 'pointer',
-                            fontSize: 10,
-                            fontWeight: 900,
-                            lineHeight: 1,
-                            padding: '0 7px',
-                          }}
-                        >
-                          C
-                        </button>
-                        {[
-                          { label: 'L', mode: 'left' },
-                          { label: 'CX', mode: 'center' },
-                          { label: 'R', mode: 'right' },
-                          { label: 'T', mode: 'top' },
-                          { label: 'CY', mode: 'middle' },
-                          { label: 'B', mode: 'bottom' },
-                        ].map((action) => (
-                          <button
-                            key={action.mode}
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              const selectedIndices =
-                                selectedVectorAnchor.objectId === o.id
-                                  ? selectedVectorAnchor.indices
-                                  : [];
-                              if (selectedIndices.length < 2) return;
-                              const nextPoints = alignVectorAnchors(
-                                vectorPoints,
-                                selectedIndices,
-                                action.mode
-                              );
-                              applyVectorPoints(o.id, nextPoints);
-                            }}
-                            title={`Secili anchorlari ${action.label} hizala`}
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 999,
-                              border: '1px solid #94a3b8',
-                              background: '#ffffff',
-                              color: '#475569',
-                              cursor: 'pointer',
-                              fontSize: 10,
-                              fontWeight: 900,
-                              lineHeight: 1,
-                              padding: 0,
-                            }}
-                          >
-                            {action.label}
-                          </button>
-                        ))}
-                      </div>
-                      {vectorPoints.map((point, pointIndex) => {
-                        const midpoint = getSegmentMidPoint(vectorPoints, pointIndex, true);
-                        if (!midpoint) return null;
-                        return (
-                          <button
-                            key={`${o.id}-segment-${pointIndex}`}
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              const insertIndex = pointIndex + 1;
-                              const nextPoint = {
-                                x: midpoint.x,
-                                y: midpoint.y,
-                                mode: 'line',
-                              };
-                              const nextPoints = [
-                                ...vectorPoints.slice(0, insertIndex),
-                                nextPoint,
-                                ...vectorPoints.slice(insertIndex),
-                              ];
-                              applyVectorPoints(o.id, nextPoints);
-                              setSelectedVectorAnchor({ objectId: o.id, indices: [insertIndex] });
-                            }}
-                            title="Segment ortasina nokta ekle"
-                            style={{
-                              position: 'absolute',
-                              left: `${midpoint.x}%`,
-                              top: `${midpoint.y}%`,
-                              width: 10,
-                              height: 10,
-                              borderRadius: '50%',
-                              transform: 'translate(-50%, -50%)',
-                              border: '1px solid #0ea5e9',
-                              background: '#e0f2fe',
-                              cursor: 'copy',
-                              zIndex: 13,
-                              padding: 0,
-                            }}
-                          />
-                        );
-                      })}
-                      {vectorPoints.map((point, pointIndex) => {
-                        const selectedIndices =
-                          selectedVectorAnchor.objectId === o.id
-                            ? selectedVectorAnchor.indices
-                            : [];
-                        const isActiveAnchor = selectedIndices.includes(pointIndex);
-                        return (
-                          <div
-                            key={`${o.id}-anchor-${pointIndex}`}
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              event.currentTarget?.setPointerCapture?.(event.pointerId);
-                              const currentIndices =
-                                selectedVectorAnchor.objectId === o.id
-                                  ? selectedVectorAnchor.indices
-                                  : [];
-                              if (event.shiftKey) {
-                                const nextSet = new Set(currentIndices);
-                                if (nextSet.has(pointIndex)) nextSet.delete(pointIndex);
-                                else nextSet.add(pointIndex);
-                                setSelectedVectorAnchor({
-                                  objectId: o.id,
-                                  indices: [...nextSet].sort((a, b) => a - b),
-                                });
-                                return;
-                              }
-                              const dragIndices =
-                                currentIndices.includes(pointIndex) && currentIndices.length > 1
-                                  ? currentIndices
-                                  : [pointIndex];
-                              setSelectedVectorAnchor({ objectId: o.id, indices: dragIndices });
-                              const startPoints = vectorPoints.map((entry) =>
-                                normalizeVectorPoint(entry)
-                              );
-                              const primary = startPoints[pointIndex];
-
-                              const onMove = (moveEvent) => {
-                                const stagePoint = toStage(moveEvent.clientX, moveEvent.clientY);
-                                const relX = clamp(
-                                  ((stagePoint.x - o.x) / Math.max(1, o.width)) * 100,
-                                  0,
-                                  100
-                                );
-                                const relY = clamp(
-                                  ((stagePoint.y - o.y) / Math.max(1, o.height)) * 100,
-                                  0,
-                                  100
-                                );
-                                const dx = relX - primary.x;
-                                const dy = relY - primary.y;
-                                const nextPoints = startPoints.map((entry, idx) => {
-                                  if (!dragIndices.includes(idx)) return entry;
-                                  const shifted = shiftVectorPointControls(entry, dx, dy);
-                                  return {
-                                    ...shifted,
-                                    x: clamp(Number((entry.x + dx).toFixed(2)), 0, 100),
-                                    y: clamp(Number((entry.y + dy).toFixed(2)), 0, 100),
-                                  };
-                                });
-                                applyVectorPoints(o.id, nextPoints);
-                              };
-
-                              const onUp = () => {
-                                window.removeEventListener('pointermove', onMove);
-                                window.removeEventListener('pointerup', onUp);
-                                vectorEditRef.current = null;
-                              };
-
-                              vectorEditRef.current = { move: onMove, up: onUp };
-                              window.addEventListener('pointermove', onMove);
-                              window.addEventListener('pointerup', onUp);
-                            }}
-                            title={`Anchor ${pointIndex + 1}`}
-                            style={{
-                              position: 'absolute',
-                              left: `${point.x}%`,
-                              top: `${point.y}%`,
-                              width: isActiveAnchor ? 14 : 12,
-                              height: isActiveAnchor ? 14 : 12,
-                              borderRadius: '50%',
-                              transform: 'translate(-50%, -50%)',
-                              border: isActiveAnchor ? '2px solid #1d4ed8' : '2px solid #111111',
-                              background: isActiveAnchor ? '#dbeafe' : '#ffffff',
-                              boxShadow: '0 0 0 2px rgba(255,255,255,.9)',
-                              cursor: 'grab',
-                              zIndex: 14,
-                              touchAction: 'none',
-                            }}
-                          />
-                        );
-                      })}
-                      {vectorPoints.map((point, pointIndex) => {
-                        const normalizedPoint = normalizeVectorPoint(point);
-                        if (normalizedPoint.mode !== 'curve') return null;
-                        const controls = [
-                          { key: 'cpIn', color: '#a855f7', value: normalizedPoint.cpIn },
-                          { key: 'cpOut', color: '#0ea5e9', value: normalizedPoint.cpOut },
-                        ].filter((item) => item.value);
-                        if (!controls.length) return null;
-                        return controls.map((control) => (
-                          <div key={`${o.id}-${pointIndex}-${control.key}`}>
-                            <div
-                              style={{
-                                position: 'absolute',
-                                left: `${(normalizedPoint.x + control.value.x) / 2}%`,
-                                top: `${(normalizedPoint.y + control.value.y) / 2}%`,
-                                width: `${Math.max(8, Math.hypot(control.value.x - normalizedPoint.x, control.value.y - normalizedPoint.y) * 0.9)}%`,
-                                height: 1,
-                                transformOrigin: 'left center',
-                                transform: `translate(-50%, -50%) rotate(${Math.atan2(control.value.y - normalizedPoint.y, control.value.x - normalizedPoint.x)}rad)`,
-                                background: `${control.color}88`,
-                                zIndex: 12,
-                                pointerEvents: 'none',
-                              }}
-                            />
-                            <div
-                              onPointerDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                event.currentTarget?.setPointerCapture?.(event.pointerId);
-                                const onMove = (moveEvent) => {
-                                  const stagePoint = toStage(moveEvent.clientX, moveEvent.clientY);
-                                  const relX = clamp(
-                                    ((stagePoint.x - o.x) / Math.max(1, o.width)) * 100,
-                                    0,
-                                    100
-                                  );
-                                  const relY = clamp(
-                                    ((stagePoint.y - o.y) / Math.max(1, o.height)) * 100,
-                                    0,
-                                    100
-                                  );
-                                  const nextPoints = vectorPoints.map((entry, idx) => {
-                                    if (idx !== pointIndex) return entry;
-                                    const normalized = normalizeVectorPoint(entry);
-                                    return {
-                                      ...normalized,
-                                      mode: 'curve',
-                                      [control.key]: {
-                                        x: Number(relX.toFixed(2)),
-                                        y: Number(relY.toFixed(2)),
-                                      },
-                                    };
-                                  });
-                                  applyVectorPoints(o.id, nextPoints);
-                                };
-                                const onUp = () => {
-                                  window.removeEventListener('pointermove', onMove);
-                                  window.removeEventListener('pointerup', onUp);
-                                  vectorEditRef.current = null;
-                                };
-                                vectorEditRef.current = { move: onMove, up: onUp };
-                                window.addEventListener('pointermove', onMove);
-                                window.addEventListener('pointerup', onUp);
-                              }}
-                              style={{
-                                position: 'absolute',
-                                left: `${control.value.x}%`,
-                                top: `${control.value.y}%`,
-                                width: 10,
-                                height: 10,
-                                borderRadius: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                border: `2px solid ${control.color}`,
-                                background: '#ffffff',
-                                cursor: 'grab',
-                                zIndex: 15,
-                                touchAction: 'none',
-                              }}
-                            />
-                          </div>
-                        ));
-                      })}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-
-        {/* Hidden file inputs */}
-        <input
-          ref={imgRef}
-          type="file"
-          accept="image/*"
-          onChange={addImage}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={videoRef}
-          type="file"
-          accept="video/mp4,video/webm,video/ogg"
-          onChange={addVideo}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={audioRef}
-          type="file"
-          accept="audio/*"
-          onChange={addAudio}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".svg"
-          onChange={loadSVG}
-          style={{ display: 'none' }}
-        />
-      </div>
-    </div>
-  );
-});
-
-// ─── Sağ Inspector ─────────────────────────────────────────────────────────────
-
-
 // ─── ANA UYGULAMA ─────────────────────────────────────────────────────────────
 
 export default function EIcerikEditor() {
@@ -7040,6 +5164,20 @@ export default function EIcerikEditor() {
   const setShowReviewThreads = useEditorStore((state) => state.setShowReviewThreads);
   const canvasExpanded = useEditorStore((state) => state.canvasExpanded);
   const setCanvasExpanded = useEditorStore((state) => state.setCanvasExpanded);
+  // "Tam Ekran": mevcut editörü tarayıcı tam-ekranına geçirir (ayrı bir düzen
+  // açmaz). Esc tarayıcı tarafından otomatik kapatır.
+  const toggleNativeFullscreen = useCallback(() => {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      } else {
+        document.documentElement?.requestFullscreen?.();
+      }
+    } catch {
+      /* tarayıcı tam-ekranı reddederse sessiz geç */
+    }
+  }, []);
   const [storylinePreviewOpen, setStorylinePreviewOpen] = useState(false);
   const [storylinePreviewSnapshot, setStorylinePreviewSnapshot] = useState(null);
   const [answerDrawerOpen, setAnswerDrawerOpen] = useState(false);
@@ -7059,6 +5197,12 @@ export default function EIcerikEditor() {
   const setRightPanelWidth = useEditorStore((state) => state.setRightPanelWidth);
   const isSlidePanelCollapsed = useEditorStore((state) => state.isSlidePanelCollapsed);
   const setIsSlidePanelCollapsed = useEditorStore((state) => state.setIsSlidePanelCollapsed);
+  const canvasTool = useEditorStore((state) => state.canvasTool);
+  const setCanvasTool = useEditorStore((state) => state.setCanvasTool);
+  const timelineVisualization = useEditorStore((state) => state.timelineVisualization);
+  const setTimelineVisualization = useEditorStore((state) => state.setTimelineVisualization);
+  const timelineDockOpen = useEditorStore((state) => state.timelineDockOpen);
+  const setTimelineDockOpen = useEditorStore((state) => state.setTimelineDockOpen);
   const uiMode = 'advanced';
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1280
@@ -7072,6 +5216,7 @@ export default function EIcerikEditor() {
   const [showVariablesManager, setShowVariablesManager] = useState(false);
   const [showBranchDiagram, setShowBranchDiagram] = useState(false);
   const [showGlossaryEditor, setShowGlossaryEditor] = useState(false);
+  const [showDesignTools, setShowDesignTools] = useState(false);
   const [showAdminManagement, setShowAdminManagement] = useState(false);
   const [adminSessionToken, setAdminSessionTokenState] = useState('');
   const [isTextStudioMode, setIsTextStudioMode] = useState(() =>
@@ -7082,18 +5227,38 @@ export default function EIcerikEditor() {
   const [versionLabel, setVersionLabel] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showBaseLayer, setShowBaseLayer] = useState(true);
+  const [pendingResume, setPendingResume] = useState(null);
+  const [hasCheckedResume, setHasCheckedResume] = useState(false);
   const [toasts, setToasts] = useState([]);
   const canvasRef = useRef(null);
   const editorScrollRef = useRef(null);
   const mobileInspectorRef = useRef(null);
   const importRef = useRef(null);
   const remoteReadyRef = useRef(false);
+  const hasLoadedRemoteWorkspaceRef = useRef(false);
   const skipRemoteSaveRef = useRef(false);
   const lastRemoteUpdatedAtRef = useRef(null);
+  const lastWorkspaceRef = useRef(null);
   const saveFailCountRef = useRef(0);
+  const heartbeatFailCountRef = useRef(0);
+  const remoteSavePendingRef = useRef(false);
+  const offlineDraftPendingRef = useRef(false);
   const resizeSessionRef = useRef(null);
   const toastIdRef = useRef(0);
   const adminSessionTokenRef = useRef('');
+  const objectClipboardRef = useRef(null);
+  const slideClipboardRef = useRef(null);
+  const slideClipboardCommandsRef = useRef({});
+  const workspaceEntryModeRef = useRef(authState?.userId ? 'refresh' : 'anonymous');
+  const presentRef = useRef(history.present);
+  const currentRouteRef = useRef(routeFromSelection(history.present));
+  const currentProjectIdRef = useRef(null);
+  const browserHistoryCursorRef = useRef(0);
+  const navigationBusyRef = useRef(false);
+  const navigationSequenceRef = useRef(0);
+  const backDismissEntriesRef = useRef([]);
+  const backDismissOverlayIdsRef = useRef(new Set());
+  const backDismissOrderRef = useRef(0);
 
   const setAdminSessionToken = useCallback((value) => {
     adminSessionTokenRef.current = value;
@@ -7107,14 +5272,103 @@ export default function EIcerikEditor() {
   }, []);
 
   const present = history.present;
-  const activeUser = authState?.user || null;
+  const currentRoute = useMemo(() => routeFromSelection(present), [
+    present,
+  ]);
+  const activeUser =
+    (authState?.user?.name ? authState.user : null) ||
+    FIXED_EDITOR_USERS.find((user) => user.id === authState?.userId) ||
+    authState?.user ||
+    null;
   const activeUserId = authState?.userId || '';
   const activeSessionId = authState?.sessionId || '';
+  const isRemoteMutationLocked =
+    isRemoteWorkspaceMutationLocked(activeUserId, dbStatus) &&
+    !hasLoadedRemoteWorkspaceRef.current;
+  const keepBootVisibleForWorkspace = shouldKeepBootVisibleForWorkspace(
+    activeUserId,
+    dbStatus,
+    hasLoadedRemoteWorkspaceRef.current
+  );
   const currentProject = workspaceInfo.currentProject;
   const currentProjectId = currentProject?.id || null;
-  const isMobileViewport = viewportWidth <= 980;
+  useEffect(() => {
+    presentRef.current = present;
+    currentRouteRef.current = currentRoute;
+    currentProjectIdRef.current = currentProjectId;
+  }, [currentProjectId, currentRoute, present]);
+
+  const writeBrowserRoute = useCallback((route = {}, mode = 'push', kind = 'route', overlayId = '') => {
+    if (typeof window === 'undefined') return;
+    const cursor =
+      mode === 'replace'
+        ? browserHistoryCursorRef.current || getEditorHistoryState(window.history.state)?.cursor || 0
+        : browserHistoryCursorRef.current + 1;
+    browserHistoryCursorRef.current = cursor;
+    const navState = createEditorHistoryState(route, cursor, kind, overlayId);
+    const url = buildEditorUrl(route, window.location);
+    if (mode === 'replace') {
+      window.history.replaceState(navState, '', url);
+    } else {
+      window.history.pushState(navState, '', url);
+    }
+  }, []);
+
+  const persistCurrentStateLocal = useCallback(() => {
+    if (!activeUserId || typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        getUserStorageKey(activeUserId),
+        JSON.stringify(createSafeStateForStorage(presentRef.current))
+      );
+      setLastSaved(new Date());
+    } catch {}
+  }, [activeUserId]);
+
+  const dismissTopBackSurface = useCallback(() => {
+    const entries = orderBackDismissEntries(backDismissEntriesRef.current);
+    const entry = entries[0];
+    if (!entry) return false;
+    entry.onDismiss?.();
+    return true;
+  }, []);
+
+  const hasBlockingBackSurface = useCallback(
+    () =>
+      Boolean(
+        pendingResume ||
+          kickRequested ||
+          isRemoteWorkspaceMutationLocked(activeUserId, dbStatus)
+      ),
+    [activeUserId, dbStatus, kickRequested, pendingResume]
+  );
+
+  const registerBackDismissible = useCallback(
+    ({ id, onDismiss, priority = 0, blocking = false }) => {
+      if (!id || typeof onDismiss !== 'function') return () => {};
+      backDismissEntriesRef.current = backDismissEntriesRef.current
+        .filter((entry) => entry.id !== id)
+        .concat({ id, onDismiss, priority, blocking, order: ++backDismissOrderRef.current });
+
+      if (!blocking && !backDismissOverlayIdsRef.current.has(id)) {
+        backDismissOverlayIdsRef.current.add(id);
+        writeBrowserRoute(currentRouteRef.current, 'push', 'overlay-guard', id);
+      }
+
+      return () => {
+        backDismissEntriesRef.current = backDismissEntriesRef.current.filter((entry) => entry.id !== id);
+        backDismissOverlayIdsRef.current.delete(id);
+        const currentNav = typeof window !== 'undefined' ? getEditorHistoryState(window.history.state) : null;
+        if (currentNav?.kind === 'overlay-guard' && currentNav.overlayId === id) {
+          writeBrowserRoute(currentRouteRef.current, 'replace');
+        }
+      };
+    },
+    [writeBrowserRoute]
+  );
+  const deviceMode = getDeviceMode(viewportWidth);
   const isCompactViewport = viewportWidth <= 720;
-  const effectivePanelScale = isMobileViewport ? 1 : panelScale;
+  const effectivePanelScale = panelScale;
   const currentZoomPercent = useMemo(() => {
     const selectedActivity = present.activities.find((item) => item.id === present.selActId);
     if (!selectedActivity) return 100;
@@ -7123,11 +5377,11 @@ export default function EIcerikEditor() {
     const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 760;
     const estimatedWidth = Math.max(
       260,
-      viewportWidth - (isMobileViewport ? 40 : leftPanelWidth + rightPanelWidth + 140)
+      viewportWidth - (leftPanelWidth + rightPanelWidth + 140)
     );
     const estimatedHeight = Math.max(
       240,
-      viewportHeight - timelineHeight - (isMobileViewport ? 220 : 210)
+      viewportHeight - timelineHeight - 210
     );
     const fitScale = getFitScale(
       stageWidth,
@@ -7138,7 +5392,6 @@ export default function EIcerikEditor() {
     const resolvedScale = zoom === 'fit' ? fitScale : Number(zoom) || fitScale;
     return Math.round(resolvedScale * 100);
   }, [
-    isMobileViewport,
     leftPanelWidth,
     present.activities,
     present.selActId,
@@ -7160,6 +5413,8 @@ export default function EIcerikEditor() {
   const resetWorkspaceSession = useCallback((userId = '') => {
     skipRemoteSaveRef.current = true;
     remoteReadyRef.current = false;
+    hasLoadedRemoteWorkspaceRef.current = false;
+    offlineDraftPendingRef.current = false;
     lastRemoteUpdatedAtRef.current = null;
     setHistory(readStoredEditorHistory(userId, INITIAL_STATE));
     setWorkspaceInfo({ currentProject: null, projects: [], versions: [] });
@@ -7173,11 +5428,29 @@ export default function EIcerikEditor() {
     setActiveTab('sahne');
     setTimelineCurrentTime(0);
     setTimelinePlaying(false);
-    setDbStatus(userId ? 'connecting' : 'local');
-  }, [setActiveTab, setDbStatus, setTimelineCurrentTime, setTimelinePlaying]);
+    setDbStatus(userId ? 'connecting' : 'auth-required');
+    if (!userId) {
+      backDismissEntriesRef.current = [];
+      backDismissOverlayIdsRef.current = new Set();
+      setIsTextStudioMode(false);
+      writeBrowserRoute({}, 'replace');
+    }
+  }, [setActiveTab, setDbStatus, setTimelineCurrentTime, setTimelinePlaying, writeBrowserRoute]);
+
+  useLayoutEffect(() => {
+    if (!keepBootVisibleForWorkspace) return undefined;
+    window.__EIC_BOOT_UPDATE__?.({
+      badge: 'Editör Başlatılıyor',
+      title: 'Arayüz hazırlanıyor...',
+      body: 'SQL bağlantısı doğrulanıyor. Çalışma alanı hazır olunca editör açılacak.',
+      showSpinner: true,
+    });
+    return () => window.__EIC_BOOT_DONE__?.();
+  }, [keepBootVisibleForWorkspace]);
 
   const finalizeLogin = useCallback(
     (nextAuth) => {
+      workspaceEntryModeRef.current = 'login';
       writeStoredAuth(nextAuth);
       setAuthState(nextAuth);
       setLockState(null);
@@ -7192,7 +5465,9 @@ export default function EIcerikEditor() {
       if (message && !nextLockState) {
         setLogoutReason(message);
       }
+      clearActiveSessionNavigation(activeUserId, activeSessionId);
       clearStoredAuth();
+      workspaceEntryModeRef.current = 'anonymous';
       setAuthState(null);
       setLockState(nextLockState);
       setLoginForm((current) => ({
@@ -7203,7 +5478,7 @@ export default function EIcerikEditor() {
       setLoginError(nextLockState ? '' : message);
       resetWorkspaceSession('');
     },
-    [resetWorkspaceSession]
+    [activeSessionId, activeUserId, resetWorkspaceSession]
   );
 
   const claimLoginSession = useCallback(async (credentials, preferredSession = null) => {
@@ -7245,7 +5520,13 @@ export default function EIcerikEditor() {
 
   useEffect(() => {
     const handleStorage = (event) => {
-      if (!activeUserId || event.key !== getUserStorageKey(activeUserId) || !event.newValue) return;
+      if (
+        !activeUserId ||
+        dbStatus !== 'connected' ||
+        event.key !== getUserStorageKey(activeUserId) ||
+        !event.newValue
+      )
+        return;
       try {
         const next = normalizeState(JSON.parse(event.newValue));
         setHistory((prev) =>
@@ -7255,18 +5536,29 @@ export default function EIcerikEditor() {
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
-  }, [activeUserId, resetWorkspaceSession]);
+  }, [activeUserId, dbStatus, resetWorkspaceSession]);
 
-  const commit = useCallback((updater) => {
-    setHistory((h) => {
-      const next = typeof updater === 'function' ? updater(h.present) : updater;
-      if (Object.is(next, h.present)) return h;
-      return { past: [...h.past.slice(-39), h.present], present: next, future: [] };
-    });
-  }, []);
+  const commit = useCallback(
+    (updater) => {
+      if (isRemoteMutationLocked) {
+        showToast('SQL bağlantısı yeniden kuruluyor. Düzenleme bağlantı sağlanınca açılacak.', 'warning');
+        return;
+      }
+      setHistory((h) => {
+        const next = typeof updater === 'function' ? updater(h.present) : updater;
+        if (Object.is(next, h.present)) return h;
+        return { past: [...h.past.slice(-39), h.present], present: next, future: [] };
+      });
+    },
+    [isRemoteMutationLocked, showToast]
+  );
 
   const undo = useCallback(
-    () =>
+    () => {
+      if (isRemoteMutationLocked) {
+        showToast('SQL bağlantısı yeniden kuruluyor. Geri alma geçici olarak kapalı.', 'warning');
+        return;
+      }
       setHistory((h) =>
         h.past.length
           ? {
@@ -7275,11 +5567,16 @@ export default function EIcerikEditor() {
               future: [h.present, ...h.future].slice(0, 40),
             }
           : h
-      ),
-    []
+      );
+    },
+    [isRemoteMutationLocked, showToast]
   );
   const redo = useCallback(
-    () =>
+    () => {
+      if (isRemoteMutationLocked) {
+        showToast('SQL bağlantısı yeniden kuruluyor. İleri alma geçici olarak kapalı.', 'warning');
+        return;
+      }
       setHistory((h) =>
         h.future.length
           ? {
@@ -7288,8 +5585,9 @@ export default function EIcerikEditor() {
               future: h.future.slice(1),
             }
           : h
-      ),
-    []
+      );
+    },
+    [isRemoteMutationLocked, showToast]
   );
 
   const syncWorkspaceMeta = useCallback(
@@ -7312,20 +5610,31 @@ export default function EIcerikEditor() {
   );
 
   const loadWorkspaceState = useCallback(
-    (workspace) => {
+    (workspace, { beginAtPublisherRoot = false, navigationOverride = null } = {}) => {
       syncWorkspaceMeta(workspace);
       skipRemoteSaveRef.current = true;
+      const loadedPresent = normalizeState({ ...INITIAL_STATE, ...(workspace?.state || INITIAL_STATE) });
+      const nextPresent = beginAtPublisherRoot
+        ? resetNavigationForResumePrompt(loadedPresent)
+        : navigationOverride
+          ? restoreActiveSessionNavigation(loadedPresent, navigationOverride)
+          : loadedPresent;
       setHistory({
         past: [],
-        present: normalizeState({ ...INITIAL_STATE, ...(workspace?.state || INITIAL_STATE) }),
+        present: nextPresent,
         future: [],
       });
+      const nextRoute = routeFromSelection(nextPresent);
+      const keepTextStudioHash = typeof window !== 'undefined' && window.location.hash === '#text-studio';
+      writeBrowserRoute(keepTextStudioHash ? { ...nextRoute, textStudio: true } : nextRoute, 'replace');
+      setIsTextStudioMode(keepTextStudioHash);
       setSelectedIds(new Set());
       setActiveTab('sahne');
       setTimelineCurrentTime(0);
       setTimelinePlaying(false);
+      return nextPresent;
     },
-    [setActiveTab, setTimelineCurrentTime, setTimelinePlaying, syncWorkspaceMeta]
+    [setActiveTab, setTimelineCurrentTime, setTimelinePlaying, syncWorkspaceMeta, writeBrowserRoute]
   );
 
   const mergeWorkspaceProjectData = useCallback((payload) => {
@@ -7355,6 +5664,7 @@ export default function EIcerikEditor() {
       try {
         await apiRequest(`/projects/${resolvedProjectId}/books/${resolvedBookId}/unlock`, {
           method: 'POST',
+          timeoutMs: BOOK_LOCK_REQUEST_TIMEOUT_MS,
         });
       } catch {}
       setBookLockInfo((current) =>
@@ -7374,7 +5684,7 @@ export default function EIcerikEditor() {
       try {
         const response = await apiRequest(
           `/projects/${resolvedProjectId}/books/${resolvedBookId}/lock`,
-          { method: 'POST' }
+          { method: 'POST', timeoutMs: BOOK_LOCK_REQUEST_TIMEOUT_MS }
         );
         setBookLockInfo(response?.lock || { projectId: resolvedProjectId, bookId: resolvedBookId });
         setBookLockWarning('');
@@ -7404,6 +5714,15 @@ export default function EIcerikEditor() {
       )
         return;
       const modKey = e.ctrlKey || e.metaKey;
+      const currentActivity = history.present.activities.find(
+        (activity) => activity.id === history.present.selActId
+      );
+      const slideTreeFocused = !!ae?.closest?.('[data-slide-tree-item="true"]');
+      const useSlideClipboard =
+        slideTreeFocused ||
+        (storyRibbonTab === 'scene' &&
+          selectedIds.size === 0 &&
+          !currentActivity?.selectedObjectId);
 
       if (modKey && e.key === 'z') {
         e.preventDefault();
@@ -7417,7 +5736,7 @@ export default function EIcerikEditor() {
       }
       if (modKey && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        setCanvasExpanded((v) => !v);
+        toggleNativeFullscreen();
         return;
       }
 
@@ -7428,9 +5747,11 @@ export default function EIcerikEditor() {
         canvasRef.current.deleteSelected();
       } else if (modKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
+        if (useSlideClipboard && slideClipboardCommandsRef.current.copySlide?.()) return;
         canvasRef.current.copySelected?.();
       } else if (modKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
+        if (useSlideClipboard && slideClipboardCommandsRef.current.pasteSlide?.()) return;
         canvasRef.current.pasteClipboard?.();
       } else if (modKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
@@ -7463,7 +5784,7 @@ export default function EIcerikEditor() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canvasExpanded, undo, redo, history.present, setCanvasExpanded]);
+  }, [canvasExpanded, history.present, redo, selectedIds, setCanvasExpanded, storyRibbonTab, toggleNativeFullscreen, undo]);
 
   useEffect(() => {
     const blockBrowserZoomKeys = (e) => {
@@ -7489,24 +5810,125 @@ export default function EIcerikEditor() {
     };
   }, []);
 
+  const setNavigationRouteState = useCallback((route) => {
+    setHistory((h) => {
+      const normalized = routeFromSelection({
+        selPubId: route.pubId,
+        selBookId: route.bookId,
+        selActId: route.actId,
+      });
+      const nextPresent = {
+        ...h.present,
+        selPubId: normalized.pubId,
+        selBookId: normalized.bookId,
+        selActId: normalized.actId,
+      };
+      if (
+        h.present.selPubId === nextPresent.selPubId &&
+        h.present.selBookId === nextPresent.selBookId &&
+        h.present.selActId === nextPresent.selActId
+      ) {
+        return h;
+      }
+      return { ...h, present: nextPresent };
+    });
+  }, []);
+
+  const navigateToEditorRoute = useCallback(
+    async (route, { mode = 'push', source = 'push' } = {}) => {
+      const sequence = ++navigationSequenceRef.current;
+      if (navigationBusyRef.current && source !== 'pop') return false;
+      navigationBusyRef.current = true;
+
+      try {
+        const state = presentRef.current;
+        const current = routeFromSelection(state);
+        const resolvedRoute = resolveEditorRoute(route || {}, state);
+
+        if (resolvedRoute.textStudio) {
+          const textStudioRoute = { ...current, textStudio: true };
+          setIsTextStudioMode(true);
+          if (source !== 'pop') writeBrowserRoute(textStudioRoute, mode);
+          return true;
+        }
+
+        setIsTextStudioMode(false);
+
+        const bookChanged =
+          Boolean(currentProjectIdRef.current) && current.bookId !== resolvedRoute.bookId;
+
+        // İyimser seçim: rota/seçim HEMEN uygulanır; kitap kilidi arka planda
+        // alınır. Böylece yavaş internette kilit isteği beklenirken UI
+        // kilitlenmez ve kullanıcı seçim yapabilir.
+        setNavigationRouteState(resolvedRoute);
+        if (current.actId !== resolvedRoute.actId) {
+          setSelectedIds(new Set());
+          setActiveTab('sahne');
+        }
+
+        if (source !== 'pop') {
+          writeBrowserRoute(resolvedRoute, routesEqual(current, resolvedRoute) ? 'replace' : mode);
+        } else if (!routesEqual(route, resolvedRoute)) {
+          writeBrowserRoute(resolvedRoute, 'replace');
+        }
+
+        if (bookChanged) {
+          if (current.bookId) {
+            // eski kitabın kilidini arka planda bırak (beklemeden)
+            releaseBookLock(currentProjectIdRef.current, current.bookId);
+          }
+          if (resolvedRoute.bookId) {
+            // yeni kitabı arka planda kilitle; başkası kilitlemişse önceki
+            // (kitapsız) duruma dön. Timeout/ağ hatasında kilit kayıt anında
+            // (lockBookId ile) yeniden denenir.
+            acquireBookLock(currentProjectIdRef.current, resolvedRoute.bookId)
+              .then((locked) => {
+                if (locked === false && sequence === navigationSequenceRef.current) {
+                  const revert = { pubId: resolvedRoute.pubId || null, bookId: null, actId: null };
+                  setNavigationRouteState(revert);
+                  writeBrowserRoute(revert, 'replace');
+                }
+              })
+              .catch(() => {});
+          }
+        }
+        return true;
+      } finally {
+        if (sequence === navigationSequenceRef.current) {
+          navigationBusyRef.current = false;
+        }
+      }
+    },
+    [
+      acquireBookLock,
+      releaseBookLock,
+      setActiveTab,
+      setNavigationRouteState,
+      writeBrowserRoute,
+    ]
+  );
+
   // Reset selection when switching activity
   const handleSelectAct = useCallback(
     (id) => {
-      commit((p) => ({ ...p, selActId: id }));
-      setSelectedIds(new Set());
-      setActiveTab('sahne');
+      return navigateToEditorRoute(
+        { pubId: presentRef.current.selPubId, bookId: presentRef.current.selBookId, actId: id || null },
+        { mode: 'push' }
+      );
     },
-    [commit, setActiveTab]
+    [navigateToEditorRoute]
   );
 
   useEffect(() => {
     const saveState = () => {
+      if (isRemoteMutationLocked || pendingResume) return;
       try {
         localStorage.setItem(
           getUserStorageKey(activeUserId),
           JSON.stringify(createSafeStateForStorage(present))
         );
         setLastSaved(new Date());
+        if (dbStatus === 'reconnecting') offlineDraftPendingRef.current = true;
       } catch {}
     };
 
@@ -7517,7 +5939,31 @@ export default function EIcerikEditor() {
 
     const timer = window.setTimeout(saveState, 180);
     return () => window.clearTimeout(timer);
-  }, [activeUserId, present]);
+  }, [activeUserId, dbStatus, isRemoteMutationLocked, pendingResume, present]);
+
+
+  useEffect(() => {
+    if (!activeUserId || typeof window === 'undefined') return undefined;
+    const handleBeforeUnload = (event) => {
+      persistCurrentStateLocal();
+      if (
+        shouldWarnBeforeLeavingEditor({
+          remoteSavePending: remoteSavePendingRef.current,
+          offlineDraftPending: offlineDraftPendingRef.current,
+          dbStatus,
+        })
+      ) {
+        event.preventDefault();
+        event.returnValue = '';
+        return '';
+      }
+      return undefined;
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeUserId, dbStatus, persistCurrentStateLocal]);
+
 
   useEffect(() => {
     const handlePointerMove = (e) => {
@@ -7526,9 +5972,21 @@ export default function EIcerikEditor() {
       if (session.type === 'timeline') {
         setTimelineHeight(clamp(session.startValue + (session.startY - e.clientY), 180, 460));
       } else if (session.type === 'right-panel') {
-        setRightPanelWidth(clamp(session.startValue + (session.startX - e.clientX), 300, 560));
+        setRightPanelWidth(
+          clamp(
+            session.startValue + (session.startX - e.clientX),
+            PANEL_LIMITS.right.min,
+            PANEL_LIMITS.right.max
+          )
+        );
       } else if (session.type === 'left-panel') {
-        setLeftPanelWidth(clamp(session.startValue + (e.clientX - session.startX), 160, 300));
+        setLeftPanelWidth(
+          clamp(
+            session.startValue + (e.clientX - session.startX),
+            PANEL_LIMITS.left.min,
+            PANEL_LIMITS.left.max
+          )
+        );
       }
     };
 
@@ -7553,25 +6011,72 @@ export default function EIcerikEditor() {
     let cancelled = false;
     remoteReadyRef.current = false;
     if (!activeUserId) {
-      setDbStatus('local');
+      setDbStatus('auth-required');
       return () => {
         cancelled = true;
       };
     }
     setDbStatus('connecting');
     (async () => {
+      const resolveBootNavigation = () => {
+        const bootHashRoute = parseHashRoute(typeof window !== 'undefined' ? window.location.hash : '');
+        return bootHashRoute
+          ? bootHashRoute
+          : workspaceEntryModeRef.current === 'refresh'
+            ? getActiveSessionNavigation(activeUserId, activeSessionId)
+            : getSessionResume(activeUserId);
+      };
+
+      // 1) Stale-while-revalidate: önbellekteki son çalışma alanını ANINDA göster
+      //    (yavaş internette boot ekranında beklemeden). Önbellek = bu cihazdaki
+      //    son kaydedilen hâl olduğu için kullanıcı her zaman son işini görür.
+      const cached = readWorkspaceCache(activeUserId);
+      let cacheShownUpdatedAt = null;
+      if (cached?.workspace) {
+        try {
+          syncWorkspaceMeta(cached.workspace);
+          loadWorkspaceState(cached.workspace, {
+            beginAtPublisherRoot: false,
+            navigationOverride: resolveBootNavigation(),
+          });
+          cacheShownUpdatedAt = cached.updatedAt || null;
+          // Editör görünür olsun ama henüz sunucu doğrulamadı → otomatik kayıt
+          // (remoteReadyRef) sunucu yanıtı gelene kadar başlamaz.
+          setDbStatus('connected');
+        } catch {
+          cacheShownUpdatedAt = null;
+        }
+      }
+
+      // 2) Arka planda sunucudan taze veriyi getir.
       try {
-        const sr = await apiRequest('/workspace');
+        const sr = await apiRequest('/workspace', { timeoutMs: REMOTE_STATUS_REQUEST_TIMEOUT_MS });
         if (cancelled) return;
         syncWorkspaceMeta(sr);
-        if (sr?.state) {
-          lastRemoteUpdatedAtRef.current = sr.updatedAt || null;
-          saveFailCountRef.current = 0;
-          loadWorkspaceState(sr);
+        lastRemoteUpdatedAtRef.current = sr.updatedAt || null;
+        saveFailCountRef.current = 0;
+        heartbeatFailCountRef.current = 0;
+        // Önbellek gösterildiyse ve sunucu sürümü AYNIysa yeniden yükleme yapma
+        // (titreme olmasın). Sunucu daha yeniyse (başka cihaz) onu uygula.
+        const serverSameAsCache =
+          cacheShownUpdatedAt && sr.updatedAt && sr.updatedAt === cacheShownUpdatedAt;
+        if (!serverSameAsCache) {
+          loadWorkspaceState(sr, {
+            beginAtPublisherRoot: false,
+            navigationOverride: resolveBootNavigation(),
+          });
         }
+        lastWorkspaceRef.current = sr;
+        writeWorkspaceCache(activeUserId, sr);
+        remoteReadyRef.current = true;
+        hasLoadedRemoteWorkspaceRef.current = true;
         setDbStatus('connected');
       } catch (error) {
         if (cancelled) return;
+        if (requiresFreshEditorSession(error)) {
+          forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+          return;
+        }
         if (error?.code === 'USER_LOCKED') {
           forceLogoutToLogin('', {
             userId: activeUserId,
@@ -7583,14 +6088,10 @@ export default function EIcerikEditor() {
           });
           return;
         }
-        // Geçici: oturum süresi doldu uyarısı kullanıcıyı editörden atmasın.
-        // if (error?.code === 'SESSION_EXPIRED') {
-        //   forceLogoutToLogin(error.message || 'Oturum suresi doldu.');
-        //   return;
-        // }
-        setDbStatus('local');
-      } finally {
-        if (!cancelled) remoteReadyRef.current = true;
+        remoteReadyRef.current = false;
+        // Önbellek gösteriliyorsa kullanıcı son işini görmeye devam etsin;
+        // yeniden bağlanma akışı arka planda sunucuyu dener.
+        setDbStatus('reconnecting');
       }
     })();
     return () => {
@@ -7608,19 +6109,52 @@ export default function EIcerikEditor() {
   ]);
 
   useEffect(() => {
-    if (!activeUserId || !activeSessionId) return undefined;
+    if (!activeUserId || dbStatus !== 'reconnecting') return undefined;
     let cancelled = false;
-    let failCount = 0;
-    const heartbeat = async () => {
+    let retryTimer = null;
+
+    const reconnectWorkspace = async () => {
       try {
-        const result = await apiRequest('/auth/heartbeat', {
-          method: 'POST',
-          body: JSON.stringify({ userId: activeUserId, sessionId: activeSessionId }),
+        const workspace = await apiRequest('/workspace', {
+          timeoutMs: REMOTE_STATUS_REQUEST_TIMEOUT_MS,
         });
-        failCount = 0;
-        if (result?.kickRequested) setKickRequested(true);
+        if (cancelled) return;
+        const hadLoadedWorkspace = hasLoadedRemoteWorkspaceRef.current;
+        syncWorkspaceMeta(workspace);
+        lastRemoteUpdatedAtRef.current = workspace.updatedAt || null;
+        saveFailCountRef.current = 0;
+        heartbeatFailCountRef.current = 0;
+        if (!hadLoadedWorkspace) {
+          const bootHashRoute2 = parseHashRoute(typeof window !== 'undefined' ? window.location.hash : '');
+          loadWorkspaceState(workspace, {
+            beginAtPublisherRoot: false,
+            navigationOverride:
+              bootHashRoute2
+                ? bootHashRoute2
+                : workspaceEntryModeRef.current === 'refresh'
+                  ? getActiveSessionNavigation(activeUserId, activeSessionId)
+                  : getSessionResume(activeUserId),
+          });
+        }
+        lastWorkspaceRef.current = workspace;
+        writeWorkspaceCache(activeUserId, workspace);
+        remoteReadyRef.current = true;
+        hasLoadedRemoteWorkspaceRef.current = true;
+        setDbStatus('connected');
+        showToast(
+          hadLoadedWorkspace
+            ? 'SQL bağlantısı yeniden kuruldu. Yerel değişiklikler sunucuya yükleniyor.'
+            : 'SQL bağlantısı yeniden kuruldu. Çalışma alanı sunucudan yenilendi.',
+          'success'
+        );
       } catch (error) {
         if (cancelled) return;
+        remoteReadyRef.current = false;
+        offlineDraftPendingRef.current = true;
+        if (requiresFreshEditorSession(error)) {
+          forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+          return;
+        }
         if (error?.code === 'USER_LOCKED') {
           forceLogoutToLogin('', {
             userId: activeUserId,
@@ -7632,15 +6166,65 @@ export default function EIcerikEditor() {
           });
           return;
         }
-        if (error?.code === 'SESSION_EXPIRED') {
-          setDbStatus('local');
+        retryTimer = window.setTimeout(reconnectWorkspace, 2000);
+      }
+    };
+
+    retryTimer = window.setTimeout(reconnectWorkspace, 2000);
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [
+    activeSessionId,
+    activeUserId,
+    authState?.sessionLabel,
+    dbStatus,
+    forceLogoutToLogin,
+    loadWorkspaceState,
+    loginForm.password,
+    setDbStatus,
+    showToast,
+    syncWorkspaceMeta,
+  ]);
+
+  useEffect(() => {
+    if (!activeUserId || !activeSessionId) return undefined;
+    let cancelled = false;
+    const heartbeat = async () => {
+      try {
+        const result = await apiRequest('/auth/heartbeat', {
+          method: 'POST',
+          timeoutMs: REMOTE_STATUS_REQUEST_TIMEOUT_MS,
+          body: JSON.stringify({ userId: activeUserId, sessionId: activeSessionId }),
+        });
+        heartbeatFailCountRef.current = 0;
+        if (result?.kickRequested) setKickRequested(true);
+      } catch (error) {
+        if (cancelled) return;
+        if (requiresFreshEditorSession(error)) {
+          forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
           return;
         }
-        // Tüm diğer hatalar failCount'a girer.
-        // 3 üst üste başarısız → logout (tek hiccup kullanıcıyı atmasın)
-        failCount += 1;
-        if (failCount >= 3) {
-          forceLogoutToLogin(error.message || 'Sunucu baglantisi kesildi.');
+        if (error?.code === 'USER_LOCKED') {
+          forceLogoutToLogin('', {
+            userId: activeUserId,
+            password: loginForm.password,
+            sessionId: activeSessionId,
+            sessionLabel: authState?.sessionLabel || createSessionLabel(),
+            session: error.session || null,
+            message: error.message || 'Bu kullanıcı başka bir cihazda aktif.',
+          });
+          return;
+        }
+        // Tek bir geçici hatada "SQL kesildi"ye geçme; kısa ağ dalgalanmaları
+        // bağlantıyı koparmış gibi göstermesin. Ancak 2 ardışık hatadan sonra
+        // gerçek bir kesinti kabul edip yeniden bağlanma akışına geç.
+        heartbeatFailCountRef.current += 1;
+        if (heartbeatFailCountRef.current >= 2) {
+          remoteReadyRef.current = false;
+          offlineDraftPendingRef.current = true;
+          setDbStatus('reconnecting');
         }
       }
     };
@@ -7677,13 +6261,23 @@ export default function EIcerikEditor() {
   useEffect(() => {
     if (!activeUserId || !remoteReadyRef.current || dbStatus !== 'connected' || !currentProjectId)
       return;
+    if (pendingResume) return;
     if (skipRemoteSaveRef.current) {
       skipRemoteSaveRef.current = false;
       return;
     }
-    const t = setTimeout(() => {
+    let saveTimer;
+    const runSave = () => {
+      // Bir kayıt zaten uçuştaysa yenisini başlatma (yavaş yüklemede istekler
+      // üst üste binip bant genişliğini doldurmasın); bitince son hâli kaydet.
+      if (remoteSavePendingRef.current) {
+        saveTimer = setTimeout(runSave, 1200);
+        return;
+      }
+      remoteSavePendingRef.current = true;
       apiRequest(`/projects/${currentProjectId}/draft`, {
         method: 'PUT',
+        timeoutMs: REMOTE_SAVE_REQUEST_TIMEOUT_MS,
         body: JSON.stringify({
           state: createSafeStateForStorage(present),
           name: projectNameDraft,
@@ -7692,11 +6286,34 @@ export default function EIcerikEditor() {
         }),
       })
         .then((r) => {
+          remoteSavePendingRef.current = false;
+          const hadOfflineDraft = offlineDraftPendingRef.current;
+          offlineDraftPendingRef.current = false;
           saveFailCountRef.current = 0;
           if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
           mergeWorkspaceProjectData({ currentProject: r?.project });
+          setLastSaved(new Date());
+          // Önbelleği "son kaydedilen hâl" ile güncelle → bir sonraki açılışta
+          // kullanıcı en güncel işini anında görür (geçmiş hâl değil).
+          if (lastWorkspaceRef.current) {
+            lastWorkspaceRef.current = {
+              ...lastWorkspaceRef.current,
+              state: createSafeStateForStorage(present),
+              updatedAt: r?.updatedAt || lastWorkspaceRef.current.updatedAt,
+              currentProject: r?.project || lastWorkspaceRef.current.currentProject,
+            };
+            writeWorkspaceCache(activeUserId, lastWorkspaceRef.current);
+          }
+          if (hadOfflineDraft) {
+            showToast('Yerel değişiklikler SQL sunucusuna yüklendi.', 'success');
+          }
         })
         .catch((error) => {
+          remoteSavePendingRef.current = false;
+          if (requiresFreshEditorSession(error)) {
+            forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+            return;
+          }
           if (error?.code === 'BOOK_LOCKED' || error?.code === 'BOOK_LOCK_REQUIRED') {
             const message = formatBookLockMessage(
               error.lock,
@@ -7707,7 +6324,9 @@ export default function EIcerikEditor() {
             if (currentProjectId && present.selBookId) {
               releaseBookLock(currentProjectId, present.selBookId);
             }
-            commit((p) => ({ ...p, selActId: null, selBookId: null }));
+            const fallbackRoute = { pubId: presentRef.current.selPubId || null, bookId: null, actId: null };
+            setNavigationRouteState(fallbackRoute);
+            writeBrowserRoute(fallbackRoute, 'replace');
             return;
           }
           if (error?.code === 'USER_LOCKED') {
@@ -7721,46 +6340,52 @@ export default function EIcerikEditor() {
             });
             return;
           }
-          // Geçici: oturum süresi doldu uyarısı kullanıcıyı editörden atmasın.
-          // if (error?.code === 'SESSION_EXPIRED') {
-          //   forceLogoutToLogin(error.message || 'Oturum suresi doldu.');
-          //   return;
-          // }
           // Transient error (network hiccup, FTP deployment in progress, etc.)
           // Retry automatically — only go fully offline after 5 consecutive failures.
           saveFailCountRef.current += 1;
+          offlineDraftPendingRef.current = true;
           if (saveFailCountRef.current >= 5) {
-            setDbStatus('local');
-          } else {
+            remoteReadyRef.current = false;
+            setDbStatus('reconnecting');
             showToast(
-              `Kayıt geçici olarak başarısız (${saveFailCountRef.current}/5). Yeniden deneniyor...`,
+              'SQL bağlantısı kesildi. Değişiklikler bu cihazda tutuluyor; bağlantı gelince yüklenecek.',
               'warning'
             );
           }
+          // Geçici hatada toast spam'i yok; durum göstergesi zaten "yerel taslak"
+          // gösteriyor ve kayıt arka planda yeniden denenecek.
         });
-    }, 350);
-    return () => clearTimeout(t);
+    };
+    saveTimer = setTimeout(runSave, 350);
+    return () => clearTimeout(saveTimer);
   }, [
     activeSessionId,
     activeUserId,
     authState?.sessionLabel,
-    commit,
     currentProjectId,
     dbStatus,
     forceLogoutToLogin,
     loginForm.password,
     mergeWorkspaceProjectData,
+    pendingResume,
     present,
     projectNameDraft,
     releaseBookLock,
     setDbStatus,
+    setNavigationRouteState,
     showToast,
+    writeBrowserRoute,
   ]);
 
   const selActivity = useMemo(() => {
     const rawActivity = present.activities.find((a) => a.id === present.selActId) || null;
     return rawActivity ? normalizeActivity(rawActivity) : null;
   }, [present.activities, present.selActId]);
+
+  useEffect(() => {
+    setShowDesignTools(false);
+  }, [selActivity?.id]);
+
   const isMixedAct = selActivity?.type === 'mixed';
   const hasObjectSelection = !!selActivity?.selectedObjectId || selectedIds.size > 0;
   const ribbonSelectedObjects = useMemo(() => {
@@ -7825,44 +6450,162 @@ export default function EIcerikEditor() {
 
   const handleSelectPub = useCallback(
     async (id) => {
-      if (currentProjectId && present.selBookId) {
-        await releaseBookLock(currentProjectId, present.selBookId);
-      }
-      commit((p) => ({ ...p, selPubId: id, selBookId: null, selActId: null }));
+      return navigateToEditorRoute({ pubId: id || null, bookId: null, actId: null }, { mode: 'push' });
     },
-    [commit, currentProjectId, present.selBookId, releaseBookLock]
+    [navigateToEditorRoute]
   );
 
   const handleSelectBook = useCallback(
     async (id) => {
-      if (!id) {
-        if (currentProjectId && present.selBookId) {
-          await releaseBookLock(currentProjectId, present.selBookId);
-        }
-        commit((p) => ({ ...p, selBookId: null, selActId: null }));
-        return true;
-      }
-
-      if (!currentProjectId) {
-        commit((p) => ({ ...p, selBookId: id, selActId: null }));
-        return true;
-      }
-
-      if (present.selBookId === id) {
-        commit((p) => ({ ...p, selBookId: id, selActId: null }));
-        return true;
-      }
-
-      const locked = await acquireBookLock(currentProjectId, id);
-      if (!locked) return false;
-      if (present.selBookId) {
-        await releaseBookLock(currentProjectId, present.selBookId);
-      }
-      commit((p) => ({ ...p, selBookId: id, selActId: null }));
-      return true;
+      return navigateToEditorRoute(
+        { pubId: presentRef.current.selPubId || null, bookId: id || null, actId: null },
+        { mode: 'push' }
+      );
     },
-    [acquireBookLock, commit, currentProjectId, present.selBookId, releaseBookLock]
+    [navigateToEditorRoute]
   );
+
+  // ─── Session Resume Tracker & Flow ──────────────────────────────────────────
+
+  useEffect(() => {
+    setHasCheckedResume(false);
+    setPendingResume(null);
+  }, [activeUserId]);
+
+  useLayoutEffect(() => {
+    if (activeUserId && dbStatus === 'connected' && !hasCheckedResume) {
+      const entryMode = workspaceEntryModeRef.current;
+      const resume = getSessionResume(activeUserId);
+      const validation = validateSessionResumeTarget(resume, present);
+      if (validation.hasTarget) {
+        if (entryMode === 'login' || entryMode === 'refresh') {
+          setPendingResume(resume);
+        }
+      }
+      workspaceEntryModeRef.current = 'active';
+      setHasCheckedResume(true);
+    }
+  }, [
+    activeUserId,
+    dbStatus,
+    hasCheckedResume,
+    present,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (activeUserId && dbStatus === 'connected' && hasCheckedResume && !pendingResume) {
+      const activeBook = present.books.find((b) => b.id === present.selBookId);
+      const activeAct = present.activities.find((a) => a.id === present.selActId);
+
+      if (!activeAct) return;
+
+      saveSessionResume(activeUserId, {
+        pubId: present.selPubId,
+        bookId: present.selBookId,
+        actId: activeAct.id,
+        projectId: currentProjectId,
+        projectName: currentProject?.name || null,
+        bookName: activeBook?.name || null,
+        activityName: activeAct?.name || null
+      });
+    }
+  }, [
+    activeUserId,
+    dbStatus,
+    hasCheckedResume,
+    pendingResume,
+    present.selPubId,
+    present.selBookId,
+    present.selActId,
+    currentProjectId,
+    currentProject?.name,
+    present.publishers,
+    present.books,
+    present.activities
+  ]);
+
+  useEffect(() => {
+    if (!activeUserId || !activeSessionId || dbStatus !== 'connected' || !hasCheckedResume || pendingResume) {
+      return;
+    }
+    saveActiveSessionNavigation(activeUserId, activeSessionId, {
+      pubId: present.selPubId,
+      bookId: present.selBookId,
+      actId: present.selActId,
+    });
+  }, [
+    activeSessionId,
+    activeUserId,
+    dbStatus,
+    hasCheckedResume,
+    pendingResume,
+    present.selActId,
+    present.selBookId,
+    present.selPubId,
+  ]);
+
+  // ─── Browser Back/Forward Handler ────────────────────────────────────────
+  useEffect(() => {
+    if (!activeUserId) return;
+    if (typeof window === 'undefined') return;
+
+    const handleBrowserNavigation = async (event) => {
+      const navState = getEditorHistoryState(event.state);
+      if (navState?.cursor) browserHistoryCursorRef.current = navState.cursor;
+
+      if (dismissTopBackSurface()) return;
+
+      if (hasBlockingBackSurface()) {
+        writeBrowserRoute(currentRouteRef.current, 'replace');
+        return;
+      }
+
+      if (navState?.kind === 'overlay-guard') {
+        writeBrowserRoute(currentRouteRef.current, 'replace');
+        return;
+      }
+
+      const route = parseEditorHashRoute(window.location.hash);
+      try {
+        if (route.textStudio) {
+          setIsTextStudioMode(true);
+          return;
+        }
+
+        await navigateToEditorRoute(route, { source: 'pop', mode: 'replace' });
+      } catch {
+        writeBrowserRoute(currentRouteRef.current, 'replace');
+      }
+    };
+
+    window.addEventListener('popstate', handleBrowserNavigation);
+    return () => window.removeEventListener('popstate', handleBrowserNavigation);
+  }, [
+    activeUserId,
+    dismissTopBackSurface,
+    hasBlockingBackSurface,
+    navigateToEditorRoute,
+    writeBrowserRoute,
+  ]);
+
+  const handleConfirmResume = useCallback(async () => {
+    if (!pendingResume) return;
+    showToast('Kaldığınız yerden devam ediyorsunuz.', 'success');
+    writeBrowserRoute(currentRouteRef.current, 'replace');
+    skipRemoteSaveRef.current = false;
+    setPendingResume(null);
+  }, [pendingResume, showToast, writeBrowserRoute]);
+
+  const handleCancelResume = useCallback(() => {
+    clearSessionResume(activeUserId);
+    setNavigationRouteState(routeFromSelection(resetNavigationForResumePrompt(presentRef.current)));
+    writeBrowserRoute(routeFromSelection(resetNavigationForResumePrompt(presentRef.current)), 'replace');
+    setSelectedIds(new Set());
+    setActiveTab('sahne');
+    skipRemoteSaveRef.current = false;
+    setPendingResume(null);
+  }, [activeUserId, setActiveTab, setNavigationRouteState, writeBrowserRoute]);
 
   const startLayoutResize = useCallback(
     (type, e) => {
@@ -7891,8 +6634,8 @@ export default function EIcerikEditor() {
     setTimelineCurrentTime(0);
     setTimelinePlaying(false);
     setIsSlidePanelCollapsed(false);
-    setLeftPanelWidth(180);
-    setRightPanelWidth(380);
+    setLeftPanelWidth(PANEL_LIMITS.left.default);
+    setRightPanelWidth(PANEL_LIMITS.right.default);
   }, [
     setIsSlidePanelCollapsed,
     setLeftPanelWidth,
@@ -7916,6 +6659,35 @@ export default function EIcerikEditor() {
       }));
     },
     [commit, setTimelineCurrentTime]
+  );
+
+  const handleGenerateDesignTemplate = useCallback(
+    (templateId) => {
+      if (!selActivity) return;
+      updateActivity(
+        ensureSceneTemplateSlide(selActivity, templateId, { forceRebuildGenerated: true })
+      );
+      setShowDesignTools(false);
+      showToast('Hazır tasarım sahnesi etkinliğe uygulandı.', 'success');
+    },
+    [selActivity, showToast, updateActivity]
+  );
+
+  const handleGenerateAnswerSceneSet = useCallback(() => {
+    if (!selActivity) return;
+    updateActivity(ensureAnswerSceneLayerSet(selActivity));
+    setShowDesignTools(false);
+    showToast('Cevap sahne seti etkinliğe uygulandı.', 'success');
+  }, [selActivity, showToast, updateActivity]);
+
+  const patchCanvasViewOption = useCallback(
+    (key) => {
+      if (!selActivity) return;
+      const viewOptions = selActivity.viewOptions || {};
+      const nextOptions = { ...viewOptions, [key]: !viewOptions[key] };
+      updateActivity({ ...selActivity, viewOptions: nextOptions });
+    },
+    [selActivity, updateActivity]
   );
 
   const buildLiveRuntimeStateSnapshot = useCallback(() => {
@@ -7964,7 +6736,7 @@ export default function EIcerikEditor() {
     if (typeof window === 'undefined') return;
     if (inline) {
       setIsTextStudioMode(true);
-      window.location.hash = '#text-studio';
+      writeBrowserRoute({ ...currentRouteRef.current, textStudio: true }, 'push');
       return;
     }
     const studioUrl = `${window.location.pathname}${window.location.search}#text-studio`;
@@ -7974,8 +6746,8 @@ export default function EIcerikEditor() {
       return;
     }
     setIsTextStudioMode(true);
-    window.location.hash = '#text-studio';
-  }, []);
+    writeBrowserRoute({ ...currentRouteRef.current, textStudio: true }, 'push');
+  }, [writeBrowserRoute]);
 
   const handleEditorTabSelect = useCallback(
     (tabId) => {
@@ -8245,6 +7017,8 @@ export default function EIcerikEditor() {
     } catch {
     } finally {
       clearStoredAuth();
+      clearActiveSessionNavigation(activeUserId, activeSessionId);
+      workspaceEntryModeRef.current = 'anonymous';
       setLoginForm((current) => ({
         ...current,
         userId: activeUserId || current.userId,
@@ -8254,8 +7028,10 @@ export default function EIcerikEditor() {
       setLockState(null);
       setLoginError('');
       resetWorkspaceSession('');
+      setIsTextStudioMode(false);
+      writeBrowserRoute({}, 'replace');
     }
-  }, [activeSessionId, activeUserId, resetWorkspaceSession]);
+  }, [activeSessionId, activeUserId, resetWorkspaceSession, writeBrowserRoute]);
 
   const handleCreateProject = useCallback(async () => {
     const previousProjectId = currentProjectId;
@@ -8531,7 +7307,11 @@ export default function EIcerikEditor() {
     reader.onload = (ev) => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (d.publishers !== undefined) commit(() => normalizeState({ ...INITIAL_STATE, ...d }));
+        if (d.publishers !== undefined) {
+          const next = normalizeState({ ...INITIAL_STATE, ...d });
+          setHistory({ past: [], present: next, future: [] });
+          writeBrowserRoute(routeFromSelection(next), 'replace');
+        }
       } catch {
         showToast('Geçersiz JSON.');
       }
@@ -8579,13 +7359,7 @@ export default function EIcerikEditor() {
     onSetBookDefaultStylePreset: handleSetBookDefaultStylePreset,
   };
 
-  const renderRightInspectorPanel = (panelProps = {}) => (
-    <RightInspectorPhase2
-      {...rightInspectorPanelProps}
-      hideTimeline={!!panelProps.hideTimeline}
-      mobile={!!panelProps.mobile}
-    />
-  );
+
 
   // Editor tabs
   const TABS = [
@@ -8648,6 +7422,10 @@ export default function EIcerikEditor() {
   );
 
   const handleManualSaveProject = useCallback(() => {
+    if (isRemoteMutationLocked) {
+      showToast('SQL bağlantısı yeniden kuruluyor. Kaydetme bağlantı sağlanınca açılacak.', 'warning');
+      return;
+    }
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem(
@@ -8655,20 +7433,31 @@ export default function EIcerikEditor() {
           JSON.stringify(createSafeStateForStorage(present))
         );
       }
+      if (dbStatus === 'reconnecting') offlineDraftPendingRef.current = true;
       setLastSaved(new Date());
-      showToast('Kaydedildi.', 'success');
+      showToast(
+        dbStatus === 'reconnecting'
+          ? 'Yerel taslak kaydedildi. SQL gelince sunucuya yüklenecek.'
+          : 'Kaydedildi.',
+        'success'
+      );
     } catch {
       showToast('Kaydetme işlemi tamamlanamadı.', 'error');
     }
-  }, [activeUserId, present, showToast]);
+  }, [activeUserId, dbStatus, isRemoteMutationLocked, present, showToast]);
 
   const resetProjectFromRibbon = useCallback(() => {
+    if (isRemoteMutationLocked) {
+      showToast('SQL bağlantısı yeniden kuruluyor. Yeni proje işlemi geçici olarak kapalı.', 'warning');
+      return;
+    }
     if (typeof window !== 'undefined' && !window.confirm('Yeni proje oluşturulacak. Mevcut içerik sıfırlansın mı?')) {
       return;
     }
     setHistory({ past: [], present: INITIAL_STATE, future: [] });
+    writeBrowserRoute(routeFromSelection(INITIAL_STATE), 'replace');
     setSelectedIds(new Set());
-  }, [setHistory]);
+  }, [isRemoteMutationLocked, setHistory, showToast, writeBrowserRoute]);
 
   const ribbonController = useRibbonController({
     activeEditorTab: activeTab,
@@ -8704,6 +7493,11 @@ export default function EIcerikEditor() {
     setShowVariablesManager,
     setStoryRibbonTab,
     setZoom,
+    setTimelineDockOpen,
+    setTimelineHeight,
+    showBaseLayer,
+    onShowBaseLayerChange: setShowBaseLayer,
+    slideClipboardRef,
     showToast,
     storyRibbonTab,
     updateActivity,
@@ -8724,13 +7518,167 @@ export default function EIcerikEditor() {
     showToast,
   });
 
+  useEffect(() => {
+    slideClipboardCommandsRef.current = {
+      copySlide: ribbonController.commands.copySlide,
+      pasteSlide: ribbonController.commands.pasteSlide,
+    };
+  }, [ribbonController.commands.copySlide, ribbonController.commands.pasteSlide]);
+
   const renderEditorRibbon = useCallback(
     (options = {}) => {
       if (currentView !== 'editor' || !selActivity) return null;
+      // Mobil editörde MobileEditorShell kendi chrome'unu kullanır; masaüstü ribbon gizli.
+      if (!options.fullscreen && deviceMode !== 'desktop') return null;
       return <TopRibbon controller={ribbonController} fullscreen={!!options.fullscreen} />;
     },
-    [currentView, ribbonController, selActivity]
+    [currentView, deviceMode, ribbonController, selActivity]
   );
+
+  useBackDismissible({
+    id: 'canvas-expanded',
+    open: canvasExpanded && currentView === 'editor' && !!selActivity,
+    onDismiss: () => setCanvasExpanded(false),
+    priority: 900,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'storyline-preview',
+    open: storylinePreviewOpen,
+    onDismiss: handleCloseStorylinePreview,
+    priority: 880,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'answer-drawer',
+    open: answerDrawerOpen,
+    onDismiss: () => setAnswerDrawerOpen(false),
+    priority: 860,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'design-tools',
+    open: showDesignTools && currentView === 'editor' && !!selActivity,
+    onDismiss: () => setShowDesignTools(false),
+    priority: 840,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'review-threads',
+    open: showReviewThreads,
+    onDismiss: () => setShowReviewThreads(false),
+    priority: 830,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'admin-management',
+    open: showAdminManagement,
+    onDismiss: () => setShowAdminManagement(false),
+    priority: 820,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'project-manager',
+    open: showProjectManager,
+    onDismiss: () => setShowProjectManager(false),
+    priority: 810,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'variables-manager',
+    open: showVariablesManager,
+    onDismiss: () => setShowVariablesManager(false),
+    priority: 800,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'branch-diagram',
+    open: showBranchDiagram,
+    onDismiss: () => setShowBranchDiagram(false),
+    priority: 790,
+    registerBackDismissible,
+  });
+  useBackDismissible({
+    id: 'glossary-editor',
+    open: showGlossaryEditor,
+    onDismiss: () => setShowGlossaryEditor(false),
+    priority: 780,
+    registerBackDismissible,
+  });
+
+  if (keepBootVisibleForWorkspace) {
+    return null;
+  }
+
+  if (isRemoteMutationLocked) {
+    return (
+      <div
+        className="eic-app-root"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          background: 'linear-gradient(180deg, #091523 0%, #050b14 100%)',
+          color: '#e2e8f0',
+          fontFamily: "'Segoe UI',Tahoma,Geneva,Verdana,sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: 'min(440px, 100%)',
+            padding: 28,
+            borderRadius: 18,
+            border: '1px solid rgba(56,189,248,.25)',
+            background: 'rgba(15,23,42,.92)',
+            textAlign: 'center',
+            boxShadow: '0 24px 64px rgba(0,0,0,.34)',
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#7dd3fc' }}>
+            BAĞLANTI KESİLDİ
+          </div>
+          <div style={{ marginTop: 12, fontSize: 22, fontWeight: 900 }}>
+            Bağlantı yeniden kuruluyor
+          </div>
+          <p style={{ margin: '12px 0 0', fontSize: 13, lineHeight: 1.65, color: '#cbd5e1' }}>
+            Sunucu bağlantısı kesildiği için düzenleme ve kayıt geçici olarak kapalıdır.
+            Bağlantı sağlandığında çalışma alanı sunucudan yenilenerek devam edecek.
+          </p>
+          <div
+            style={{
+              margin: '18px auto 0',
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              border: '3px solid rgba(125,211,252,.25)',
+              borderTopColor: '#38bdf8',
+            }}
+            aria-label="Bağlantı bekleniyor"
+          />
+          <button
+            type="button"
+            onClick={() => forceLogoutToLogin('')}
+            style={{
+              marginTop: 22,
+              height: 38,
+              padding: '0 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(148,163,184,.3)',
+              background: 'rgba(255,255,255,.06)',
+              color: '#e2e8f0',
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            Oturumu Kapat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isTextStudioMode && activeUserId) {
     return (
       <TextStudioWorkspace
@@ -8749,7 +7697,7 @@ export default function EIcerikEditor() {
               window.close();
               return;
             }
-            window.location.hash = '';
+            writeBrowserRoute(currentRouteRef.current, 'replace');
           }
         }}
         onOpenNewTab={() => {
@@ -8763,455 +7711,41 @@ export default function EIcerikEditor() {
 
   if (!activeUserId) {
     return (
-      <div
-        style={{
-          width: '100vw',
-          height: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
-          background: 'radial-gradient(circle at top, #17355d 0%, #09111f 48%, #050914 100%)',
-          color: EDITOR_THEME.shellText,
-          fontFamily: "'Segoe UI',Tahoma,Geneva,Verdana,sans-serif",
+      <LoginScreen
+        users={FIXED_EDITOR_USERS}
+        loginForm={loginForm}
+        loginBusy={loginBusy}
+        loginError={loginError}
+        lockState={lockState}
+        logoutReason={logoutReason}
+        onDismissLogoutReason={() => setLogoutReason(null)}
+        onSelectQuickUser={(userId) => {
+          setLockState(null);
+          setLoginError('');
+          setLoginForm((current) => ({ ...current, userId }));
         }}
-      >
-        {logoutReason && (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 9999,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(0,0,0,.72)',
-              backdropFilter: 'blur(4px)',
-            }}
-          >
-            <div
-              style={{
-                width: 'min(420px, 90vw)',
-                background: '#131e33',
-                border: '1px solid #2a3a5a',
-                borderRadius: 20,
-                padding: 28,
-                boxShadow: '0 24px 64px rgba(0,0,0,.6)',
-                color: '#e6eefc',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    background: 'rgba(248,113,113,.18)',
-                    border: '1px solid rgba(248,113,113,.4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#f87171"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                </div>
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 15 }}>Oturum Sonlandı</div>
-                  <div style={{ fontSize: 11, color: '#91a6c6', marginTop: 2 }}>
-                    Sunucudan gelen hata mesajı
-                  </div>
-                </div>
-              </div>
-              <div
-                style={{
-                  background: 'rgba(248,113,113,.1)',
-                  border: '1px solid rgba(248,113,113,.25)',
-                  borderRadius: 10,
-                  padding: '10px 14px',
-                  fontSize: 13,
-                  color: '#fecaca',
-                  fontFamily: 'monospace',
-                  wordBreak: 'break-word',
-                  marginBottom: 20,
-                }}
-              >
-                {logoutReason}
-              </div>
-              <button
-                onClick={() => setLogoutReason(null)}
-                style={{
-                  width: '100%',
-                  height: 42,
-                  borderRadius: 12,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)',
-                  color: '#03111f',
-                  fontSize: 13,
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                }}
-              >
-                Tamam, Giriş Yap
-              </button>
-            </div>
-          </div>
-        )}
-        <div
-          style={{
-            width: 'min(920px, 100%)',
-            display: 'grid',
-            gridTemplateColumns:
-              viewportWidth <= 900 ? '1fr' : 'minmax(0, 1.1fr) minmax(320px, .9fr)',
-            gap: 20,
-          }}
-        >
-          <div
-            style={{
-              ...createShellPanelStyle(),
-              borderRadius: 28,
-              padding: 28,
-              background: 'linear-gradient(180deg, rgba(27,43,71,.96), rgba(9,17,31,.98))',
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 10px',
-                borderRadius: 999,
-                border: `1px solid ${EDITOR_THEME.shellAccentBorder}`,
-                background: EDITOR_THEME.shellAccentSoft,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: EDITOR_THEME.shellSuccess,
-                }}
-              />
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#bfe7ff', letterSpacing: 0.2 }}>
-                Yetkili editör alanı
-              </span>
-            </div>
-            <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 1.08, marginTop: 18 }}>
-              Kullanıcını seç, kendi proje alanınla devam et.
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                color: EDITOR_THEME.shellMuted,
-                lineHeight: 1.7,
-                marginTop: 14,
-              }}
-            >
-              Her kullanıcı kendi proje listesi, sürümleri ve aktif çalışma kaydıyla ayrılıyor.
-              Admin yönetimiyle yeni hesap eklenebilir.
-            </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: viewportWidth <= 640 ? '1fr' : 'repeat(2, minmax(0, 1fr))',
-                gap: 12,
-                marginTop: 22,
-              }}
-            >
-              {FIXED_EDITOR_USERS.map((user) => {
-                const isActive = loginForm.userId === user.id;
-                return (
-                  <button
-                    key={user.id}
-                    onClick={() => {
-                      setLockState(null);
-                      setLoginError('');
-                      setLoginForm((current) => ({ ...current, userId: user.id }));
-                    }}
-                    style={{
-                      textAlign: 'left',
-                      padding: 18,
-                      borderRadius: 20,
-                      border: `1px solid ${isActive ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`,
-                      background: isActive
-                        ? EDITOR_THEME.shellAccentSoftStrong
-                        : 'rgba(255,255,255,.04)',
-                      color: EDITOR_THEME.shellText,
-                      cursor: 'pointer',
-                      boxShadow: isActive ? '0 18px 36px rgba(14,165,233,.16)' : 'none',
-                    }}
-                  >
-                    <div style={{ fontSize: 16, fontWeight: 900 }}>{user.name}</div>
-                    <div style={{ fontSize: 11, color: EDITOR_THEME.shellMuted, marginTop: 6 }}>
-                      Kullanıcı ID: {user.id}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#d7f3ff', marginTop: 10 }}>
-                      Şifre yöneticiden alınır
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div
-            style={{
-              ...createShellPanelStyle(),
-              borderRadius: 28,
-              padding: 24,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              gap: 16,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: '#8fd3ff',
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.7,
-                }}
-              >
-                Giriş
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>
-                {lockState ? 'Kullanıcı şu anda başka cihazda açık' : 'Editör oturumunu başlat'}
-              </div>
-              <div style={{ fontSize: 12, color: EDITOR_THEME.shellMuted, marginTop: 6 }}>
-                {lockState
-                  ? 'Bu ekran kapanmadan bekler; diğer oturum çıkış yaptığında giriş otomatik tamamlanır.'
-                  : 'Sistem her ilk açılışta kullanıcı girişi ister.'}
-              </div>
-            </div>
-
-            {lockState ? (
-              <div
-                style={{
-                  padding: 18,
-                  borderRadius: 20,
-                  border: '1px solid rgba(251,191,36,.28)',
-                  background: 'linear-gradient(180deg, rgba(251,191,36,.14), rgba(148,64,12,.14))',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#fde68a' }}>
-                  {FIXED_EDITOR_USERS.find((user) => user.id === lockState.userId)?.name ||
-                    lockState.userId}{' '}
-                  başka bir cihazda açık.
-                </div>
-                {lockState.kickPending ? (
-                  <>
-                    <div style={{ fontSize: 12, lineHeight: 1.6, color: '#fef3c7' }}>
-                      O cihaza çıkış isteği gönderildi.
-                      {(lockState.waitSeconds ?? 0) > 0 ? (
-                        <>
-                          {' '}
-                          <strong style={{ color: '#fbbf24' }}>{lockState.waitSeconds}</strong>{' '}
-                          saniye sonra zorla çıkarabilirsiniz.
-                        </>
-                      ) : (
-                        <> Artık zorla çıkabilirsiniz.</>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,.55)' }}>
-                      Diğer cihaz çıkış yaparsa bu ekran otomatik açılacak.
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 12, lineHeight: 1.6, color: '#fef3c7' }}>
-                    {lockState.message ||
-                      'Bu kullanıcı aynı anda yalnızca tek cihazda editör açabilir.'}
-                  </div>
-                )}
-                {lockState.session?.lastSeenAt && (
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.55)' }}>
-                    Son aktif: {new Date(lockState.session.lastSeenAt).toLocaleString('tr-TR')}
-                  </div>
-                )}
-                {lockState.kickPending && (
-                  <button
-                    onClick={handleForceKick}
-                    disabled={loginBusy}
-                    title="Anlık zorla çıkar"
-                    style={{
-                      alignSelf: 'flex-end',
-                      background: 'none',
-                      border: 'none',
-                      padding: '2px 4px',
-                      fontSize: 11,
-                      color: 'rgba(255,255,255,.18)',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      letterSpacing: 0.3,
-                      transition: 'color .2s',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(251,191,36,.7)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,.18)')}
-                  >
-                    zorla çıkar
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: EDITOR_THEME.shellMuted }}>Kullanıcı</span>
-                  <input
-                    list="editor-user-options"
-                    value={loginForm.userId}
-                    onChange={(e) =>
-                      setLoginForm((current) => ({ ...current, userId: e.target.value.trim() }))
-                    }
-                    style={{
-                      height: 42,
-                      borderRadius: 12,
-                      border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
-                      background: 'rgba(5,12,24,.9)',
-                      color: EDITOR_THEME.shellText,
-                      padding: '0 12px',
-                    }}
-                  />
-                  <datalist id="editor-user-options">
-                    {FIXED_EDITOR_USERS.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </datalist>
-                </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: EDITOR_THEME.shellMuted }}>Şifre</span>
-                  <input
-                    type="password"
-                    value={loginForm.password}
-                    onChange={(e) =>
-                      setLoginForm((current) => ({ ...current, password: e.target.value }))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !loginBusy) handleLogin();
-                    }}
-                    style={{
-                      height: 42,
-                      borderRadius: 12,
-                      border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
-                      background: 'rgba(5,12,24,.9)',
-                      color: EDITOR_THEME.shellText,
-                      padding: '0 12px',
-                    }}
-                  />
-                </label>
-              </div>
-            )}
-
-            {loginError && (
-              <div
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 14,
-                  border: '1px solid rgba(248,113,113,.32)',
-                  background: 'rgba(248,113,113,.12)',
-                  color: '#fecaca',
-                  fontSize: 12,
-                }}
-              >
-                {loginError}
-              </div>
-            )}
-
-            {lockState ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {lockState.kickPending && (lockState.waitSeconds ?? 1) === 0 && (
-                  <button
-                    onClick={handleForceKick}
-                    disabled={loginBusy}
-                    style={{
-                      height: 46,
-                      borderRadius: 14,
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
-                      color: '#1c1007',
-                      fontSize: 13,
-                      fontWeight: 900,
-                      cursor: loginBusy ? 'default' : 'pointer',
-                      opacity: loginBusy ? 0.72 : 1,
-                    }}
-                  >
-                    {loginBusy ? 'Çıkış isteniyor...' : 'Zorla Çıkar ve Giriş Yap'}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setLockState(null);
-                    setLoginError('');
-                    setLoginForm((current) => ({
-                      ...current,
-                      userId: lockState.userId,
-                      password: lockState.password || current.password,
-                    }));
-                  }}
-                  style={{
-                    height: 40,
-                    borderRadius: 14,
-                    border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
-                    background: 'rgba(255,255,255,.06)',
-                    color: EDITOR_THEME.shellMuted,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Farklı Kullanıcı Seç
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={handleLogin}
-                disabled={loginBusy}
-                style={{
-                  height: 46,
-                  borderRadius: 14,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)',
-                  color: '#03111f',
-                  fontSize: 13,
-                  fontWeight: 900,
-                  cursor: loginBusy ? 'default' : 'pointer',
-                  opacity: loginBusy ? 0.72 : 1,
-                }}
-              >
-                {loginBusy ? 'Giriş yapılıyor...' : 'Editörü Aç'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+        onUserIdChange={(userId) => setLoginForm((current) => ({ ...current, userId }))}
+        onPasswordChange={(password) => setLoginForm((current) => ({ ...current, password }))}
+        onLogin={handleLogin}
+        onForceKick={handleForceKick}
+        onChooseDifferentUser={() => {
+          setLockState(null);
+          setLoginError('');
+          setLoginForm((current) => ({
+            ...current,
+            userId: lockState?.userId || current.userId,
+            password: lockState?.password || current.password,
+          }));
+        }}
+      />
     );
   }
 
+
   return (
     <div
+      className="eic-app-root"
       style={{
-        width: '100vw',
-        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: EDITOR_THEME.shellBg,
@@ -9382,6 +7916,7 @@ export default function EIcerikEditor() {
         </div>
       )}
 
+      {!(currentView === 'editor' && deviceMode !== 'desktop') && (
       <EditorTopBar
         activeUser={activeUser}
         currentProject={currentProject}
@@ -9398,14 +7933,29 @@ export default function EIcerikEditor() {
         selActivity={selActivity}
         selBook={selBook}
         selPub={selPub}
+        onBackToPublishers={() => navigateToEditorRoute({}, { mode: 'push' })}
+        onBackToBooks={() =>
+          navigateToEditorRoute({ pubId: presentRef.current.selPubId || null }, { mode: 'push' })
+        }
+        onBackToActivities={() =>
+          navigateToEditorRoute(
+            {
+              pubId: presentRef.current.selPubId || null,
+              bookId: presentRef.current.selBookId || null,
+            },
+            { mode: 'push' }
+          )
+        }
         setAnswerDrawerOpen={setAnswerDrawerOpen}
-        setCanvasExpanded={setCanvasExpanded}
+        onToggleFullscreen={toggleNativeFullscreen}
+        setDesignToolsOpen={setShowDesignTools}
         setShowAdminManagement={setShowAdminManagement}
         setShowProjectManager={setShowProjectManager}
         setShowReviewThreads={setShowReviewThreads}
         setStoryRibbonTab={setStoryRibbonTab}
         undo={undo}
       />
+      )}
 
       {bookLockWarning && (
         <div
@@ -9478,134 +8028,29 @@ export default function EIcerikEditor() {
         onChange={(nextTerms) => commit((p) => ({ ...p, glossaryTerms: nextTerms }))}
       />
 
-      {currentView === 'publishers' && (
-        <SelectionStepShell
-          title="Yayınevi Oluşturma ve Seçim Sayfası"
-          subtitle="İçeriğin hangi yayınevinde yer alacağını seç veya yeni bir yayınevi oluştur."
-          badge="01 - Çalışma Yüzeyi"
-          guidance="Önce yayınevini seç, sonra kitap ve etkinlik akışı otomatik netleşsin."
-          stats={[
-            {
-              label: 'Yayınevi',
-              value: present.publishers.length,
-              note: 'Kurum alanı',
-              color: '#7dd3fc',
-            },
-            { label: 'Kitap', value: present.books.length, note: 'Toplam kitap', color: '#bbf7d0' },
-            {
-              label: 'Etkinlik',
-              value: present.activities.length,
-              note: 'Hazır sahne',
-              color: '#fde68a',
-            },
-            {
-              label: 'Durum',
-              value: dbStatus === 'connected' ? 'DB' : 'Lokal',
-              note: 'Kayıt kanalı',
-              color: '#ffffff',
-            },
-          ]}
-        >
-          <PublisherPanel
-            publishers={present.publishers}
-            selId={present.selPubId}
-            onSelect={handleSelectPub}
-            onChange={(pubs) => commit((p) => ({ ...p, publishers: pubs }))}
-          />
-        </SelectionStepShell>
+      {currentView !== 'editor' && (
+        <LibraryWorkspace
+          publishers={present.publishers}
+          books={present.books}
+          activities={present.activities}
+          selectedPublisherId={present.selPubId}
+          selectedBookId={present.selBookId}
+          mobileColumn={deriveLibraryMobileColumn(currentRoute)}
+          onNavigateBack={() => navigateToEditorRoute(getParentEditorRoute(currentRouteRef.current), { mode: 'push' })}
+          onSelectPublisher={handleSelectPub}
+          onSelectBook={handleSelectBook}
+          onOpenActivity={handleSelectAct}
+          registerBackDismissible={registerBackDismissible}
+          onPublishersChange={(publishers) => commit((p) => ({ ...p, publishers }))}
+          onBooksChange={(books) => commit((p) => ({ ...p, books: books.map(normalizeBook) }))}
+          onActivitiesChange={(activities) => commit((p) => ({ ...p, activities }))}
+          normalizeBook={normalizeBook}
+          createActivity={createActivity}
+          notify={showToast}
+        />
       )}
 
-      {currentView === 'books' && (
-        <SelectionStepShell
-          title="Kitap Oluşturma ve Seçim Sayfası"
-          subtitle="Seçilen yayınevi altında kitaplarını yönet ve düzenlemek istediğin kitabı aç."
-          badge="02 - Çalışma Yüzeyi"
-          onBack={() => handleSelectPub(null)}
-          guidance="Kitap seçildiğinde etkinlik panosu ve PDF düzenleme stüdyosu bu bağlamda açılır."
-          stats={[
-            {
-              label: 'Bu Yayınevi',
-              value: present.books.filter((book) => book.publisherId === present.selPubId).length,
-              note: 'Kitap',
-              color: '#7dd3fc',
-            },
-            {
-              label: 'Etkinlik',
-              value: present.activities.filter((activity) =>
-                present.books.some(
-                  (book) => book.id === activity.bookId && book.publisherId === present.selPubId
-                )
-              ).length,
-              note: 'Bağlı çalışma',
-              color: '#bbf7d0',
-            },
-            { label: 'PDF Stüdyo', value: 'Aktif', note: 'Düzenleme hazır', color: '#fde68a' },
-            { label: 'Akış', value: '02/03', note: 'Sonraki: etkinlik', color: '#ffffff' },
-          ]}
-        >
-          <BookPanel
-            books={present.books}
-            selPubId={present.selPubId}
-            selId={present.selBookId}
-            onSelect={handleSelectBook}
-            onChange={(books) => commit((p) => ({ ...p, books: books.map(normalizeBook) }))}
-            currentProjectId={currentProjectId}
-            activities={present.activities}
-            onActivitiesChange={(activities) => commit((p) => ({ ...p, activities }))}
-            normalizeBook={normalizeBook}
-          />
-        </SelectionStepShell>
-      )}
-
-      {currentView === 'activities' && (
-        <SelectionStepShell
-          title="Kitaba Ait Etkinlik Oluşturma ve Seçim Sayfası"
-          subtitle="Düzenlemek veya yeni oluşturmak istediğin etkinliği seç. Editöre girdiğinde önce SVG zeminle başlayabilirsin."
-          badge="03 - Çalışma Yüzeyi"
-          onBack={() => handleSelectBook(null)}
-          allowOverflow
-          guidance="Etkinliği seçince ribbon, sahne, katman, trigger ve timeline tek çalışma yüzeyinde açılır."
-          stats={[
-            {
-              label: 'Bu Kitap',
-              value: present.activities.filter((activity) => activity.bookId === present.selBookId)
-                .length,
-              note: 'Etkinlik',
-              color: '#7dd3fc',
-            },
-            {
-              label: 'Sahne',
-              value: present.activities
-                .filter((activity) => activity.bookId === present.selBookId)
-                .reduce((sum, activity) => sum + getActivitySlides(activity).length, 0),
-              note: 'Toplam sahne',
-              color: '#bbf7d0',
-            },
-            {
-              label: 'Nesne',
-              value: present.activities
-                .filter((activity) => activity.bookId === present.selBookId)
-                .reduce((sum, activity) => sum + (activity.objects || []).length, 0),
-              note: 'Tasarım öğesi',
-              color: '#fde68a',
-            },
-            { label: 'Akış', value: 'Hazır', note: 'Articulate yapı', color: '#ffffff' },
-          ]}
-        >
-          <ActivityPanel
-            activities={present.activities}
-            books={present.books}
-            selBookId={present.selBookId}
-            selId={present.selActId}
-            onSelect={handleSelectAct}
-            onChange={(acts) => commit((p) => ({ ...p, activities: acts }))}
-            onBooksChange={(books) => commit((p) => ({ ...p, books: books.map(normalizeBook) }))}
-            createActivity={createActivity}
-          />
-        </SelectionStepShell>
-      )}
-
-      {currentView === 'editor' && (
+      {currentView === 'editor' && deviceMode === 'desktop' && (
         <EditorWorkspaceShell editorScrollRef={editorScrollRef}>
           <div
             style={{
@@ -9616,7 +8061,6 @@ export default function EIcerikEditor() {
               transformOrigin: 'top left',
               display: 'flex',
               flexDirection: 'column',
-              paddingBottom: isMobileViewport ? 72 : 0,
             }}
           >
             <div
@@ -9624,17 +8068,17 @@ export default function EIcerikEditor() {
                 flex: 1,
                 minHeight: 0,
                 display: 'flex',
-                flexDirection: isMobileViewport ? 'column' : 'row',
+                flexDirection: 'row',
                 overflow: 'hidden',
                 background: 'transparent',
-                padding: isMobileViewport ? 8 : 8,
-                gap: isMobileViewport ? 8 : 8,
+                padding: 8,
+                gap: 8,
               }}
             >
-              {!isMobileViewport && selActivity && !isSlidePanelCollapsed && (
+              {selActivity && !isSlidePanelCollapsed && (
                 <div
                   style={{
-                    width: Math.max(260, leftPanelWidth),
+                    width: Math.max(PANEL_LIMITS.left.min, leftPanelWidth),
                     flexShrink: 0,
                     border: `1px solid ${EDITOR_THEME.shellBorder}`,
                     borderRadius: 0,
@@ -9648,6 +8092,8 @@ export default function EIcerikEditor() {
                 >
                   <ActivityMapPanel
                     activity={selActivity}
+                    onCopySlide={ribbonController.commands.copySlide}
+                    onPasteSlide={ribbonController.commands.pasteSlide}
                     activities={present.activities}
                     currentBook={selBook}
                     onSelectActivity={handleSelectAct}
@@ -9657,7 +8103,7 @@ export default function EIcerikEditor() {
                   />
                 </div>
               )}
-              {!isMobileViewport && selActivity && (
+              {selActivity && (
                 <div
                   style={{
                     width: isSlidePanelCollapsed ? 34 : 10,
@@ -9693,7 +8139,7 @@ export default function EIcerikEditor() {
                   ) : (
                     <div
                       onPointerDown={(e) => startLayoutResize('left-panel', e)}
-                      onDoubleClick={() => setLeftPanelWidth(260)}
+                      onDoubleClick={() => setLeftPanelWidth(PANEL_LIMITS.left.default)}
                       style={{
                         width: 10,
                         height: '100%',
@@ -9753,98 +8199,171 @@ export default function EIcerikEditor() {
               >
                 {/* Sahne header kaldırıldı */}
 
-                {isMobileViewport && selActivity && (
-                  <SlideStrip
-                    activity={selActivity}
-                    onUpdate={updateActivity}
-                    getActivitySlides={getActivitySlides}
-                    selectActivitySlide={selectActivitySlide}
-                    createSlide={createSlide}
-                    normalizeSlide={normalizeSlide}
-                    getActivitySlideTarget={getActivitySlideTarget}
-                  />
-                )}
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: isMobileViewport ? 320 : 0,
-                    display: 'flex',
-                    overflow: 'hidden',
-                    background: EDITOR_THEME.appCanvas,
-                    padding: isMobileViewport ? 4 : 4,
-                    position: 'relative',
-                  }}
-                >
-                  {/* Canvas butonları kaldırıldı */}
-                  {/* TODO: StageCanvas'e previewState prop'u eklenecek */}
-                  <StageCanvas
-                    ref={canvasRef}
-                    activity={selActivity}
-                    onUpdate={updateActivity}
-                    zoom={zoom}
-                    onZoomChange={setZoom}
-                    selectedIds={selectedIds}
-                    onSelectionChange={setSelectedIds}
-                    timelineTime={timelineCurrentTime}
-                    showBaseLayer={showBaseLayer}
-                  />
-                </div>
-
-                <>
-                  <div
-                    onPointerDown={(e) => startLayoutResize('timeline', e)}
-                    onDoubleClick={() => setTimelineHeight(isMobileViewport ? 180 : 220)}
-                    style={{
-                      height: 12,
-                      flexShrink: 0,
-                      borderTop: `1px solid ${EDITOR_THEME.shellBorder}`,
-                      borderBottom: `1px solid ${EDITOR_THEME.shellBorder}`,
-                      background: EDITOR_THEME.shellPanelAlt,
-                      cursor: isMobileViewport ? 'default' : 'row-resize',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      touchAction: 'none',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 48,
-                        height: 3,
-                        borderRadius: 999,
-                        background: 'rgba(148,163,184,.3)',
-                      }}
-                    />
-                  </div>
-                  <TimelineDock
-                    activity={selActivity}
-                    onUpdate={updateActivity}
-                    height={isMobileViewport ? Math.min(timelineHeight, 200) : timelineHeight}
-                    currentTime={timelineCurrentTime}
-                    onCurrentTimeChange={setTimelineCurrentTime}
-                    isPlaying={timelinePlaying}
-                    onPlayingChange={setTimelinePlaying}
-                    selectedIds={selectedIds}
-                    onSelectObject={(objectId) => {
-                      if (!objectId) return;
-                      setSelectedIds(new Set([objectId]));
-                      if (selActivity)
-                        updateActivity({ ...selActivity, selectedObjectId: objectId });
-                    }}
-                    getActivityTimeline={getActivityTimeline}
-                    getTimelineDuration={getTimelineDuration}
-                    shouldObjectPersistAfterTimeline={shouldObjectPersistAfterTimeline}
-                    isObjectTimelineActive={isObjectTimelineActive}
-                    createTimelineKeyframe={createTimelineKeyframe}
-                  />
-                </>
+                <CanvasWorkspaceCenter
+                  activity={selActivity}
+                  canvasTool={canvasTool}
+                  currentZoomPercent={currentZoomPercent}
+                  onCanvasToolChange={setCanvasTool}
+                  onFullscreen={toggleNativeFullscreen}
+                  onToggleGrid={() => patchCanvasViewOption('showGrid')}
+                  onToggleGuides={() => patchCanvasViewOption('showGuides')}
+                  onZoomActual={() => setZoom(1)}
+                  onZoomChange={setZoom}
+                  onZoomFit={() => setZoom('fit')}
+                  onZoomStep={adjustStageZoom}
+                  stageContent={
+                    <>
+                      <WorkspaceStageCanvas
+                        ref={canvasRef}
+                        activity={selActivity}
+                        onUpdate={updateActivity}
+                        zoom={zoom}
+                        onZoomChange={setZoom}
+                        selectedIds={selectedIds}
+                        onSelectionChange={setSelectedIds}
+                        timelineTime={timelineCurrentTime}
+                        timelineVisualization={timelineVisualization}
+                        canvasTool={canvasTool}
+                        onCanvasToolChange={setCanvasTool}
+                        showChrome={false}
+                        showBaseLayer={showBaseLayer}
+                        objectClipboardRef={objectClipboardRef}
+                      />
+                    </>
+                  }
+                  timelineContent={
+                    <>
+                      <div
+                        style={{
+                          height: timelineDockOpen ? 16 : 32,
+                          flexShrink: 0,
+                          borderTop: '1px solid #e5edf6',
+                          borderBottom: '1px solid #e5edf6',
+                          background: '#f8fbff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          position: 'relative',
+                          padding: timelineDockOpen ? 0 : '0 10px',
+                          touchAction: 'none',
+                        }}
+                      >
+                        {timelineDockOpen ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTimelineDockOpen(false);
+                                setTimelinePlaying(false);
+                              }}
+                              title="Zaman Çizelgesini kapat"
+                              style={{
+                                position: 'absolute',
+                                left: 10,
+                                top: 2,
+                                width: 26,
+                                height: 12,
+                                border: 'none',
+                                borderRadius: 999,
+                                background: '#eaf2ff',
+                                color: '#2563eb',
+                                cursor: 'pointer',
+                                fontSize: 10,
+                                fontWeight: 900,
+                                lineHeight: 1,
+                                padding: 0,
+                              }}
+                            >
+                              ▾
+                            </button>
+                            <div
+                              onPointerDown={(e) => startLayoutResize('timeline', e)}
+                              onDoubleClick={() => setTimelineHeight(220)}
+                              title="Zaman Çizelgesini yeniden boyutlandır"
+                              style={{
+                                width: 72,
+                                height: 14,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'row-resize',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 48,
+                                  height: 3,
+                                  borderRadius: 999,
+                                  background: 'rgba(148,163,184,.35)',
+                                }}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTimelineDockOpen(true);
+                              setTimelineHeight((height) =>
+                                Math.max(height || 0, 220)
+                              );
+                            }}
+                            title="Zaman Çizelgesini aç"
+                            style={{
+                              width: '100%',
+                              height: 24,
+                              border: '1px solid #d8e2ef',
+                              borderRadius: 7,
+                              background: '#ffffff',
+                              color: '#2563eb',
+                              cursor: 'pointer',
+                              fontSize: 11,
+                              fontWeight: 950,
+                              letterSpacing: 0.2,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <span style={{ fontSize: 12, lineHeight: 1 }}>⏱</span>
+                            ZAMAN ÇİZELGESİ
+                          </button>
+                        )}
+                      </div>
+                      {timelineDockOpen && (
+                        <TimelineDock
+                          activity={selActivity}
+                          onUpdate={updateActivity}
+                          height={timelineHeight}
+                          currentTime={timelineCurrentTime}
+                          onCurrentTimeChange={setTimelineCurrentTime}
+                          isPlaying={timelinePlaying}
+                          onPlayingChange={setTimelinePlaying}
+                          visualization={timelineVisualization}
+                          onVisualizationChange={setTimelineVisualization}
+                          selectedIds={selectedIds}
+                          onSelectObject={(objectId) => {
+                            if (!objectId) return;
+                            setSelectedIds(new Set([objectId]));
+                            if (selActivity)
+                              updateActivity({ ...selActivity, selectedObjectId: objectId });
+                          }}
+                          getActivityTimeline={getActivityTimeline}
+                          getTimelineDuration={getTimelineDuration}
+                          shouldObjectPersistAfterTimeline={shouldObjectPersistAfterTimeline}
+                          isObjectTimelineActive={isObjectTimelineActive}
+                          createTimelineKeyframe={createTimelineKeyframe}
+                        />
+                      )}
+                    </>
+                  }
+                />
               </div>
 
-              {!isMobileViewport && (
-                <>
                   <div
                     onPointerDown={(e) => startLayoutResize('right-panel', e)}
-                    onDoubleClick={() => setRightPanelWidth(340)}
+                    onDoubleClick={() => setRightPanelWidth(PANEL_LIMITS.right.default)}
                     style={{
                       width: 10,
                       height: '100%',
@@ -9868,9 +8387,9 @@ export default function EIcerikEditor() {
                   </div>
                   <aside
                     style={{
-                      width: Math.max(320, rightPanelWidth),
-                      minWidth: Math.max(320, rightPanelWidth),
-                      maxWidth: Math.max(320, rightPanelWidth),
+                      width: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
+                      minWidth: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
+                      maxWidth: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
                       minHeight: 0,
                       display: 'flex',
                       flexDirection: 'column',
@@ -9883,10 +8402,9 @@ export default function EIcerikEditor() {
                     <ContextRightPanel
                       controller={workspaceChromeController}
                       inspectorProps={rightInspectorPanelProps}
+                      registerBackDismissible={registerBackDismissible}
                     />
                   </aside>
-                </>
-              )}
             </div>
 
             <div
@@ -9920,99 +8438,113 @@ export default function EIcerikEditor() {
               <span>Ctrl+Z/Y · Del · Ctrl+D · Ok / Shift+Ok</span>
             </div>
           </div>
-          {isMobileViewport && (
-            <div style={{ position: 'sticky', bottom: 0, zIndex: 40, padding: '0 10px 10px' }}>
+        </EditorWorkspaceShell>
+      )}
+
+      {currentView === 'editor' && deviceMode !== 'desktop' && selActivity && (
+        <MobileEditorShell
+          deviceMode={deviceMode}
+          canvasRef={canvasRef}
+          topBar={{
+            currentProject,
+            selActivity,
+            undo,
+            redo,
+            canUndo: history.past.length > 0,
+            canRedo: history.future.length > 0,
+            onPreview: handleOpenStorylinePreview,
+            onAnswer: () => setAnswerDrawerOpen(true),
+            onDesign: () => setShowDesignTools(true),
+            onExport: handleExport,
+            onScormExport: handleScorm12Export,
+            onVersions: () => setShowProjectManager(true),
+            onBackToLibrary: () =>
+              navigateToEditorRoute(
+                {
+                  pubId: presentRef.current.selPubId || null,
+                  bookId: presentRef.current.selBookId || null,
+                },
+                { mode: 'push' }
+              ),
+            onLogout: handleLogout,
+          }}
+          canvasProps={{
+            activity: selActivity,
+            onUpdate: updateActivity,
+            zoom,
+            onZoomChange: setZoom,
+            selectedIds,
+            onSelectionChange: setSelectedIds,
+            timelineTime: timelineCurrentTime,
+            timelineVisualization,
+            canvasTool,
+            onCanvasToolChange: setCanvasTool,
+            showBaseLayer,
+            objectClipboardRef,
+          }}
+          inspector={{
+            controller: workspaceChromeController,
+            inspectorProps: rightInspectorPanelProps,
+            registerBackDismissible,
+          }}
+          slideStripElement={
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex' }}>
+                <SlideStrip
+                  vertical
+                  activity={selActivity}
+                  onUpdate={updateActivity}
+                  getActivitySlides={getActivitySlides}
+                  selectActivitySlide={selectActivitySlide}
+                  createSlide={createSlide}
+                  normalizeSlide={normalizeSlide}
+                  getActivitySlideTarget={getActivitySlideTarget}
+                />
+              </div>
               <div
                 style={{
-                  display: 'flex',
-                  gap: 8,
-                  overflowX: 'auto',
-                  padding: 10,
-                  borderRadius: 22,
-                  border: '1px solid rgba(15,23,42,.12)',
-                  background: 'rgba(255,255,255,.94)',
-                  boxShadow: '0 18px 40px rgba(15,23,42,.14)',
-                  backdropFilter: 'blur(16px)',
+                  flexShrink: 0,
+                  maxHeight: '42%',
+                  overflowY: 'auto',
+                  borderTop: '1px solid #d7dee7',
+                  background: '#ffffff',
+                  padding: 8,
                 }}
               >
-                {[
-                  {
-                    id: 'svg',
-                    label: 'SVG',
-                    onClick: () => canvasRef.current?.loadSVG(),
-                    tone: '#7c3aed',
-                  },
-                  {
-                    id: 'text',
-                    label: 'Metin',
-                    onClick: () => canvasRef.current?.addObject('text'),
-                    tone: '#334155',
-                  },
-                  {
-                    id: 'button',
-                    label: 'Buton',
-                    onClick: () => canvasRef.current?.addObject('button'),
-                    tone: '#4f46e5',
-                  },
-                  {
-                    id: 'shape',
-                    label: 'Sekil',
-                    onClick: () => canvasRef.current?.addObject('shape'),
-                    tone: '#0ea5e9',
-                  },
-                  {
-                    id: 'image',
-                    label: 'Resim',
-                    onClick: () => canvasRef.current?.addImage(),
-                    tone: '#16a34a',
-                  },
-                  {
-                    id: 'video',
-                    label: 'Video',
-                    onClick: () => canvasRef.current?.addVideo(),
-                    tone: '#0284c7',
-                  },
-                  {
-                    id: 'audio',
-                    label: 'Ses',
-                    onClick: () => canvasRef.current?.addAudio(),
-                    tone: '#0891b2',
-                  },
-                  {
-                    id: 'panel',
-                    label: 'Panel',
-                    onClick: () =>
-                      mobileInspectorRef.current?.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start',
-                      }),
-                    tone: '#475569',
-                  },
-                ].map((action) => (
-                  <button
-                    key={action.id}
-                    onClick={action.onClick}
-                    style={{
-                      flex: '0 0 auto',
-                      minWidth: 78,
-                      height: 48,
-                      borderRadius: 16,
-                      border: `1px solid ${action.tone}22`,
-                      background: '#ffffff',
-                      color: action.tone,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 8px 18px rgba(15,23,42,.08)',
-                    }}
-                  >
-                    {action.label}
-                  </button>
-                ))}
+                <LayerManager
+                  activity={selActivity}
+                  onSelectionChange={setSelectedIds}
+                  onUpdateActivity={updateActivity}
+                />
               </div>
             </div>
-          )}
-        </EditorWorkspaceShell>
+          }
+          ribbonElement={<TopRibbon controller={ribbonController} fullscreen />}
+          timelineElement={
+            <TimelineDock
+              activity={selActivity}
+              onUpdate={updateActivity}
+              height={Math.min(timelineHeight, 240)}
+              currentTime={timelineCurrentTime}
+              onCurrentTimeChange={setTimelineCurrentTime}
+              isPlaying={timelinePlaying}
+              onPlayingChange={setTimelinePlaying}
+              visualization={timelineVisualization}
+              onVisualizationChange={setTimelineVisualization}
+              selectedIds={selectedIds}
+              onSelectObject={(objectId) => {
+                if (!objectId) return;
+                setSelectedIds(new Set([objectId]));
+                if (selActivity) updateActivity({ ...selActivity, selectedObjectId: objectId });
+              }}
+              getActivityTimeline={getActivityTimeline}
+              getTimelineDuration={getTimelineDuration}
+              shouldObjectPersistAfterTimeline={shouldObjectPersistAfterTimeline}
+              isObjectTimelineActive={isObjectTimelineActive}
+              createTimelineKeyframe={createTimelineKeyframe}
+            />
+          }
+        />
       )}
 
       {/* ─── Tam Ekran Canvas Düzenleme Katmanı ──────────────────────────── */}
@@ -10225,7 +8757,7 @@ export default function EIcerikEditor() {
                   boxShadow: 'inset 0 1px 0 rgba(255,255,255,.05)',
                 }}
               >
-                <StageCanvas
+                <WorkspaceStageCanvas
                   ref={canvasRef}
                   activity={selActivity}
                   onUpdate={updateActivity}
@@ -10234,7 +8766,13 @@ export default function EIcerikEditor() {
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
                   timelineTime={timelineCurrentTime}
+                  timelineVisualization={timelineVisualization}
+                  canvasTool={canvasTool}
+                  onCanvasToolChange={setCanvasTool}
+                  showChrome={false}
                   showBaseLayer={showBaseLayer}
+                  objectClipboardRef={objectClipboardRef}
+                  touchMode={deviceMode !== 'desktop'}
                 />
               </div>
               <div style={{ flexShrink: 0, overflow: 'hidden', borderRadius: 18 }}>
@@ -10246,6 +8784,8 @@ export default function EIcerikEditor() {
                   onCurrentTimeChange={setTimelineCurrentTime}
                   isPlaying={timelinePlaying}
                   onPlayingChange={setTimelinePlaying}
+                  visualization={timelineVisualization}
+                  onVisualizationChange={setTimelineVisualization}
                   selectedIds={selectedIds}
                   onSelectObject={(objectId) => {
                     if (!objectId) return;
@@ -10262,26 +8802,23 @@ export default function EIcerikEditor() {
             </div>
             <div
               style={{
-                width: Math.max(320, rightPanelWidth),
-                minWidth: Math.max(320, rightPanelWidth),
-                maxWidth: Math.max(320, rightPanelWidth),
+                width: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
+                minWidth: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
+                maxWidth: Math.max(PANEL_LIMITS.right.min, rightPanelWidth),
                 minHeight: 0,
                 display: 'flex',
-                flexDirection: 'row',
+                flexDirection: 'column',
                 ...createShellPanelStyle(),
                 borderRadius: 0,
                 overflow: 'hidden',
                 boxShadow: 'none',
               }}
             >
-              <EditorToolRail
-                selActivity={selActivity}
-                canvasRef={canvasRef}
-                selectedIds={selectedIds}
-                setActiveTab={handleEditorTabSelect}
-                uiMode={uiMode}
+              <ContextRightPanel
+                controller={workspaceChromeController}
+                inspectorProps={rightInspectorPanelProps}
+                registerBackDismissible={registerBackDismissible}
               />
-              {renderRightInspectorPanel({ hideTimeline: true })}
             </div>
           </div>
         </div>
@@ -10350,6 +8887,158 @@ export default function EIcerikEditor() {
           activityCount: present.activities.filter((a) => a.bookId === book.id).length,
         }))}
       />
+
+      <DesignToolsDialog
+        open={showDesignTools && currentView === 'editor' && !!selActivity}
+        onClose={() => setShowDesignTools(false)}
+        onGenerateAnswerSet={handleGenerateAnswerSceneSet}
+        onGenerateTemplate={handleGenerateDesignTemplate}
+      />
+
+      {pendingResume && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resume-choice-title"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 99999,
+            background: 'rgba(15,23,42,.65)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 460,
+              background: '#ffffff',
+              borderRadius: 16,
+              boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+              padding: 24,
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 999,
+                  background: '#eff6ff',
+                  color: '#2563eb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  fontWeight: 'bold',
+                }}
+              >
+                  ↻
+              </div>
+              <div>
+                <h3
+                  id="resume-choice-title"
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 900,
+                    color: '#0f172a',
+                  }}
+                >
+                  Kaldığınız Yer Açıldı
+                </h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                  Son düzenlediğiniz konuma otomatik geldik.
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: '#f8fafc',
+                borderRadius: 10,
+                padding: 16,
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              {pendingResume.projectName && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#64748b', fontWeight: 700 }}>Proje:</span>
+                  <span style={{ color: '#0f172a', fontWeight: 900 }}>{pendingResume.projectName}</span>
+                </div>
+              )}
+              {pendingResume.bookName && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#64748b', fontWeight: 700 }}>Kitap:</span>
+                  <span style={{ color: '#0f172a', fontWeight: 900 }}>{pendingResume.bookName}</span>
+                </div>
+              )}
+              {pendingResume.activityName && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#64748b', fontWeight: 700 }}>Etkinlik:</span>
+                  <span style={{ color: '#0f172a', fontWeight: 900 }}>{pendingResume.activityName}</span>
+                </div>
+              )}
+            </div>
+
+            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#475569' }}>
+              Buradan devam etmek ister misiniz, yoksa yayınevi kısmına mı dönmek istersiniz?
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={handleCancelResume}
+                style={{
+                  height: 36,
+                  padding: '0 16px',
+                  borderRadius: 8,
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#475569',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                Yayınevi Kısmı
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmResume}
+                style={{
+                  height: 36,
+                  padding: '0 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 10px rgba(37,99,235,0.25)',
+                }}
+              >
+                Devam Et
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

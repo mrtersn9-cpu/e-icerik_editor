@@ -33,7 +33,9 @@ function getApiUrl(path = '') {
   if (typeof window === 'undefined') return `${getApiBase()}${normalizedPath}`;
   const isLocalHost =
     window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isLocalHost && window.location.port !== String(API_PORT)) {
+
+  // Local development or production Node server hosted on localhost: bypass index.php
+  if (isLocalHost) {
     return `${getApiBase()}${normalizedPath}`;
   }
 
@@ -53,6 +55,41 @@ async function safeParseJson(response) {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, apiPath = '') {
+  const { timeoutMs = 0, signal: sourceSignal, ...requestOptions } = options;
+  const normalizedTimeout = Number(timeoutMs);
+  if (!Number.isFinite(normalizedTimeout) || normalizedTimeout <= 0) {
+    return fetch(url, { ...requestOptions, signal: sourceSignal });
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const handleSourceAbort = () => controller.abort();
+  if (sourceSignal?.aborted) {
+    controller.abort();
+  } else {
+    sourceSignal?.addEventListener('abort', handleSourceAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, normalizedTimeout);
+
+  try {
+    return await fetch(url, { ...requestOptions, signal: controller.signal });
+  } catch (error) {
+    if (!timedOut) throw error;
+    const timeoutError = new Error('Sunucudan zamaninda yanit alinamadi. Baglanti yeniden denenecek.');
+    timeoutError.apiPath = apiPath;
+    timeoutError.code = 'request_timeout';
+    timeoutError.timeoutMs = normalizedTimeout;
+    throw timeoutError;
+  } finally {
+    clearTimeout(timer);
+    sourceSignal?.removeEventListener('abort', handleSourceAbort);
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   const auth = readStoredAuth();
   const headers = {
@@ -62,10 +99,10 @@ export async function apiRequest(path, options = {}) {
     ...(auth?.sessionId ? { 'X-Session-Id': auth.sessionId } : {}),
     ...(options.headers || {}),
   };
-  const response = await fetch(getApiUrl(path), {
+  const response = await fetchWithTimeout(getApiUrl(path), {
     ...options,
     headers,
-  });
+  }, path);
 
   const contentType = response.headers.get('Content-Type') || '';
   const payload = contentType.includes('application/json')
@@ -102,10 +139,10 @@ export async function adminApiRequest(path, options = {}) {
     'X-Admin-Token': adminToken,
     ...optionHeaders,
   };
-  const response = await fetch(getApiUrl(path), {
+  const response = await fetchWithTimeout(getApiUrl(path), {
     ...requestOptions,
     headers,
-  });
+  }, path);
   const contentType = response.headers.get('Content-Type') || '';
   const payload = contentType.includes('application/json')
     ? await safeParseJson(response)
@@ -128,6 +165,34 @@ export async function adminApiRequest(path, options = {}) {
   }
 
   return payload;
+}
+
+export async function adminApiDownload(path, options = {}) {
+  const { adminToken = '', headers: optionHeaders = {}, ...requestOptions } = options;
+  const headers = {
+    'X-Admin-Token': adminToken,
+    ...optionHeaders,
+  };
+  const response = await fetchWithTimeout(getApiUrl(path), {
+    ...requestOptions,
+    headers,
+  }, path);
+
+  if (!response.ok) {
+    const payload = await safeParseJson(response);
+    const error = new Error(payload?.error || payload?.message || `API ${response.status}`);
+    error.apiPath = path;
+    error.status = response.status;
+    error.code = payload?.code || '';
+    throw error;
+  }
+
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch?.[1] || 'eicerik-sql-backup.sql',
+  };
 }
 
 export function fileToDataUrl(file) {

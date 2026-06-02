@@ -1,6 +1,33 @@
 const STORAGE_KEY = 'e-icerik-v4';
 const AUTH_STORAGE_KEY = 'e-icerik-auth-v1';
 
+function readStorageValue(storageName) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window[storageName]?.getItem(AUTH_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStorageValue(storageName, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window[storageName]?.setItem(AUTH_STORAGE_KEY, value);
+  } catch {
+    // Ignore storage failures on restricted browsers.
+  }
+}
+
+function removeStorageValue(storageName) {
+  if (typeof window === 'undefined') return;
+  try {
+    window[storageName]?.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures on restricted browsers.
+  }
+}
+
 export function getUserStorageKey(userId) {
   return `${STORAGE_KEY}:${userId || 'guest'}`;
 }
@@ -19,29 +46,28 @@ export function createSessionLabel() {
 }
 
 export function readStoredAuth() {
-  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return null;
+  const localValue = readStorageValue('localStorage');
+  const sessionValue = readStorageValue('sessionStorage');
+  const raw = localValue || sessionValue;
+  if (!raw) return null;
   try {
-    const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const auth = JSON.parse(raw);
+    // Migrate existing tab-scoped sessions and keep reload/reopen behavior consistent.
+    writeStorageValue('localStorage', raw);
+    writeStorageValue('sessionStorage', raw);
+    return auth;
   } catch {
     return null;
   }
 }
 
 export function writeStoredAuth(auth) {
-  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-  try {
-    sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
-  } catch {
-    // Ignore storage failures on restricted browsers.
-  }
+  const serialized = JSON.stringify(auth);
+  writeStorageValue('localStorage', serialized);
+  writeStorageValue('sessionStorage', serialized);
 }
 
 export function clearStoredAuth() {
-  if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
-  try {
-    sessionStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch {
-    // Ignore storage failures on restricted browsers.
-  }
+  removeStorageValue('localStorage');
+  removeStorageValue('sessionStorage');
 }

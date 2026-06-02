@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { adminApiRequest } from '../api/apiClient';
+import { adminApiDownload, adminApiRequest } from '../api/apiClient';
 import { EDITOR_THEME } from '../theme';
 
 import AdminUserPanel from './AdminUserPanel';
@@ -50,6 +50,8 @@ function AdminManagementModal({
   const [events, setEvents] = useState([]);
   const [eventStatus, setEventStatus] = useState('');
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [backupStatus, setBackupStatus] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
   const [eventFilters, setEventFilters] = useState({ type: '', userId: '', from: '', to: '' });
 
   const loadEvents = useCallback(async () => {
@@ -70,13 +72,41 @@ function AdminManagementModal({
         adminToken: adminToken.trim(),
       });
       setEvents(result.events || []);
-      setEventStatus('Guvenlik loglari guncellendi.');
+      setEventStatus('Güvenlik logları güncellendi.');
     } catch (error) {
-      setEventStatus(error.message || 'Guvenlik loglari okunamadi.');
+      setEventStatus(error.message || 'Güvenlik logları okunamadı.');
     } finally {
       setLoadingEvents(false);
     }
   }, [adminToken, eventFilters]);
+
+  const downloadSqlBackup = useCallback(async () => {
+    if (!adminToken.trim()) {
+      setBackupStatus('Admin token girilmeli.');
+      return;
+    }
+    setBackupBusy(true);
+    setBackupStatus('');
+    try {
+      const result = await adminApiDownload('/admin/backup', {
+        method: 'GET',
+        adminToken: adminToken.trim(),
+      });
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename || 'eicerik-sql-backup.sql';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setBackupStatus('SQL yedeği indirildi. Dosyayı güvenli bir yerde saklayın.');
+    } catch (error) {
+      setBackupStatus(error.message || 'SQL yedeği indirilemedi.');
+    } finally {
+      setBackupBusy(false);
+    }
+  }, [adminToken]);
 
   if (!open) return null;
 
@@ -95,11 +125,12 @@ function AdminManagementModal({
   );
 
   return (
-    <Modal title="Yonetim" onClose={onClose} width={980}>
+    <Modal title="Yönetim" onClose={onClose} width={980}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {renderTabButton('users', 'Kullanicilar')}
-          {renderTabButton('logs', 'Guvenlik Loglari')}
+          {renderTabButton('users', 'Kullanıcılar')}
+          {renderTabButton('logs', 'Güvenlik Logları')}
+          {renderTabButton('backups', 'Yedekler')}
         </div>
 
         {tab === 'users' ? (
@@ -109,7 +140,7 @@ function AdminManagementModal({
             onAdminTokenChange={onAdminTokenChange}
             onSelectUser={onSelectUser}
           />
-        ) : (
+        ) : tab === 'logs' ? (
           <div
             style={{
               display: 'flex',
@@ -252,7 +283,7 @@ function AdminManagementModal({
                 style={{
                   fontSize: 11,
                   color:
-                    eventStatus.includes('okunamadi') || eventStatus.includes('girilmeli')
+                    eventStatus.includes('okunamad') || eventStatus.includes('girilmeli')
                       ? '#fecaca'
                       : '#bbf7d0',
                 }}
@@ -282,7 +313,7 @@ function AdminManagementModal({
                     fontSize: 12,
                   }}
                 >
-                  Guvenlik logu henuz yuklenmedi.
+                  Güvenlik logu henüz yüklenmedi.
                 </div>
               )}
 
@@ -334,6 +365,80 @@ function AdminManagementModal({
                 );
               })}
             </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              borderTop: `1px solid ${EDITOR_THEME.shellBorder}`,
+              paddingTop: 12,
+            }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
+              <input
+                type="password"
+                value={adminToken}
+                onChange={(event) => onAdminTokenChange(event.target.value)}
+                placeholder="Admin token"
+                style={{
+                  height: 38,
+                  borderRadius: 10,
+                  border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
+                  background: 'rgba(5,12,24,.9)',
+                  color: EDITOR_THEME.shellText,
+                  padding: '0 10px',
+                  minWidth: 0,
+                }}
+              />
+              <button
+                type="button"
+                onClick={downloadSqlBackup}
+                disabled={backupBusy}
+                style={{
+                  height: 38,
+                  borderRadius: 10,
+                  border: `1px solid ${EDITOR_THEME.shellBorderStrong}`,
+                  background: '#0f766e',
+                  color: '#ecfeff',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  cursor: backupBusy ? 'default' : 'pointer',
+                  opacity: backupBusy ? 0.72 : 1,
+                }}
+              >
+                {backupBusy ? 'Hazırlanıyor' : 'SQL Yedeği İndir'}
+              </button>
+            </div>
+            <div
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${EDITOR_THEME.shellBorder}`,
+                background: 'rgba(255,255,255,.045)',
+                color: '#dbeafe',
+                padding: 14,
+                fontSize: 12,
+                lineHeight: 1.65,
+              }}
+            >
+              Manuel yedek; proje, sürüm ve kalıcı editör verilerini SQL dosyası olarak indirir.
+              Oturum ve kitap kilidi gibi geçici tablolar yedeğe alınmaz. Dosyayı herkese açık
+              FTP klasöründe bırakmayın.
+            </div>
+            {backupStatus && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color:
+                    backupStatus.includes('indirilemedi') || backupStatus.includes('girilmeli')
+                      ? '#fecaca'
+                      : '#bbf7d0',
+                }}
+              >
+                {backupStatus}
+              </div>
+            )}
           </div>
         )}
       </div>

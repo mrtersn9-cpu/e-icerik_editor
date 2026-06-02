@@ -12,6 +12,7 @@ import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
 } from '../../../../logic/editorHelpers';
+import { validateFormula, detectCircularDependency } from '../../../../logic/formulaEngine';
 import {
   castVariableValue,
   createVariableItem,
@@ -258,6 +259,27 @@ function validateTrigger(trigger = {}, controller, variables = []) {
   }
   if (String(action).startsWith('Degisken') && value && !variables.some((variable) => variable.id === value)) {
     warnings.push('Değişken bulunamadı');
+  }
+  if (action === 'DegiskenAta') {
+    if (!trigger.extra) {
+      warnings.push('Formül veya atama değeri boş bırakılamaz');
+    } else {
+      const formulaValidation = validateFormula(trigger.extra, variables);
+      if (!formulaValidation.valid) {
+        warnings.push(`Formül hatası: ${formulaValidation.error}`);
+      }
+    }
+    
+    const activityTriggers = controller?.activity?.triggers || [];
+    const updatedTriggers = activityTriggers.map((t) => t.id === trigger.id ? trigger : t);
+    if (!updatedTriggers.some(t => t.id === trigger.id)) {
+      updatedTriggers.push(trigger);
+    }
+    
+    const cycleRes = detectCircularDependency(variables, updatedTriggers);
+    if (cycleRes.hasCycle) {
+      warnings.push(cycleRes.message);
+    }
   }
   return warnings;
 }

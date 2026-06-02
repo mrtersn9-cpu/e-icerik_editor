@@ -1,6 +1,8 @@
 # PDF Storyboard Import (Offline)
 
-Bu yapı, e-öğrenme storyboard PDF'lerini **offline** okuyup temizleyen ve editöre uyumlu `storyboard_config.json` üreten Node.js betiğidir.
+Bu belge komut satırındaki ek offline ayrıştırıcıyı anlatır. Editör içinde ayrıca `src/PdfCleanStudio.jsx` ile tam ekran PDF düzenleme stüdyosu ve `src/utils/pdfActivityIntegration.js` ile etkinlik entegrasyonu bulunur.
+
+Komut satırı aracı e-öğrenme storyboard PDF'lerini **offline** okuyup temizler ve editöre uyumlu `storyboard_config.json` üretir. Bulut bağlantılı PDF analizi kullanılmaz.
 
 ## Klasör Yapısı
 
@@ -12,7 +14,7 @@ scripts/
     parser-utils.mjs           # etkileşim algılama + JSON üretimi
 
 data/
-  pdf-output/                  # oluşan JSON/PDF çıktıları
+  pdf-output/                  # oluşan geçici JSON/PDF çıktıları
 ```
 
 ## Kurulum
@@ -55,6 +57,8 @@ npm run pdf:storyboard -- --input "./data/ornek-storyboard.pdf" --outDir "./data
 - `storyboard_config.json` → editörün okuyacağı yapılandırma
 - `output_cleaned.pdf` → noktalı alanları temizlenmiş PDF
 - `raw_pages_debug.json` → koordinatlı debug çıktısı
+
+`data/pdf-output-*` klasörleri geçici çalışma çıktısıdır. Kaynak kod belgesi veya kalıcı proje verisi gibi kullanılmamalıdır.
 
 ## D/Y tablo okuma algoritması
 

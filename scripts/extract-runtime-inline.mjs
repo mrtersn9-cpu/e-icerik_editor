@@ -3,10 +3,8 @@ import fs from 'fs';
 function processFile(path, renameMapping) {
   let code = fs.readFileSync(path, 'utf8');
 
-  // Remove multi-line import statements: import { ... } from '...';
-  code = code.replace(/^import\s*\{[\s\S]*?\}\s*from\s*['"][^'"]+['"];\s*/m, '');
-  // Remove single-line import statements
-  code = code.replace(/^import\s+.*?from\s*['"][^'"]+['"];?\s*$/gm, '');
+  // Remove all import statements (single-line or multi-line)
+  code = code.replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*/gm, '');
 
   // Remove export { ... } statements
   code = code.replace(/^export\s*\{[\s\S]*?\};?\s*$/gm, '');

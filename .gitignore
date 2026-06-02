@@ -58,8 +58,19 @@ tmp-edge-profile/
 # Temp geliştirme verileri
 tmp-dev-data/
 
-# SQLite journal
+# SQLite journal / WAL
 data/*.sqlite-journal
+data/*.sqlite-wal
+data/*.sqlite-shm
+
+# Geçici bulmaca/inceleme klasörleri ve kök zip'ler
+temp_bulmaca/
+tmp_bulmaca_inceleme/
+/*.zip
+
+# Geri yükleme / kurtarma yedekleri (bilinçli, ama izlenmemeli)
+GERI-YUKLEME-ICIN/
+GERI-YUKLEME-NOTLARI.txt
 
 # Taslak/temp klasörler
 örnek tasarim/
@@ -67,3 +78,4 @@ data/*.sqlite-journal
 # FTP credentials (config.php içinde şifre var)
 ftp-hosting/api/config.php
 ftp-hosting/.htpasswd
+node_modules

@@ -55,11 +55,11 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
             textTransform: 'uppercase',
           }}
         >
-          Nereden Yonetilir
+          Nereden Yönetilir
         </div>
         <div style={{ fontSize: 11, lineHeight: 1.65 }}>
-          Genel drag-drop kurallari bu sekmeden, secili tek bir surukle veya birak alaninin boyut ve
-          konumu ise sagdaki <strong>Nesne</strong> panelinden duzenlenir.
+          Genel drag-drop kuralları bu sekmeden, seçili tek bir sürükle veya bırak alanının boyut ve
+          konumu ise sağdaki <strong>Nesne</strong> panelinden düzenlenir.
         </div>
       </div>
 
@@ -82,16 +82,16 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
             textTransform: 'uppercase',
           }}
         >
-          Nasil Kullanilir
+          Nasıl Kullanılır
         </div>
         <div style={{ fontSize: 11, lineHeight: 1.7 }}>
-          1. Ayni soruya ait surukle ve birak alanlarina ayni <strong>Soru Grubu</strong> adini ver.
+          1. Aynı soruya ait sürükle ve bırak alanlarına aynı <strong>Soru Grubu</strong> adını ver.
           <br />
-          2. Birak alaninin kac oge alacagini <strong>Kapasite</strong> ile belirle.
+          2. Bırak alanının kaç öğe alacağını <strong>Kapasite</strong> ile belirle.
           <br />
-          3. Ayni oge birden fazla yere gidecekse <strong>Coklu hedef</strong> sec.
+          3. Aynı öğe birden fazla yere gidecekse <strong>Çoklu hedef</strong> seç.
           <br />
-          4. En alttaki <strong>Dogru Eslesme Formu</strong> bolumunden dogru cevaplari sec.
+          4. En alttaki <strong>Doğru Eşleşme Formu</strong> bölümünden doğru cevapları seç.
         </div>
       </div>
 
@@ -146,9 +146,9 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
             color: '#94a3b8',
           }}
         >
-          <span>{draggables.length} surukle</span>
-          <span>{dropzones.length} birak alani</span>
-          <span>{resolvedCount} dogru eslesme</span>
+          <span>{draggables.length} sürükle</span>
+          <span>{dropzones.length} bırak alanı</span>
+          <span>{resolvedCount} doğru eşleşme</span>
         </div>
       </div>
 
@@ -247,8 +247,8 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
           </label>
         </div>
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.6 }}>
-          Soru grubu alani sayesinde ayni sayfada sinirsiz sayida bagimsiz drag-drop soru blogu
-          kurabilirsin. Ayni soru grubundaki ogeler kendi aralarinda calisir.
+          Soru grubu alanı sayesinde aynı sayfada sınırsız sayıda bağımsız drag-drop soru bloğu
+          kurabilirsin. Aynı soru grubundaki öğeler kendi aralarında çalışır.
         </div>
       </div>
 
@@ -407,8 +407,8 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 lineHeight: 1.6,
               }}
             >
-              <strong style={{ color: '#0f172a' }}>Grup:</strong> Grup modunda hangi ogenin hangi
-              alanla eslesecegini belirler.
+              <strong style={{ color: '#0f172a' }}>Grup:</strong> Grup modunda hangi öğenin hangi
+              alanla eşleşeceğini belirler.
             </div>
             <div
               style={{
@@ -421,8 +421,8 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 lineHeight: 1.6,
               }}
             >
-              <strong style={{ color: '#15803d' }}>Kapasite:</strong> Bir birak alani kac oge alsin.{' '}
-              <strong>1</strong> tek oge, <strong>0</strong> sinirsiz.
+              <strong style={{ color: '#15803d' }}>Kapasite:</strong> Bir bırak alanı kaç öğe alsın.{' '}
+              <strong>1</strong> tek öğe, <strong>0</strong> sınırsız.
             </div>
             <div
               style={{
@@ -435,7 +435,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 lineHeight: 1.6,
               }}
             >
-              <strong style={{ color: '#7e22ce' }}>Coklu hedef:</strong> Ayni suruklenen oge birden
+              <strong style={{ color: '#7e22ce' }}>Çoklu hedef:</strong> Aynı sürüklenen öğe birden
               fazla alana gidebilir.
             </div>
           </div>

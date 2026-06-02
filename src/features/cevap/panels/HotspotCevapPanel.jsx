@@ -38,7 +38,62 @@ export default function HotspotCevapPanel({ activity, onUpdate }) {
               <input type="checkbox" checked={hotspot.hotspotCorrect !== false} onChange={(event) => patchHotspot(hotspot.id, { hotspotCorrect: event.target.checked })} style={{ width: 18, height: 18, accentColor: '#16a34a' }} />
             </label>
           ))}
-          {!hotspots.length && <div style={{ color: '#64748b', fontSize: 12 }}>0 hotspot. Nesne sekmesinden hotspot ekleyin.</div>}
+          {!hotspots.length && (
+            <div style={{ color: '#64748b', fontSize: 12 }}>
+              <div>Henüz hotspot alanı yok.</div>
+              <button
+                onClick={() => {
+                  const newObj = {
+                    id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+                    type: 'hotspot',
+                    x: 200,
+                    y: 150,
+                    width: 120,
+                    height: 80,
+                    rotation: 0,
+                    label: 'Yeni Alan',
+                    locked: false,
+                    visible: true,
+                    zIndex: 1,
+                    imageData: null,
+                    mediaUrl: '',
+                    mediaName: '',
+                    group: '',
+                    scope: '',
+                    allowMultipleTargets: false,
+                    capacity: 0,
+                    layerId: 'base',
+                    style: {
+                      fontSize: 14,
+                      color: '#ffffff',
+                      background: '#f4433666',
+                      borderColor: '#f44336',
+                      borderStyle: 'solid',
+                      borderRadius: 999,
+                    },
+                    stateStyles: {},
+                    hotspotCorrect: true,
+                  };
+                  patchActivity(activity, onUpdate, {
+                    objects: [...(activity.objects || []), newObj],
+                  });
+                }}
+                style={{
+                  marginTop: 8,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #fca5a5',
+                  background: '#ffffff',
+                  color: '#dc2626',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                + Varsayılan Hotspot Ekle
+              </button>
+            </div>
+          )}
         </div>
       </CevapCard>
       <GeriBildirimCard number="3" activity={activity} onUpdate={onUpdate} />

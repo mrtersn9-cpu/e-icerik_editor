@@ -1,7 +1,9 @@
 # EicerikWidget SDK Dokümantasyonu
 
-Sürüm: 0.1.0  
-Kapsam: Özel Etkileşim / Widget Runtime V0
+Sürüm: 0.2.0
+Kapsam: Yerleşik widget runtime + deneysel ZIP import önizlemesi
+
+> Durum notu: Yerleşik widgetlar ve editör içi ZIP yükleme önizlemede çalışır. Widget içeren SCORM paketleri henüz yayın için onaylı değildir. Dışa aktarıcı widget dosyalarını hazırlıyor, ancak dosyalar nihai ZIP listesine eklenmediği için paket içinde eksik kalıyor.
 
 Bu doküman, e-içerik editörüne uyumlu özel widget, animasyon, mini oyun ve simülasyon paketlerinin nasıl hazırlanacağını açıklar.
 
@@ -26,8 +28,8 @@ Ana sistem şunları yapar:
 - puan/tamamlanma kararını verir
 - SCORM kaydını yönetir
 
-Widget doğrudan SCORM'a yazmaz.  
-Widget doğrudan katman/soru açmaz.  
+Widget doğrudan SCORM'a yazmaz.
+Widget doğrudan katman/soru açmaz.
 Widget ana React state'ine doğrudan erişmez.
 
 ## 2. Widget Paket Yapısı
@@ -58,17 +60,13 @@ plant-growth-v1/
     flower.png
 ```
 
-V0'da built-in widgetlar proje içinde tutulur:
+Yerleşik widgetlar proje içinde tutulur:
 
 ```
 public/widgets/builtins/
 ```
 
-Gelecek fazda ZIP import için şu yapı kullanılacaktır:
-
-```
-public/widgets/imported/
-```
+ZIP import editörde etkindir. Yüklenen ZIP bellekte Blob URL'lerine açılır; ham assetler SCORM hazırlığı için editör state'inde tutulur. Kalıcı `public/widgets/imported/` klasörü şu an kullanılmaz.
 
 ## 3. manifest.json
 
@@ -152,15 +150,13 @@ Props, widget ayarlarıdır.
 ]
 ```
 
-Desteklenen prop tipleri:
+ZIP doğrulayıcının güncel desteklediği prop tipleri:
 
-- string
 - number
 - boolean
-- select
-- color
 - text
-- asset
+
+Yerleşik widget manifestlerinde ek tipler kullanılacaksa ZIP doğrulayıcı ile aynı sözleşmeye getirilmelidir.
 
 ## 5. Commands
 
@@ -541,8 +537,7 @@ Ana sistem → tetikleyici çalıştırır
 Ana sistem → SCORM'a yazar
 ```
 
-V0'da widget asset paketleme yapılmayabilir.
-SCORM widget asset paketleme sonraki fazdır.
+Editör dışa aktarıcısı widget assetlerini hazırlamaya başlamıştır. Ancak mevcut uygulamada hazırlanan asset listesi nihai SCORM ZIP dosya listesine eklenmediği için widget içeren paketler yayınlanmamalıdır. Önce dışa aktarıcı düzeltilmeli, ardından yerleşik ve ZIP ile yüklenen widgetlar LMS üzerinde test edilmelidir.
 
 ## 21. Örnek Widget: Zar Atma
 
@@ -773,21 +768,23 @@ Bir widget sisteme uyumlu sayılmak için:
 11. Manifest'te tanımlı event/command/props ile uyumlu olmalı.
 12. Kaydet/aç sonrası props ve widget bağlantısı korunmalı.
 
-## 25. Sonraki Fazlar
+## 25. Durum ve Sonraki Fazlar
 
-**V0:**
-Built-in widget runtime.
-Zar → Kuş → Event → Trigger → Katman demosu.
+**Mevcut:**
 
-**V1:**
-ZIP import.
-Manifest validator.
-Imported widget registry.
+- Built-in widget runtime.
+- Zar → Kuş → Event → Trigger → Katman demosu.
+- ZIP import ve manifest doğrulama.
+- ZIP içeriği için dış kaynak ve ağ isteği uyarıları.
 
-**V2:**
-SCORM export içinde widget asset paketleme.
+**Sıradaki:**
 
-**V3:**
+- SCORM export içinde hazırlanan widget assetlerini gerçekten ZIP'e ekleme.
+- Yerleşik ve ZIP widget paketleri için LMS kabul testi.
+- Yüklenen widgetlar için kalıcı registry ve yeniden açma testi.
+
+**Daha sonra:**
+
 Widget kütüphanesi:
 - Bitki Büyütme
 - Araba Sürme

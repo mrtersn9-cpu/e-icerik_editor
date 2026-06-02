@@ -3,22 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.svg?v=3" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap&subset=latin-ext" rel="stylesheet" />
-    <title>E-İçerik Editörü</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap&subset=latin-ext" rel="stylesheet" />
+    <title>E-İçerik Studio</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
       html, body, #root { height: 100%; min-height: 100%; }
       body {
         overflow: hidden;
-        background:
-          radial-gradient(circle at top, rgba(56, 189, 248, 0.2), transparent 38%),
-          linear-gradient(180deg, #0a1220 0%, #09111f 48%, #050b14 100%);
-        color: #f8fafc;
+        background: #f4f8fb;
+        color: #0f172a;
         font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
       }
+
+      /* ── Boot overlay ───────────────────────────────────────────── */
       #boot-status {
         position: fixed;
         inset: 0;
@@ -27,96 +27,209 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        background:
-          radial-gradient(circle at top, rgba(56, 189, 248, 0.22), transparent 34%),
-          rgba(5, 11, 20, 0.96);
+        background: #eef4f8;
       }
-      #boot-status[data-state="ready"] {
-        display: none;
-      }
+      #boot-status[data-state="ready"] { display: none; }
+
+      /* ── Card ───────────────────────────────────────────────────── */
       .boot-card {
-        width: min(680px, 100%);
-        border-radius: 24px;
-        border: 1px solid rgba(173, 191, 219, 0.18);
-        background: rgba(16, 26, 47, 0.94);
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        width: min(520px, 100%);
+        border-radius: 10px;
+        border: 1px solid #d7e4ef;
+        background: #ffffff;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
         padding: 28px;
+        text-align: left;
       }
+
+      /* ── Badge ──────────────────────────────────────────────────── */
       .boot-badge {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 6px 10px;
+        padding: 5px 10px;
         border-radius: 999px;
-        background: rgba(56, 189, 248, 0.14);
-        border: 1px solid rgba(56, 189, 248, 0.34);
-        color: #a5e6ff;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
+        background: #e0f2fe;
+        border: 1px solid #bae6fd;
+        color: #0369a1;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0;
         text-transform: uppercase;
       }
+      .boot-badge.error {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #b91c1c;
+      }
+      .boot-badge.warning {
+        background: #fff7ed;
+        border-color: #fed7aa;
+        color: #b45309;
+      }
+
+      /* ── Spinner ────────────────────────────────────────────────── */
+      .boot-spinner-wrap {
+        margin-top: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+      }
+      .boot-spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid #dbeafe;
+        border-top-color: #0284c7;
+        border-radius: 50%;
+        animation: boot-spin 0.85s linear infinite;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+
+      /* ── Title ──────────────────────────────────────────────────── */
       .boot-title {
         margin-top: 16px;
-        font-size: clamp(24px, 3vw, 32px);
-        line-height: 1.1;
-        font-weight: 800;
+        font-size: 22px;
+        line-height: 1.25;
+        font-weight: 850;
+        color: #0f172a;
       }
+
+      /* ── Body ───────────────────────────────────────────────────── */
       .boot-body {
-        margin-top: 12px;
-        color: #d3deef;
-        font-size: 14px;
-        line-height: 1.6;
+        margin-top: 9px;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.55;
       }
+
+      /* ── Detail (error dump) ────────────────────────────────────── */
       .boot-detail {
-        margin-top: 16px;
-        padding: 14px 16px;
-        border-radius: 16px;
-        background: rgba(10, 18, 32, 0.92);
-        border: 1px solid rgba(248, 113, 113, 0.3);
-        color: #fecaca;
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 6px;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        color: #7c2d12;
         font: 12px/1.6 Consolas, "Courier New", monospace;
         white-space: pre-wrap;
         word-break: break-word;
       }
+
+      /* ── Actions ────────────────────────────────────────────────── */
       .boot-actions {
-        margin-top: 18px;
+        margin-top: 16px;
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
       }
       .boot-action {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 40px;
-        padding: 0 14px;
-        border-radius: 12px;
-        border: 1px solid rgba(173, 191, 219, 0.18);
-        background: rgba(22, 34, 59, 0.92);
-        color: #e6eefc;
+        min-height: 36px;
+        padding: 0 16px;
+        border-radius: 6px;
+        border: 1px solid #0284c7;
+        background: #0284c7;
+        color: #ffffff;
         text-decoration: none;
         cursor: pointer;
+        font-size: 12px;
+        font-weight: 850;
+        transition: background 0.15s, border-color 0.15s, transform 0.15s;
+      }
+      .boot-action:hover {
+        background: #0369a1;
+        border-color: #0369a1;
+        transform: translateY(-1px);
+      }
+
+      /* ── Step Items Checklist ───────────────────────────────────── */
+      .boot-steps {
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 16px;
+      }
+      .boot-step-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+        padding: 4px 0;
+      }
+      .boot-step-item.active {
+        color: #0f172a;
         font-weight: 600;
+      }
+      .boot-step-item.done {
+        color: #059669;
+      }
+      .boot-step-item.failed {
+        color: #dc2626;
+        font-weight: 600;
+      }
+      .boot-step-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: bold;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+      .boot-step-icon.pending {
+        border: 2px solid #cbd5e1;
+        background: #f1f5f9;
+        color: #94a3b8;
+      }
+      .boot-step-icon.active {
+        border: 2px solid #0284c7;
+        background: #e0f2fe;
+        color: #0284c7;
+        animation: boot-pulse-anim 1.5s infinite;
+      }
+      .boot-step-icon.done {
+        border: 2px solid #10b981;
+        background: #ecfdf5;
+        color: #10b981;
+      }
+      .boot-step-icon.failed {
+        border: 2px solid #ef4444;
+        background: #fef2f2;
+        color: #ef4444;
+      }
+      @keyframes boot-pulse-anim {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(0.95); }
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
     <div id="boot-status" data-state="loading">
       <div class="boot-card">
-        <div class="boot-badge">Editor Baslatiliyor</div>
-        <div class="boot-title">Arayüz yükleniyor...</div>
+        <div class="boot-badge">Editör Başlatılıyor</div>
+        <div class="boot-spinner-wrap"><div class="boot-spinner"></div></div>
+        <div class="boot-title">Arayüz hazırlanıyor...</div>
         <div class="boot-body">
-          Eger burada uzun sure kalirsa uygulama tarayicida acilis hatasi veriyor olabilir.
-          Bu durumda ayrinti kutusu otomatik dolacak.
+          Editör dosyaları ve çalışma alanı hazırlanıyor. Uzun sürerse ayrıntı alanı otomatik
+          olarak hata bilgisini gösterecek.
         </div>
         <div class="boot-actions">
           <button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>
         </div>
       </div>
     </div>
+
     <script>
       (function () {
         var panel = document.getElementById("boot-status");
@@ -136,36 +249,78 @@
           panel.setAttribute("data-state", "ready");
         };
 
+        function renderBootCard(options) {
+          var opts = options || {};
+          var tone = opts.tone === "error" ? "error" : opts.tone === "warning" ? "warning" : "";
+          var detail = opts.detail ? String(opts.detail) : "";
+          panel.setAttribute("data-state", opts.state || "loading");
+
+          var stepsHtml = "";
+          if (opts.steps && opts.steps.length > 0) {
+            stepsHtml = '<div class="boot-steps">';
+            for (var i = 0; i < opts.steps.length; i++) {
+              var step = opts.steps[i];
+              var status = step.status || 'pending';
+              var iconText = '○';
+              if (status === 'done') iconText = '✓';
+              else if (status === 'active') iconText = '●';
+              else if (status === 'failed') iconText = '×';
+              
+              stepsHtml += 
+                '<div class="boot-step-item ' + status + '">' +
+                '<span class="boot-step-icon ' + status + '">' + iconText + '</span>' +
+                '<span>' + escapeHtml(step.label) + '</span>' +
+                '</div>';
+            }
+            stepsHtml += '</div>';
+          }
+
+          panel.innerHTML =
+            '<div class="boot-card">' +
+            '<div class="boot-badge' + (tone ? " " + tone : "") + '">' + escapeHtml(opts.badge || "Editör Başlatılıyor") + "</div>" +
+            (opts.showSpinner === false ? "" : '<div class="boot-spinner-wrap"><div class="boot-spinner"></div></div>') +
+            '<div class="boot-title">' + escapeHtml(opts.title || "Arayüz hazırlanıyor...") + "</div>" +
+            '<div class="boot-body">' + escapeHtml(opts.body || "Editör dosyaları ve çalışma alanı hazırlanıyor.") + "</div>" +
+            stepsHtml +
+            (detail ? '<div class="boot-detail">' + escapeHtml(detail) + "</div>" : "") +
+            '<div class="boot-actions">' +
+            '<button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>' +
+            "</div>" +
+            "</div>";
+        }
+
+        window.__EIC_BOOT_UPDATE__ = function (payload) {
+          renderBootCard(payload || {});
+        };
+
         window.__EIC_BOOT_REPORT__ = function (title, details) {
           var context = [
             "URL: " + window.location.href,
             "Asset Base: " + (window.__EIC_ASSET_BASE__ || ""),
           ].join("\n");
           var fullDetails = details ? (String(details) + "\n\n" + context) : context;
-          panel.setAttribute("data-state", "error");
-          panel.innerHTML =
-            '<div class="boot-card">' +
-            '<div class="boot-badge">Açılış Hatası</div>' +
-            '<div class="boot-title">' + escapeHtml(title || "Uygulama baslarken bir hata olustu") + "</div>" +
-            '<div class="boot-body">Bu ekran siyah bos sayfa yerine hatayi gormek icin gosteriliyor. Asagidaki metni bana aynen atarsan daha hizli cozeriz.</div>' +
-            (fullDetails ? '<div class="boot-detail">' + escapeHtml(fullDetails) + "</div>" : "") +
-            '<div class="boot-actions">' +
-            '<button class="boot-action" type="button" onclick="window.location.reload()">Sayfayı Yenile</button>' +
-            "</div>" +
-            "</div>";
+          renderBootCard({
+            state: "error",
+            tone: "error",
+            badge: "Açılış Hatası",
+            title: title || "Uygulama başlatılırken bir hata oluştu",
+            body: "Editör başlatılamadı. Ayrıntı alanındaki hata bilgisi sorunun kaynağını gösterir.",
+            detail: fullDetails,
+            showSpinner: false,
+          });
         };
 
         window.addEventListener("error", function (event) {
           var stack = event && event.error && event.error.stack ? String(event.error.stack) : "";
-          var firstLine = stack.split("\n")[0] || ((event && event.message) || "Bilinmeyen JavaScript hatasi");
-          window.__EIC_BOOT_REPORT__("JavaScript calisma hatasi", firstLine);
+          var firstLine = stack.split("\n")[0] || ((event && event.message) || "Bilinmeyen JavaScript hatası");
+          window.__EIC_BOOT_REPORT__("JavaScript çalışma hatası", firstLine);
         });
 
         window.addEventListener("unhandledrejection", function (event) {
           var reason = event && event.reason;
           var stack = reason && reason.stack ? String(reason.stack) : "";
-          var firstLine = stack.split("\n")[0] || (typeof reason === "string" ? reason : "Bilinmeyen promise hatasi");
-          window.__EIC_BOOT_REPORT__("Promise hatasi", firstLine);
+          var firstLine = stack.split("\n")[0] || (typeof reason === "string" ? reason : "Bilinmeyen promise hatası");
+          window.__EIC_BOOT_REPORT__("Promise hatası", firstLine);
         });
       })();
     </script>

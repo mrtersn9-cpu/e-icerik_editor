@@ -1,34 +1,37 @@
-# Git Akisi
+# Git Akışı
 
-Projede iki temel script var:
+Bu depoda `origin` remote tanımlıdır. Scriptler sabit bir dal adına bağlı değildir; çalışılan dalı algılayıp aynı dala push dener.
 
-- `.\kaydet.ps1`
-  - Degisiklikleri listeler.
-  - Varsayilan olarak `.\hazirla-ftp.ps1` calistirir.
-  - Surum notunu sorar veya otomatik uretir.
-  - `CHANGELOG.md` dosyasina yeni kayit ekler.
-  - Commit alir.
-  - `origin` remote varsa push dener.
-  - Gerekirse `-NoPrepare` ile FTP hazirlamayi kapatabilirsin.
-  - `-Watch` ile anlik izleme modunu baslatir.
+## Elle Kayıt
 
-- `.\oto-kaydet.ps1`
-  - Dosya sistemini anlik izler.
-  - Kod degisikliklerinden sonra kisa bir bekleme suresiyle `kaydet.ps1 -Auto` calistirir.
-  - Kendi olusturdugu `build`, `deploy-ftp`, `CHANGELOG.md` ve benzeri dosyalari izleme disinda tutar.
-  - Ornek: `.\oto-kaydet.ps1`
-  - Bekleme suresi degistirmek icin: `.\oto-kaydet.ps1 -BeklemeSaniye 8`
+```powershell
+.\kaydet.ps1 -Mesaj "Kısa sürüm notu"
+```
 
-Notlar:
+`kaydet.ps1` şu sırayı izler:
 
-- Bu makinede su an GitHub CLI (`gh`) kurulu degil.
-- Bu nedenle uzak GitHub reposu otomatik olusturulmadi.
-- Uzak repo baglandiginda `kaydet.ps1` ve `oto-kaydet.ps1` push da yapar.
-- `deploy-ftp/` otomatik izleme disinda tutulur; boylece FTP hazirlama sonrasi sonsuz commit dongusu olusmaz.
+1. Değişiklikleri listeler.
+2. Varsayılan olarak `.\hazirla-ftp.ps1` çalıştırır.
+3. `CHANGELOG.md` başına sürüm notu ekler.
+4. `git add -A` ve commit çalıştırır.
+5. `origin` varsa aktif dalı push eder.
 
-Onerilen ilk adimlar:
+Seçenekler:
 
-1. GitHub'da repo olustur.
-2. `git remote add origin <repo-url>` komutunu calistir.
-3. `.\kaydet.ps1 "Ilk senkron"` ile ilk push'u gonder.
-4. Surekli otomatik kayit icin `.\kaydet.ps1 -Watch` komutunu acik bir terminalde calistir.
+- `-NoPrepare`: Build, yedek ve FTP paketi hazırlamayı atlar.
+- `-NoPush`: Commit alır, push yapmaz.
+- `-Watch`: `oto-kaydet.ps1` izleme modunu açar.
+
+## Otomatik Kayıt
+
+```powershell
+.\oto-kaydet.ps1 -BeklemeSaniye 8
+```
+
+Bu script dosya sistemini izler ve kısa bir beklemeden sonra `kaydet.ps1 -Auto` çalıştırır. `.git`, `node_modules`, `build`, `deploy-ftp`, `deploy-ftp-temp`, `CHANGELOG.md` ve `data/pdf-output-*` yolları izleme dışında tutulur.
+
+## Dikkat
+
+- `CHANGELOG.md` otomatik oluşan tarihsel kayıttır; güncel sistem mimarisini anlatan kaynak değildir.
+- Büyük ve deneysel çalışma sırasında her otomatik kayıtta build ve yedek alınmasını istemiyorsan `-NoPrepare` kullan.
+- Yayın paketi gerekiyorsa en az bir kez `.\hazirla-ftp.ps1` çalıştırıp build sonucunu doğrula.

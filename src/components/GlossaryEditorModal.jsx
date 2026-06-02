@@ -58,7 +58,7 @@ export default function GlossaryEditorModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 620,
+          width: 'min(620px, calc(100vw - 32px))',
           maxHeight: '85vh',
           background: '#ffffff',
           borderRadius: 20,

@@ -4,6 +4,7 @@ import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
 } from '../../../../logic/editorHelpers';
+import { SCENE_TEMPLATE_BUTTON_INTRO_ID } from '../../../../logic/sceneTemplates';
 
 import {
   ActionButton,
@@ -103,6 +104,31 @@ const buttonTaskPresets = [
   { id: 'complete', label: 'Etkinliği Kapat', runtimeAction: 'complete' },
 ];
 
+function isSystemGeneratedButtonPairSelection(selectedObjects) {
+  if (!selectedObjects || selectedObjects.length < 2) return false;
+  const groupId = String(selectedObjects[0]?.linkedHoverGroup || '').trim();
+  if (!groupId) return false;
+  const allSameGroup = selectedObjects.every(
+    (item) => String(item.linkedHoverGroup || '').trim() === groupId
+  );
+  if (!allSameGroup) return false;
+
+  const buttons = selectedObjects.filter((item) => item && item.type === 'button');
+  if (buttons.length < 2) return false;
+
+  return (
+    groupId.startsWith('answer-template:') ||
+    groupId.startsWith('button-intro:') ||
+    groupId.startsWith('ready:') ||
+    buttons.some(
+      (item) =>
+        item.generatedBy === 'answer-template' ||
+        item.sceneTemplateId === SCENE_TEMPLATE_BUTTON_INTRO_ID ||
+        String(item.sceneTemplateSlotId || '').startsWith('ready-button:')
+    )
+  );
+}
+
 function objectTitle(object) {
   const candidates = [object?.editorName, object?.label, object?.name, object?.text]
     .map((value) => String(value || '').trim())
@@ -134,7 +160,7 @@ export function FormatRightPanelContent({ controller }) {
   const variables = controller.present?.variables || [];
   const objects = controller.objects || [];
   const resolvedNames = controller.resolvedLayerNames || {};
-  const isMultiSelection = selectedObjects.length > 1;
+  const isMultiSelection = selectedObjects.length > 1 && !isSystemGeneratedButtonPairSelection(selectedObjects);
 
   const patchObject = (patch) => {
     if (!object) return;
@@ -265,7 +291,7 @@ export function FormatRightPanelContent({ controller }) {
           { value: '__prev__', label: 'Önceki slide' },
           ...slides.map((slide, index) => ({
             value: slide.id,
-            label: `${index + 1}. ${slide.name || slide.sceneName || 'Slide'}`,
+            label: `${index + 1}. ${slide.name || slide.sceneName || 'Sahne'}`,
           })),
         ]
       : clickTrigger?.action === 'SayfaGec'
@@ -800,7 +826,7 @@ export function FormatRightPanelContent({ controller }) {
 export default function FormatRightPanel({ controller }) {
   const object = controller.selectedObject;
   const selectedObjects = controller.selectedObjects || [];
-  const isMultiSelection = selectedObjects.length > 1;
+  const isMultiSelection = selectedObjects.length > 1 && !isSystemGeneratedButtonPairSelection(selectedObjects);
   const panelKey = isMultiSelection
     ? selectedObjects.map((item) => item.id).join('|')
     : object?.id || 'empty';

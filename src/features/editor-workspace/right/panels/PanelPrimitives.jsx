@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { EDITOR_THEME } from '../../../../theme';
 import { workspaceChrome } from '../../chromeTokens';
 
 export const inspectorChrome = workspaceChrome.inspector;
 
 const controlBase = {
   width: '100%',
-  height: 30,
+  height: workspaceChrome.control.height,
   border: `1px solid ${inspectorChrome.border}`,
-  borderRadius: 7,
-  background: '#ffffff',
+  borderRadius: workspaceChrome.radius.sm,
+  background: inspectorChrome.panel,
   color: inspectorChrome.text,
-  fontSize: 10.5,
-  fontWeight: 760,
+  fontSize: workspaceChrome.control.fontSize,
+  fontWeight: EDITOR_THEME.weightSemibold,
   padding: '0 8px',
   outline: 'none',
   boxSizing: 'border-box',
@@ -68,7 +69,7 @@ export function PanelShell({ children, subtitle, title, action }) {
         overflowY: 'auto',
         overflowX: 'hidden',
         background: inspectorChrome.panel,
-        padding: 8,
+        padding: EDITOR_THEME.spaceSm,
         color: inspectorChrome.text,
       }}
     >
@@ -77,16 +78,16 @@ export function PanelShell({ children, subtitle, title, action }) {
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
-          gap: 8,
-          marginBottom: 9,
+          gap: EDITOR_THEME.spaceSm,
+          marginBottom: EDITOR_THEME.spaceSm,
         }}
       >
         <div style={{ minWidth: 0 }}>
           <div
             style={{
               color: inspectorChrome.blueDark,
-              fontSize: 12,
-              fontWeight: 950,
+              fontSize: EDITOR_THEME.typeBody,
+              fontWeight: EDITOR_THEME.weightBold,
               letterSpacing: 0.15,
               textTransform: 'uppercase',
               whiteSpace: 'nowrap',
@@ -97,14 +98,23 @@ export function PanelShell({ children, subtitle, title, action }) {
             {title}
           </div>
           {subtitle ? (
-            <div style={{ color: inspectorChrome.muted, fontSize: 10.5, fontWeight: 650, marginTop: 3 }}>
+            <div
+              style={{
+                color: inspectorChrome.muted,
+                fontSize: EDITOR_THEME.typeCaption,
+                fontWeight: EDITOR_THEME.weightNormal,
+                marginTop: 3,
+              }}
+            >
               {subtitle}
             </div>
           ) : null}
         </div>
         {action}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: EDITOR_THEME.spaceSm }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -131,10 +141,10 @@ export function PanelTabs({ active, onChange, tabs }) {
               border: 'none',
               borderBottom: `2px solid ${selected ? inspectorChrome.blue : 'transparent'}`,
               background: 'transparent',
-              color: selected ? '#0f5bff' : '#334155',
+              color: selected ? inspectorChrome.blue : inspectorChrome.text,
               cursor: 'pointer',
-              fontSize: 10.5,
-              fontWeight: selected ? 900 : 760,
+              fontSize: EDITOR_THEME.typeCaption,
+              fontWeight: selected ? EDITOR_THEME.weightBold : EDITOR_THEME.weightSemibold,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -157,7 +167,7 @@ export function PanelCard({ children, title, action, defaultOpen = true, collaps
     <section
       style={{
         border: `1px solid ${inspectorChrome.border}`,
-        borderRadius: 8,
+        borderRadius: EDITOR_THEME.radiusLg,
         background: inspectorChrome.panel,
         overflow: 'hidden',
       }}
@@ -168,11 +178,11 @@ export function PanelCard({ children, title, action, defaultOpen = true, collaps
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 8,
+            gap: EDITOR_THEME.spaceSm,
             minHeight: 28,
             padding: '5px 8px',
             borderBottom: bodyVisible ? `1px solid ${inspectorChrome.borderSoft}` : 'none',
-            background: '#fbfdff',
+            background: inspectorChrome.panelRaised,
           }}
         >
           <button
@@ -186,16 +196,18 @@ export function PanelCard({ children, title, action, defaultOpen = true, collaps
               cursor: collapsible ? 'pointer' : 'default',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: EDITOR_THEME.spaceSm,
               padding: 0,
               textAlign: 'left',
-              fontSize: 10.5,
-              fontWeight: 950,
+              fontSize: EDITOR_THEME.typeCaption,
+              fontWeight: EDITOR_THEME.weightBold,
               letterSpacing: 0.2,
               textTransform: 'uppercase',
             }}
           >
-            {collapsible ? <span style={{ color: '#94a3b8' }}>{open ? '⌄' : '›'}</span> : null}
+            {collapsible ? (
+              <span style={{ color: inspectorChrome.softText }}>{open ? '⌄' : '›'}</span>
+            ) : null}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {title}
             </span>
@@ -203,7 +215,7 @@ export function PanelCard({ children, title, action, defaultOpen = true, collaps
           {action}
         </div>
       ) : null}
-      {bodyVisible ? <div style={{ padding: 8 }}>{children}</div> : null}
+      {bodyVisible ? <div style={{ padding: EDITOR_THEME.spaceSm }}>{children}</div> : null}
     </section>
   );
 }
@@ -212,26 +224,38 @@ export const InspectorSection = PanelCard;
 
 export function MetricGrid({ items, columns = 2 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 6 }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gap: EDITOR_THEME.spaceSm,
+      }}
+    >
       {items.map((item) => (
         <div
           key={item.label}
           style={{
             minHeight: 38,
             border: `1px solid ${item.tone ? `${item.tone}33` : inspectorChrome.border}`,
-            borderRadius: 7,
+            borderRadius: EDITOR_THEME.radiusMd,
             background: item.tone ? `${item.tone}0f` : inspectorChrome.panelSoft,
             padding: '5px 6px',
           }}
         >
-          <div style={{ color: item.tone || inspectorChrome.muted, fontSize: 15, fontWeight: 950 }}>
+          <div
+            style={{
+              color: item.tone || inspectorChrome.muted,
+              fontSize: EDITOR_THEME.typeTitle,
+              fontWeight: EDITOR_THEME.weightBold,
+            }}
+          >
             {item.value}
           </div>
           <div
             style={{
               color: inspectorChrome.muted,
-              fontSize: 9.5,
-              fontWeight: 850,
+              fontSize: EDITOR_THEME.typeCaption,
+              fontWeight: EDITOR_THEME.weightSemibold,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -251,21 +275,23 @@ export function MiniStat({ label, tone = inspectorChrome.blue, value }) {
       style={{
         minHeight: 38,
         border: `1px solid ${tone}30`,
-        borderRadius: 7,
+        borderRadius: EDITOR_THEME.radiusMd,
         background: `${tone}0f`,
         display: 'grid',
         gridTemplateColumns: 'auto minmax(0,1fr)',
         alignItems: 'center',
-        gap: 7,
+        gap: EDITOR_THEME.spaceSm,
         padding: '5px 7px',
       }}
     >
-      <span style={{ color: tone, fontSize: 14, fontWeight: 950 }}>{value}</span>
+      <span style={{ color: tone, fontSize: EDITOR_THEME.typeTitle, fontWeight: EDITOR_THEME.weightBold }}>
+        {value}
+      </span>
       <span
         style={{
-          color: '#64748b',
-          fontSize: 9.5,
-          fontWeight: 850,
+          color: inspectorChrome.muted,
+          fontSize: EDITOR_THEME.typeCaption,
+          fontWeight: EDITOR_THEME.weightSemibold,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -286,13 +312,13 @@ export function ActionButton({ children, disabled = false, onClick, tone = inspe
       title={title}
       style={{
         minHeight: 29,
-        borderRadius: 7,
+        borderRadius: EDITOR_THEME.radiusMd,
         border: `1px solid ${disabled ? inspectorChrome.border : `${tone}55`}`,
-        background: disabled ? '#f8fafc' : '#ffffff',
-        color: disabled ? '#94a3b8' : tone,
+        background: disabled ? EDITOR_THEME.lightBg : inspectorChrome.panel,
+        color: disabled ? inspectorChrome.softText : tone,
         cursor: disabled ? 'default' : 'pointer',
-        fontSize: 10.5,
-        fontWeight: 900,
+        fontSize: EDITOR_THEME.typeCaption,
+        fontWeight: EDITOR_THEME.weightBold,
         lineHeight: 1.15,
         padding: '5px 7px',
         whiteSpace: 'nowrap',
@@ -322,14 +348,14 @@ export function ActionTile({
       title={title || (typeof children === 'string' ? children : undefined)}
       style={{
         minHeight: 48,
-        borderRadius: 7,
+        borderRadius: EDITOR_THEME.radiusMd,
         border: `1px solid ${disabled ? inspectorChrome.border : `${tone}35`}`,
-        background: disabled ? '#f8fafc' : '#ffffff',
-        color: disabled ? '#94a3b8' : inspectorChrome.text,
+        background: disabled ? EDITOR_THEME.lightBg : inspectorChrome.panel,
+        color: disabled ? inspectorChrome.softText : inspectorChrome.text,
         cursor: disabled ? 'default' : 'pointer',
         display: 'grid',
         gridTemplateColumns: icon ? '24px minmax(0,1fr)' : 'minmax(0,1fr)',
-        gap: 7,
+        gap: EDITOR_THEME.spaceSm,
         alignItems: 'center',
         padding: '7px 8px',
         textAlign: 'left',
@@ -340,14 +366,14 @@ export function ActionTile({
           style={{
             width: 24,
             height: 24,
-            borderRadius: 7,
+            borderRadius: EDITOR_THEME.radiusMd,
             background: `${tone}12`,
             color: tone,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 13,
-            fontWeight: 950,
+            fontSize: EDITOR_THEME.typeBody,
+            fontWeight: EDITOR_THEME.weightBold,
           }}
         >
           {icon}
@@ -357,9 +383,9 @@ export function ActionTile({
         <span
           style={{
             display: 'block',
-            color: disabled ? '#94a3b8' : tone,
-            fontSize: 10.5,
-            fontWeight: 950,
+            color: disabled ? inspectorChrome.softText : tone,
+            fontSize: EDITOR_THEME.typeCaption,
+            fontWeight: EDITOR_THEME.weightBold,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -371,9 +397,9 @@ export function ActionTile({
           <span
             style={{
               display: 'block',
-              color: '#64748b',
-              fontSize: 9.5,
-              fontWeight: 650,
+              color: inspectorChrome.muted,
+              fontSize: EDITOR_THEME.typeCaption,
+              fontWeight: EDITOR_THEME.weightNormal,
               lineHeight: 1.25,
               marginTop: 2,
             }}
@@ -397,15 +423,15 @@ export function IconActionButton({ children, disabled = false, onClick, title, a
         width: 24,
         height: 24,
         borderRadius: 6,
-        border: `1px solid ${active ? '#bfdbfe' : inspectorChrome.border}`,
-        background: active ? inspectorChrome.active : '#ffffff',
-        color: disabled ? '#cbd5e1' : active ? inspectorChrome.blue : inspectorChrome.muted,
+        border: `1px solid ${active ? inspectorChrome.activeBorder : inspectorChrome.border}`,
+        background: active ? inspectorChrome.active : inspectorChrome.panel,
+        color: disabled ? inspectorChrome.softText : active ? inspectorChrome.blue : inspectorChrome.muted,
         cursor: disabled ? 'default' : 'pointer',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 11,
-        fontWeight: 900,
+        fontSize: EDITOR_THEME.typeControl,
+        fontWeight: EDITOR_THEME.weightBold,
         lineHeight: 1,
       }}
     >
@@ -422,7 +448,7 @@ export function ButtonGrid({ actions, columns = 2 }) {
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-        gap: 6,
+        gap: EDITOR_THEME.spaceSm,
       }}
     >
       {actions.map((action) => (
@@ -442,7 +468,13 @@ export function ButtonGrid({ actions, columns = 2 }) {
 
 export function TileGrid({ actions, columns = 2 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 6 }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gap: EDITOR_THEME.spaceSm,
+      }}
+    >
       {actions.map((action) => (
         <ActionTile
           key={action.label}
@@ -466,10 +498,10 @@ export function FieldLabel({ children }) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
-        color: '#334155',
-        fontSize: 10.5,
-        fontWeight: 850,
+        gap: EDITOR_THEME.spaceXs,
+        color: inspectorChrome.text,
+        fontSize: EDITOR_THEME.typeCaption,
+        fontWeight: EDITOR_THEME.weightSemibold,
       }}
     >
       {children}
@@ -485,8 +517,8 @@ export function NativeSelect({ disabled = false, onChange, options = [], value }
       onChange={(event) => onChange?.(event.target.value)}
       style={{
         ...controlBase,
-        background: disabled ? '#f8fafc' : controlBase.background,
-        color: disabled ? '#94a3b8' : controlBase.color,
+        background: disabled ? EDITOR_THEME.lightBg : controlBase.background,
+        color: disabled ? inspectorChrome.softText : controlBase.color,
         cursor: disabled ? 'default' : 'pointer',
       }}
     >
@@ -507,10 +539,10 @@ export function ToggleRow({ checked, disabled = false, hint, label, onChange }) 
         display: 'grid',
         gridTemplateColumns: 'minmax(0,1fr) auto',
         alignItems: 'center',
-        gap: 8,
-        color: disabled ? '#94a3b8' : '#334155',
-        fontSize: 10.5,
-        fontWeight: 820,
+        gap: EDITOR_THEME.spaceSm,
+        color: disabled ? inspectorChrome.softText : inspectorChrome.text,
+        fontSize: EDITOR_THEME.typeCaption,
+        fontWeight: EDITOR_THEME.weightSemibold,
       }}
     >
       <span style={{ minWidth: 0 }}>
@@ -518,7 +550,15 @@ export function ToggleRow({ checked, disabled = false, hint, label, onChange }) 
           {label}
         </span>
         {hint ? (
-          <span style={{ display: 'block', color: '#64748b', fontSize: 9.5, fontWeight: 600, marginTop: 1 }}>
+          <span
+            style={{
+              display: 'block',
+              color: inspectorChrome.muted,
+              fontSize: EDITOR_THEME.typeCaption,
+              fontWeight: EDITOR_THEME.weightNormal,
+              marginTop: 1,
+            }}
+          >
             {hint}
           </span>
         ) : null}
@@ -544,8 +584,8 @@ export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
       onChange={(event) => onChange?.(Number(event.target.value) || 0)}
       style={{
         ...controlBase,
-        background: disabled ? '#f8fafc' : controlBase.background,
-        color: disabled ? '#94a3b8' : controlBase.color,
+        background: disabled ? EDITOR_THEME.lightBg : controlBase.background,
+        color: disabled ? inspectorChrome.softText : controlBase.color,
       }}
     />
   );
@@ -561,8 +601,8 @@ export function TextInput({ disabled = false, onChange, placeholder = '', value 
       onChange={(event) => onChange?.(event.target.value)}
       style={{
         ...controlBase,
-        background: disabled ? '#f8fafc' : controlBase.background,
-        color: disabled ? '#94a3b8' : controlBase.color,
+        background: disabled ? EDITOR_THEME.lightBg : controlBase.background,
+        color: disabled ? inspectorChrome.softText : controlBase.color,
       }}
     />
   );
@@ -578,8 +618,8 @@ export function TextAreaInput({ disabled = false, onChange, placeholder = '', ro
       onChange={(event) => onChange?.(event.target.value)}
       style={{
         ...controlBase,
-        background: disabled ? '#f8fafc' : controlBase.background,
-        color: disabled ? '#94a3b8' : controlBase.color,
+        background: disabled ? EDITOR_THEME.lightBg : controlBase.background,
+        color: disabled ? inspectorChrome.softText : controlBase.color,
         height: 'auto',
         minHeight: rows * 24,
         padding: '7px 8px',
@@ -612,7 +652,11 @@ export function ColorInput({ onChange, value = '#ffffff' }) {
 
 export function CompactList({ empty, items = [], renderItem }) {
   if (!items.length) return <EmptyHint>{empty || 'Kayıt yok.'}</EmptyHint>;
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{items.map(renderItem)}</div>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: EDITOR_THEME.spaceXs }}>
+      {items.map(renderItem)}
+    </div>
+  );
 }
 
 export function PreviewTile({ active = false, children, label, onClick, tone = inspectorChrome.blue }) {
@@ -622,14 +666,14 @@ export function PreviewTile({ active = false, children, label, onClick, tone = i
       onClick={onClick}
       style={{
         minHeight: 54,
-        borderRadius: 7,
+        borderRadius: EDITOR_THEME.radiusMd,
         border: `1px solid ${active ? tone : inspectorChrome.border}`,
-        background: active ? `${tone}10` : '#ffffff',
+        background: active ? `${tone}10` : inspectorChrome.panel,
         cursor: 'pointer',
         color: inspectorChrome.text,
         display: 'grid',
         gridTemplateRows: '1fr auto',
-        gap: 5,
+        gap: EDITOR_THEME.spaceXs,
         padding: 6,
         textAlign: 'left',
       }}
@@ -638,8 +682,8 @@ export function PreviewTile({ active = false, children, label, onClick, tone = i
       <span
         style={{
           color: active ? tone : inspectorChrome.muted,
-          fontSize: 9.5,
-          fontWeight: 850,
+          fontSize: EDITOR_THEME.typeCaption,
+          fontWeight: EDITOR_THEME.weightSemibold,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -659,7 +703,7 @@ export function InspectorRow({ action, label, tone, value }) {
         display: 'grid',
         gridTemplateColumns: action ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
         alignItems: 'center',
-        gap: 7,
+        gap: EDITOR_THEME.spaceSm,
         borderBottom: `1px solid ${inspectorChrome.borderSoft}`,
         padding: '4px 0',
       }}
@@ -668,8 +712,8 @@ export function InspectorRow({ action, label, tone, value }) {
         <div
           style={{
             color: inspectorChrome.muted,
-            fontSize: 9.5,
-            fontWeight: 850,
+            fontSize: EDITOR_THEME.typeCaption,
+            fontWeight: EDITOR_THEME.weightSemibold,
             textTransform: 'uppercase',
           }}
         >
@@ -679,8 +723,8 @@ export function InspectorRow({ action, label, tone, value }) {
           title={typeof value === 'string' ? value : undefined}
           style={{
             color: tone || inspectorChrome.text,
-            fontSize: 10.5,
-            fontWeight: 800,
+            fontSize: EDITOR_THEME.typeCaption,
+            fontWeight: EDITOR_THEME.weightSemibold,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -709,8 +753,8 @@ export function StatusPill({ children, tone = inspectorChrome.blue }) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 9.5,
-        fontWeight: 950,
+        fontSize: EDITOR_THEME.typeCaption,
+        fontWeight: EDITOR_THEME.weightBold,
         whiteSpace: 'nowrap',
       }}
     >
@@ -725,16 +769,16 @@ export function EmptyHint({ children }) {
       style={{
         minHeight: 38,
         border: `1px dashed ${inspectorChrome.border}`,
-        borderRadius: 7,
-        background: '#fbfdff',
+        borderRadius: EDITOR_THEME.radiusMd,
+        background: inspectorChrome.panelRaised,
         color: inspectorChrome.muted,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: 8,
-        fontSize: 10.5,
-        fontWeight: 750,
+        padding: EDITOR_THEME.spaceSm,
+        fontSize: EDITOR_THEME.typeCaption,
+        fontWeight: EDITOR_THEME.weightSemibold,
         lineHeight: 1.35,
       }}
     >

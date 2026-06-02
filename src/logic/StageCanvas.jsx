@@ -17,7 +17,7 @@ import {
   getSelectionMarkGlyph,
   isObjectTimelineActive,
   getTimelineMotionStyle,
-} from '../storyline-preview';
+} from '../components/storyline-preview';
 import {
   OBJ_PRESETS,
   RIBBON_SHAPE_PRESETS,
@@ -25,7 +25,7 @@ import {
   HANDLE_DIRS,
   HANDLE_POS,
   HANDLE_CURSOR,
-} from '../../constants';
+} from '../constants';
 import {
   createObject,
   createShapeObject,
@@ -38,25 +38,31 @@ import {
   getSegmentMidPoint,
   shiftVectorPointControls,
   alignVectorAnchors,
-} from '../../logic/factories';
+} from './factories';
 import {
   getCanvasObjects,
+} from './activityHelpers';
+import {
   syncTimelineWithObjects,
   getActivityTimeline,
-} from '../../logic/activityHelpers';
+} from './timeline';
 import {
   isGeneratedSceneTemplateObject,
   createObjectFromActivity,
   updateActivityObject,
-} from '../../logic/activityFactory';
+} from './activityFactory';
 import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
-} from '../../logic/editorHelpers';
-import { sanitizeSvgMarkup, uid, clamp } from '../../utils/editorHelpers';
-import { uploadMediaFile, fileToDataUrl } from '../../api/apiClient';
-import { upgradeDragDropStyle } from '../../logic/factories';
-import { ShapePreviewIcon } from '../ui';
+} from './editorHelpers';
+import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
+import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
+import { upgradeDragDropStyle } from './factories';
+import { ShapePreviewIcon } from '../components/ui';
+import WidgetHost from '../widgets/WidgetHost';
+import { buildWidgetIframeSrc } from '../widgets/WidgetRegistry';
+import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
+import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
 
 const StageCanvas = forwardRef(function StageCanvas(
   {
@@ -71,11 +77,15 @@ const StageCanvas = forwardRef(function StageCanvas(
     showBaseLayer = true,
     canvasTool,
     onCanvasToolChange,
+    showChrome = true,
+    objectClipboardRef = null,
+    touchMode = false,
   },
   ref
 ) {
   const viewportRef = useRef(null);
   const panStateRef = useRef(null);
+  const multiTouchRef = useRef(false);
   const zoomClickCountRef = useRef(0);
   const stageRef = useRef(null);
   const latestRef = useRef(activity);
@@ -86,7 +96,8 @@ const StageCanvas = forwardRef(function StageCanvas(
   const audioRef = useRef(null);
   const zoomRef = useRef(zoom);
   const latestSelectedIdsRef = useRef(selectedIds);
-  const clipboardRef = useRef(null);
+  const localClipboardRef = useRef(null);
+  const clipboardRef = objectClipboardRef || localClipboardRef;
   const rubberStartRef = useRef(null);
   const rubberHandlersRef = useRef(null);
   const dragSnapshotRef = useRef(null);
@@ -273,6 +284,19 @@ const StageCanvas = forwardRef(function StageCanvas(
     [onUpdate]
   );
 
+  // ── Mobil dokunma jest katmanı (yalnızca touchMode; masaüstü etkilenmez) ──
+  const getResolvedScale = useCallback(
+    () => (zoomRef.current === 'fit' ? baseScale : Number(zoomRef.current) || baseScale),
+    [baseScale]
+  );
+  useMobileCanvasGestures({
+    enabled: touchMode,
+    viewportRef,
+    getScale: getResolvedScale,
+    onZoomChange,
+    multiTouchRef,
+  });
+
   const patchObj = useCallback(
     (id, p, options = {}) => {
       const a = latestRef.current;
@@ -451,7 +475,7 @@ const StageCanvas = forwardRef(function StageCanvas(
       copiedAt: Date.now(),
     };
     return true;
-  }, []);
+  }, [clipboardRef]);
 
   const pasteClipboard = useCallback(() => {
     const clipboard = clipboardRef.current;
@@ -460,12 +484,17 @@ const StageCanvas = forwardRef(function StageCanvas(
     const a = latestRef.current;
     const existingObjects = a.objects || [];
     const existingTimeline = getActivityTimeline(a);
+    const targetLayerIds = new Set((a.layers || []).map((layer) => layer.id).filter(Boolean));
+    if (!targetLayerIds.size) targetLayerIds.add('base');
+    const fallbackLayerId = targetLayerIds.has(a.activeLayerId) ? a.activeLayerId : 'base';
     const idMap = new Map();
     const groupIdMap = new Map();
     const newSelection = new Set();
+    clipboard.objects.forEach((item) => {
+      if (item?.id) idMap.set(item.id, uid());
+    });
     const duplicatedObjects = clipboard.objects.map((item, index) => {
-      const newId = uid();
-      idMap.set(item.id, newId);
+      const newId = idMap.get(item.id) || uid();
       newSelection.add(newId);
       const sourceGroupId = String(item.groupId || '').trim();
       if (sourceGroupId && !groupIdMap.has(sourceGroupId)) groupIdMap.set(sourceGroupId, uid());
@@ -473,6 +502,8 @@ const StageCanvas = forwardRef(function StageCanvas(
         ...item,
         id: newId,
         groupId: sourceGroupId ? groupIdMap.get(sourceGroupId) : item.groupId || '',
+        linkedActionTargetId: idMap.get(item.linkedActionTargetId) || item.linkedActionTargetId || '',
+        layerId: targetLayerIds.has(item.layerId || 'base') ? item.layerId || 'base' : fallbackLayerId,
         x: Math.max(0, (Number(item.x) || 0) + 24),
         y: Math.max(0, (Number(item.y) || 0) + 24),
         zIndex: existingObjects.length + index + 1,
@@ -498,7 +529,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     onUpdate({ ...a, objects: nextObjects, selectedObjectId: lastId, timeline: nextTimeline });
     onSelectionChange(newSelection);
     return true;
-  }, [onSelectionChange, onUpdate]);
+  }, [clipboardRef, onSelectionChange, onUpdate]);
 
   const duplicateSelected = useCallback(() => {
     if (!copySelected()) return;
@@ -717,6 +748,8 @@ const StageCanvas = forwardRef(function StageCanvas(
 
   // Rubber-band selection
   const startRubber = (e) => {
+    // Mobil: marquee yok — tek parmak arka plan pan/tap jest katmanından gelir.
+    if (touchMode) return;
     const isViewportStart = e.target === viewportRef.current;
     const isStageStart = e.target === stageRef.current;
     if (!isViewportStart && !isStageStart) return;
@@ -977,125 +1010,131 @@ const StageCanvas = forwardRef(function StageCanvas(
         alignItems: 'flex-start',
         justifyContent: 'center',
         padding: 6,
+        // Mobil: tek-parmak native kaydırmaya izin ver, pinch-zoom'u biz yönetiriz.
+        ...(touchMode ? { touchAction: 'pan-x pan-y' } : null),
       }}
     >
       <div style={{ position: 'relative' }}>
-        <div
-          style={{
-            position: 'sticky',
-            top: 12,
-            zIndex: 20,
-            display: 'flex',
-            justifyContent: 'flex-end',
-            pointerEvents: 'none',
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              pointerEvents: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 10px',
-              borderRadius: 14,
-              border: '1px solid rgba(148,163,184,.45)',
-              background: 'rgba(255,255,255,.92)',
-              boxShadow: '0 14px 30px rgba(15,23,42,.12)',
-              backdropFilter: 'blur(10px)',
-            }}
-          >
-            <button
-              onClick={() => zoomStep(-0.1)}
+        {showChrome && (
+          <>
+            <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 999,
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#0f172a',
-                color: '#e2e8f0',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
+                position: 'sticky',
+                top: 12,
+                zIndex: 20,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                pointerEvents: 'none',
+                marginBottom: 10,
               }}
             >
-              -
-            </button>
-            <button
-              onClick={fitZoom}
+              <div
+                style={{
+                  pointerEvents: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 10px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(148,163,184,.45)',
+                  background: 'rgba(255,255,255,.92)',
+                  boxShadow: '0 14px 30px rgba(15,23,42,.12)',
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                <button
+                  onClick={() => zoomStep(-0.1)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: '1px solid rgba(148,163,184,.45)',
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                >
+                  -
+                </button>
+                <button
+                  onClick={fitZoom}
+                  style={{
+                    border: '1px solid rgba(148,163,184,.45)',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    borderRadius: 10,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    minWidth: 64,
+                  }}
+                >
+                  {zoomPercent}%
+                </button>
+                <button
+                  onClick={() => zoomStep(0.1)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 10,
+                    border: '1px solid rgba(148,163,184,.45)',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                >
+                  +
+                </button>
+                <button
+                  onClick={fitZoom}
+                  style={{
+                    border: '1px solid rgba(148,163,184,.45)',
+                    background: '#ffffff',
+                    color: '#334155',
+                    borderRadius: 10,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  Sığdır
+                </button>
+                <button
+                  onClick={actualZoom}
+                  style={{
+                    border: '1px solid rgba(148,163,184,.45)',
+                    background: '#ffffff',
+                    color: '#334155',
+                    borderRadius: 10,
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  1:1
+                </button>
+              </div>
+            </div>
+            <div
               style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#0f172a',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
                 fontSize: 11,
-                fontWeight: 800,
-                minWidth: 64,
+                color: '#52667a',
+                marginBottom: 6,
+                textAlign: 'right',
+                fontWeight: 700,
               }}
             >
-              {zoomPercent}%
-            </button>
-            <button
-              onClick={() => zoomStep(0.1)}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#0f172a',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-            <button
-              onClick={fitZoom}
-              style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#334155',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              Sığdır
-            </button>
-            <button
-              onClick={actualZoom}
-              style={{
-                border: '1px solid rgba(148,163,184,.45)',
-                background: '#ffffff',
-                color: '#334155',
-                borderRadius: 10,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              1:1
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: '#52667a',
-            marginBottom: 6,
-            textAlign: 'right',
-            fontWeight: 700,
-          }}
-        >
-          {canvasActivity.stageWidth} x {canvasActivity.stageHeight} | x{scale.toFixed(2)}
-        </div>
+              {canvasActivity.stageWidth} x {canvasActivity.stageHeight} | x{scale.toFixed(2)}
+            </div>
+          </>
+        )}
         <div
           ref={stageRef}
           onPointerDown={startRubber}
@@ -1399,6 +1438,17 @@ const StageCanvas = forwardRef(function StageCanvas(
                     suppressBoundaryEffects: timelineTime <= 0.01,
                   })
                 : { opacity: 1, translateX: 0, translateY: 0, scale: 1 };
+              const widgetSrc =
+                o.type === 'custom-widget'
+                  ? buildWidgetIframeSrc({
+                      widgetId: o.widget?.widgetId,
+                      basePath: o.widget?.basePath,
+                      entry: o.widget?.entry,
+                      entryUrl: o.widget?.entryUrl,
+                      instanceId: o.id,
+                      props: o.widget?.props || {},
+                    })
+                  : '';
               const inactiveOpacity = isSceneTemplateObject
                 ? 1
                 : o.type === 'draggable' || o.type === 'dropzone'
@@ -1554,32 +1604,35 @@ const StageCanvas = forwardRef(function StageCanvas(
                       </div>
                     </div>
                   ) : o.type === 'custom-widget' ? (
-                    <div
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        background: 'linear-gradient(135deg,#f0f9ff,#e0f2fe)',
-                        border: '2px dashed #0ea5e9',
-                        borderRadius: 12,
-                        color: '#0c4a6e',
-                        fontSize: Math.max(10, 13 * scale),
-                        fontWeight: 700,
-                        textAlign: 'center',
-                        padding: `${8 * scale}px`,
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      <span style={{ fontSize: Math.max(18, 28 * scale) }}>🧩</span>
-                      <span>{o.widget?.widgetName || o.widget?.widgetId || o.label || 'Widget'}</span>
-                      <span style={{ fontSize: Math.max(8, 10 * scale), opacity: 0.72, fontWeight: 600 }}>
-                        Önizleme için sağ üstten çalıştır
-                      </span>
-                    </div>
+                    widgetSrc ? (
+                      <WidgetHost
+                        src={widgetSrc}
+                        widgetInstanceId={o.id}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: 'inherit',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: '#f0f9ff',
+                          color: '#0c4a6e',
+                          fontSize: Math.max(10, 13 * scale),
+                          fontWeight: 700,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {o.widget?.widgetName || o.widget?.widgetId || o.label || 'Widget'}
+                      </div>
+                    )
                   ) : o.type === 'shape' ? (
                     usesShapeSvg ? (
                       renderShapeContent(o, st, scale)
@@ -1622,11 +1675,11 @@ const StageCanvas = forwardRef(function StageCanvas(
                           onPointerDown={(e) => startInteract(e, o.id, 'resize', dir)}
                           style={{
                             position: 'absolute',
-                            width: 10,
-                            height: 10,
+                            width: touchMode ? MOBILE_CANVAS.handleSize : 10,
+                            height: touchMode ? MOBILE_CANVAS.handleSize : 10,
                             borderRadius: '50%',
                             background: '#ffffff',
-                            border: '2px solid #111111',
+                            border: `${touchMode ? MOBILE_CANVAS.handleBorder : 2}px solid #111111`,
                             cursor: HANDLE_CURSOR[dir],
                             zIndex: 10,
                             touchAction: 'none',

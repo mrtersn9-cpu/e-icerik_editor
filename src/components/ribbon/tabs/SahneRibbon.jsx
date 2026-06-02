@@ -15,10 +15,12 @@ export default function SahneRibbon({ controller }) {
 
   return (
     <>
-      <RibbonGroup title="Sahne İşlemleri" width={210}>
+      <RibbonGroup title="Sahne İşlemleri" width={350}>
         <RibbonRow>
           <RibbonButton label="Yeni Sahne" icon="new" onClick={commands.addSlide} tone="slate" />
           <RibbonButton label="Çoğalt" icon="copy" onClick={commands.duplicateSlide} disabled={!currentSlide} tone="slate" />
+          <RibbonButton label="Kopyala" icon="copy" onClick={commands.copySlide} disabled={!currentSlide} tone="slate" />
+          <RibbonButton label="Yapıştır" icon="copy" onClick={commands.pasteSlide} tone="slate" />
           <RibbonButton label="Sil" icon="trash" onClick={commands.deleteSlide} disabled={!currentSlide} tone="red" />
         </RibbonRow>
       </RibbonGroup>

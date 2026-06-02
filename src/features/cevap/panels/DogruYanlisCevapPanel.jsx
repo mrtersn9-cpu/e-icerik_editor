@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { ensureTrueFalseOptions, patchActivity, patchMcOption, setSingleCorrectOption } from '../cevapActions';
+import { ensureTrueFalseOptions, patchActivity, patchMcOption } from '../cevapActions';
 import {
   CevapCard,
   ChoiceButton,
@@ -33,7 +33,7 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
           {options.map((option) => (
             <label key={option.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 10, alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
               <input value={option.label} onChange={(event) => patchMcOption(activity, onUpdate, option.id, { label: event.target.value })} style={{ border: 'none', outline: 'none', fontSize: 13, fontWeight: 800 }} />
-              <input type="radio" checked={!!option.isCorrect} onChange={() => setSingleCorrectOption(activity, onUpdate, option.id)} style={{ width: 18, height: 18, accentColor: '#16a34a' }} />
+              <input type="checkbox" checked={!!option.isCorrect} onChange={(event) => patchMcOption(activity, onUpdate, option.id, { isCorrect: event.target.checked })} style={{ width: 18, height: 18, accentColor: '#16a34a' }} />
             </label>
           ))}
         </div>
@@ -60,15 +60,15 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
               <ChoiceButton
                 selected={!!option.isCorrect}
                 tone={option.isCorrect ? 'green' : 'blue'}
-                onClick={() => setSingleCorrectOption(activity, onUpdate, option.id)}
+                onClick={() => patchMcOption(activity, onUpdate, option.id, { isCorrect: !option.isCorrect })}
               >
-                Doğru cevap
+                {option.isCorrect ? 'Doğru' : 'Yanlış'}
               </ChoiceButton>
             </div>
           ))}
           <MiniPreview
             label="Önizleme"
-            value={options.find((option) => option.isCorrect)?.label}
+            value={options.filter((option) => option.isCorrect).map((option) => option.label).join(', ') || undefined}
             empty="Henüz doğru/yanlış seçimi yok"
             tone={options.some((option) => option.isCorrect) ? 'green' : 'slate'}
           />

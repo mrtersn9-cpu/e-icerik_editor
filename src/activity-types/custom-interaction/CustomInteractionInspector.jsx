@@ -61,6 +61,7 @@ export default function CustomInteractionInspector({
 }) {
   const customInteraction = activity?.customInteraction || {};
   const templateName = customInteraction.templateName || 'Boş Özel Etkileşim';
+  const runtimeReady = customInteraction.settings?.runtimeReady === true;
 
   const patchCustomInteraction = (patch) => {
     if (!activity) return;
@@ -81,7 +82,7 @@ export default function CustomInteractionInspector({
           <h3>{activity?.name || 'Yeni özel etkileşim'}</h3>
           <p>{templateName}</p>
         </div>
-        <span>Hazırlık</span>
+        <span>{runtimeReady ? 'V0 aktif' : 'Hazırlık'}</span>
       </div>
 
       <label className="eic-custom-inspector-field">
@@ -109,8 +110,8 @@ export default function CustomInteractionInspector({
       </div>
 
       <div className="eic-custom-inspector-note">
-        ZIP yükleme, özel çalıştırma ve SCORM dışa aktarım entegrasyonu bu fazda etkin değildir.
-        Bu panel yalnızca ilerideki özel etkileşim mimarisi için iskelet sağlar.
+        V0 yerleşik widget çalışma zamanı etkindir. ZIP yükleme ve SCORM içine widget asset
+        paketleme sonraki faz kapsamındadır.
       </div>
     </div>
   );

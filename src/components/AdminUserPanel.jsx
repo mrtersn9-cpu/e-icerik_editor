@@ -49,7 +49,7 @@ function AdminUserPanel({ onSelectUser, embedded = false, adminToken, onAdminTok
         if (successMessage) setStatus(successMessage);
         return result;
       } catch (error) {
-        setStatus(error.message || 'Admin islemi basarisiz.');
+        setStatus(error.message || 'Admin işlemi başarısız.');
         return null;
       } finally {
         setBusy(false);
@@ -61,7 +61,7 @@ function AdminUserPanel({ onSelectUser, embedded = false, adminToken, onAdminTok
   const loadUsers = useCallback(async () => {
     const result = await runAdminTask(
       (token) => adminApiRequest('/admin/users', { method: 'GET', adminToken: token }),
-      'Kullanicilar guncellendi.'
+      'Kullanıcılar güncellendi.'
     );
     if (result?.users) setUsers(result.users);
   }, [runAdminTask]);
@@ -192,7 +192,7 @@ function AdminUserPanel({ onSelectUser, embedded = false, adminToken, onAdminTok
               disabled={busy}
               style={{ ...ghostButtonStyle, background: 'rgba(14,165,233,.16)', color: '#bae6fd' }}
             >
-              Olustur
+              Oluştur
             </button>
           </div>
 

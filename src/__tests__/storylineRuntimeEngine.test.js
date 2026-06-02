@@ -34,6 +34,15 @@ describe('storyline runtime engine', () => {
       { type: 'resetAttempt', reason: 'runtime-answer-button' },
       { type: 'setLayer', layerId: 'answer-layer' },
     ]);
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide,
+        sourceId: 'homeBtn',
+        sourceObject: { id: 'homeBtn', type: 'button', runtimeAction: 'home' },
+        state: {},
+      })
+    ).toEqual([{ type: 'goHome', reason: 'runtime-home-button' }]);
   });
 
   test('maps trigger actions to shared commands', () => {
@@ -56,6 +65,44 @@ describe('storyline runtime engine', () => {
     ).toEqual([{ type: 'addVariable', variableId: 'points', delta: 2 }]);
   });
 
+  test('widget event triggers can send commands with resolved payload variables', () => {
+    const widgetSlide = {
+      objects: [
+        { id: 'obj_widget_dice_1', type: 'custom-widget' },
+        { id: 'obj_widget_bird_1', type: 'custom-widget' },
+      ],
+      triggers: [
+        {
+          when: 'onWidgetEvent',
+          target: 'obj_widget_dice_1',
+          eventName: 'diceRolled',
+          action: 'sendWidgetCommand',
+          value: 'obj_widget_bird_1',
+          extra: 'flyWithFlaps',
+          payload: { flapCount: '{{diceValue}}' },
+        },
+      ],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: widgetSlide,
+        sourceId: 'obj_widget_dice_1',
+        sourceObject: widgetSlide.objects[0],
+        when: 'onWidgetEvent',
+        eventName: 'diceRolled',
+        state: { variables: { diceValue: 6 } },
+      })
+    ).toEqual([
+      {
+        type: 'sendWidgetCommand',
+        widgetId: 'obj_widget_bird_1',
+        command: 'flyWithFlaps',
+        payload: { flapCount: 6 },
+      },
+    ]);
+  });
+
   test('manual click triggers override inferred button label actions', () => {
     const menuSlide = {
       layers: [
@@ -74,6 +121,111 @@ describe('storyline runtime engine', () => {
         state: {},
       })
     ).toEqual([{ type: 'setLayer', layerId: 'menu-layer' }]);
+  });
+
+  test('manual linked button trigger overrides icon runtimeAction', () => {
+    const linkedSlide = {
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'answer-layer', name: 'cevap', kind: 'overlay' },
+      ],
+      objects: [
+        {
+          id: 'answerIcon',
+          type: 'button',
+          label: '⌂',
+          runtimeAction: 'home',
+          linkedActionTargetId: 'answerLabel',
+          linkedHoverGroup: 'row-1',
+        },
+        {
+          id: 'answerLabel',
+          type: 'button',
+          label: 'Çözümü Göster',
+          linkedActionTargetId: 'answerLabel',
+          linkedHoverGroup: 'row-1',
+        },
+      ],
+      triggers: [
+        { when: 'onClick', target: 'answerLabel', action: 'KatmanaGec', value: 'answer-layer' },
+      ],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: linkedSlide,
+        sourceId: 'answerIcon',
+        sourceObject: linkedSlide.objects[0],
+        state: {},
+      })
+    ).toEqual([
+      { type: 'resetAttempt', reason: 'trigger-answer-layer' },
+      { type: 'setLayer', layerId: 'answer-layer' },
+    ]);
+  });
+
+  test('generated linked button triggers run before automatic runtimeAction fallback', () => {
+    const linkedSlide = {
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'answer-layer', name: 'cevap', kind: 'overlay' },
+      ],
+      objects: [
+        {
+          id: 'generatedIcon',
+          type: 'button',
+          label: '⌂',
+          runtimeAction: 'home',
+          linkedActionTargetId: 'generatedLabel',
+          linkedHoverGroup: 'generated-row',
+        },
+        {
+          id: 'generatedLabel',
+          type: 'button',
+          label: 'Çözümü Göster',
+          linkedActionTargetId: 'generatedLabel',
+          linkedHoverGroup: 'generated-row',
+        },
+      ],
+      triggers: [
+        {
+          when: 'onClick',
+          target: 'generatedLabel',
+          action: 'KatmanaGec',
+          value: 'answer-layer',
+          generatedBy: 'answer-template',
+        },
+      ],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: linkedSlide,
+        sourceId: 'generatedIcon',
+        sourceObject: linkedSlide.objects[0],
+        state: {},
+      })
+    ).toEqual([
+      { type: 'resetAttempt', reason: 'trigger-answer-layer' },
+      { type: 'setLayer', layerId: 'answer-layer' },
+    ]);
+  });
+
+  test('manual trigger with unsupported action blocks automatic fallback', () => {
+    const manualSlide = {
+      layers: [{ id: 'base', name: 'Base Layer', kind: 'base' }],
+      objects: [{ id: 'menuBtn', type: 'button', label: 'Menü', runtimeAction: 'home' }],
+      triggers: [{ when: 'onClick', target: 'menuBtn', action: 'LightboxAc', value: '' }],
+    };
+
+    expect(
+      getStorylineRuntimeCommandsForObject({
+        slide: manualSlide,
+        sourceId: 'menuBtn',
+        sourceObject: manualSlide.objects[0],
+        state: {},
+      })
+    ).toEqual([]);
   });
 
   test('runtimeAction none disables inferred demo button actions', () => {
@@ -185,7 +337,7 @@ describe('storyline runtime engine', () => {
     ).toEqual([{ type: 'toggleDemoButtonState', objectId: 'muteLabel' }]);
   });
 
-  test('button intro demo buttons ignore manual click triggers and runtime actions', () => {
+  test('button intro demo buttons stay passive unless a manual click trigger is assigned', () => {
     const introSlide = {
       ...slide,
       triggers: [
@@ -209,7 +361,7 @@ describe('storyline runtime engine', () => {
         },
         state: {},
       })
-    ).toEqual([]);
+    ).toEqual([{ type: 'goRelative', direction: 1 }]);
 
     expect(
       getStorylineRuntimeCommandsForObject({
@@ -227,7 +379,7 @@ describe('storyline runtime engine', () => {
         },
         state: {},
       })
-    ).toEqual([{ type: 'toggleDemoButtonState', objectId: 'muteDemo' }]);
+    ).toEqual([{ type: 'goRelative', direction: 1 }]);
   });
 
   test('button intro start and close controls can still run navigation triggers', () => {

@@ -1,15 +1,91 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { evaluateStorylineRuntimePuzzle } from '../../utils/storylineRuntimeEngine';
+
+const TURKISH_KEYBOARD = [
+  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', 'Ğ', 'Ü'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Ş', 'İ'],
+  ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'Ö', 'Ç']
+];
 
 function CrosswordGrid({ activity, onAnswer }) {
   const grid = activity.puzzleGrid;
   const cells = useMemo(() => grid?.cells || [], [grid?.cells]);
-  const placed = activity.puzzlePlaced || [];
+  const placed = useMemo(() => activity.puzzlePlaced || [], [activity.puzzlePlaced]);
   const settings = activity.puzzleSettings || {};
   const rows = grid?.rows || 10;
   const cols = grid?.cols || 10;
   const [userGrid, setUserGrid] = useState({});
   const [activeCell, setActiveCell] = useState(null);
-  const [direction, setDirection] = useState('across');
+
+  // Modal State'leri
+  const [activeQuestion, setActiveQuestion] = useState(null);
+  const [modalInput, setModalInput] = useState([]);
+  const [modalActiveCharIndex, setModalActiveCharIndex] = useState(0);
+  const [questionStatus, setQuestionStatus] = useState({});
+  const [attempts, setAttempts] = useState({});
+  const [modalFeedback, setModalFeedback] = useState(null); // { type: 'success' | 'error' | 'revealed', text: string }
+
+  const triggerRef = useRef(null);
+  const modalContainerRef = useRef(null);
+
+  // Focus Restore Effect
+  useEffect(() => {
+    if (!activeQuestion) {
+      if (triggerRef.current && typeof triggerRef.current.focus === 'function') {
+        triggerRef.current.focus();
+      }
+    }
+  }, [activeQuestion]);
+
+  // Focus Trap and Escape key Effect
+  useEffect(() => {
+    if (!activeQuestion) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setActiveQuestion(null);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const container = modalContainerRef.current;
+        if (!container) return;
+        const focusable = container.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Focus first button inside the modal
+    const timer = setTimeout(() => {
+      const container = modalContainerRef.current;
+      if (container) {
+        const focusable = container.querySelectorAll('button');
+        if (focusable.length > 0) focusable[0].focus();
+      }
+    }, 50);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(timer);
+    };
+  }, [activeQuestion]);
 
   const cellSize = Math.min(28, 320 / cols);
   const totalWidth = cols * cellSize;
@@ -28,69 +104,311 @@ function CrosswordGrid({ activity, onAnswer }) {
     setUserGrid(initial);
   }, [cells, rows, cols]);
 
-  const getNextCell = (r, c, dir) => {
-    if (dir === 'across') {
-      if (c + 1 < cols && cells[r]?.[c + 1]?.letter) return [r, c + 1];
-    } else {
-      if (r + 1 < rows && cells[r + 1]?.[c]?.letter) return [r + 1, c];
+  const handleSelectQuestion = (q) => {
+    triggerRef.current = document.activeElement;
+    setActiveQuestion(q);
+    setModalFeedback(null);
+    const len = q.answer?.length || 0;
+    const initialInput = Array.from({ length: len }, (_, i) => {
+      const r = q.direction === 'across' ? (q.startRow ?? q.row) : (q.startRow ?? q.row) + i;
+      const c = q.direction === 'across' ? (q.startCol ?? q.col) + i : (q.startCol ?? q.col);
+      return userGrid[`${r},${c}`] || '';
+    });
+    setModalInput(initialInput);
+    setModalActiveCharIndex(0);
+  };
+
+  const handleCharInput = useCallback((char) => {
+    if (!activeQuestion) return;
+
+    // Lock Kontrolü: Hücre başka tamamlanmış (correct/revealed) kelimeden gelen ortak harf ise kilitli/salt okunur
+    const r = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + modalActiveCharIndex;
+    const c = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + modalActiveCharIndex : (activeQuestion.startCol ?? activeQuestion.col);
+
+    let isLocked = false;
+    const otherCompleted = placed.filter(other => 
+      other.id !== activeQuestion.id && (questionStatus[other.id] === 'correct' || questionStatus[other.id] === 'revealed')
+    );
+    otherCompleted.forEach(other => {
+      const len = other.answer ? other.answer.length : 0;
+      for (let j = 0; j < len; j++) {
+        const or = other.direction === 'across' ? (other.startRow ?? other.row) : (other.startRow ?? other.row) + j;
+        const oc = other.direction === 'across' ? (other.startCol ?? other.col) + j : (other.startCol ?? other.col);
+        if (or === r && oc === c) {
+          isLocked = true;
+        }
+      }
+    });
+
+    if (isLocked) return;
+
+    const len = activeQuestion.answer?.length || 0;
+    const nextInput = [...modalInput];
+    nextInput[modalActiveCharIndex] = char.toUpperCase();
+    setModalInput(nextInput);
+
+    // Find next unlocked slot
+    let nextIndex = modalActiveCharIndex + 1;
+    while (nextIndex < len) {
+      const nr = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + nextIndex;
+      const nc = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + nextIndex : (activeQuestion.startCol ?? activeQuestion.col);
+      
+      let nLocked = false;
+      otherCompleted.forEach(other => {
+        const olen = other.answer ? other.answer.length : 0;
+        for (let j = 0; j < olen; j++) {
+          const or = other.direction === 'across' ? (other.startRow ?? other.row) : (other.startRow ?? other.row) + j;
+          const oc = other.direction === 'across' ? (other.startCol ?? other.col) + j : (other.startCol ?? other.col);
+          if (or === nr && oc === nc) nLocked = true;
+        }
+      });
+      if (!nLocked) break;
+      nextIndex++;
     }
-    return null;
+    if (nextIndex < len) {
+      setModalActiveCharIndex(nextIndex);
+    }
+  }, [activeQuestion, modalInput, modalActiveCharIndex, placed, questionStatus]);
+
+  const handleBackspace = useCallback(() => {
+    if (!activeQuestion) return;
+
+    // Lock Kontrolü
+    const r = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + modalActiveCharIndex;
+    const c = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + modalActiveCharIndex : (activeQuestion.startCol ?? activeQuestion.col);
+
+    let isLocked = false;
+    const otherCompleted = placed.filter(other => 
+      other.id !== activeQuestion.id && (questionStatus[other.id] === 'correct' || questionStatus[other.id] === 'revealed')
+    );
+    otherCompleted.forEach(other => {
+      const len = other.answer ? other.answer.length : 0;
+      for (let j = 0; j < len; j++) {
+        const or = other.direction === 'across' ? (other.startRow ?? other.row) : (other.startRow ?? other.row) + j;
+        const oc = other.direction === 'across' ? (other.startCol ?? other.col) + j : (other.startCol ?? other.col);
+        if (or === r && oc === c) {
+          isLocked = true;
+        }
+      }
+    });
+
+    if (isLocked) return;
+
+    const nextInput = [...modalInput];
+    nextInput[modalActiveCharIndex] = '';
+    setModalInput(nextInput);
+
+    // Find previous unlocked slot
+    let prevIndex = modalActiveCharIndex - 1;
+    while (prevIndex >= 0) {
+      const pr = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + prevIndex;
+      const pc = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + prevIndex : (activeQuestion.startCol ?? activeQuestion.col);
+      
+      let pLocked = false;
+      otherCompleted.forEach(other => {
+        const olen = other.answer ? other.answer.length : 0;
+        for (let j = 0; j < olen; j++) {
+          const or = other.direction === 'across' ? (other.startRow ?? other.row) : (other.startRow ?? other.row) + j;
+          const oc = other.direction === 'across' ? (other.startCol ?? other.col) + j : (other.startCol ?? other.col);
+          if (or === pr && oc === pc) pLocked = true;
+        }
+      });
+      if (!pLocked) break;
+      prevIndex--;
+    }
+    if (prevIndex >= 0) {
+      setModalActiveCharIndex(prevIndex);
+    }
+  }, [activeQuestion, modalInput, modalActiveCharIndex, placed, questionStatus]);
+
+  const handleModalCheck = useCallback(() => {
+    if (!activeQuestion) return;
+    const qId = activeQuestion.id;
+    const currentStatus = questionStatus[qId];
+    if (currentStatus === 'correct' || currentStatus === 'revealed') return;
+
+    const answer = activeQuestion.answer || '';
+    const userInput = modalInput.join('');
+    const isCorrect = userInput.toUpperCase() === answer.toUpperCase();
+
+    const currentAttempts = (attempts[qId] || 0) + 1;
+    setAttempts((prev) => ({ ...prev, [qId]: currentAttempts }));
+
+    if (isCorrect) {
+      const nextStatus = { ...questionStatus, [qId]: 'correct' };
+      setQuestionStatus(nextStatus);
+      setModalFeedback({ type: 'success', text: '✓ Tebrikler, doğru cevap!' });
+
+      setUserGrid((prev) => {
+        const next = { ...prev };
+        for (let i = 0; i < answer.length; i++) {
+          const r = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + i;
+          const c = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + i : (activeQuestion.startCol ?? activeQuestion.col);
+          next[`${r},${c}`] = answer[i];
+        }
+        return next;
+      });
+
+      // 1.2 saniye sonra otomatik kapat
+      setTimeout(() => {
+        setActiveQuestion(null);
+      }, 1200);
+    } else {
+      const nextStatus = { ...questionStatus, [qId]: 'incorrect' };
+      setQuestionStatus(nextStatus);
+      setModalFeedback({ type: 'error', text: `× Hatalı cevap! Tekrar deneyebilirsiniz.` });
+    }
+  }, [activeQuestion, modalInput, questionStatus, attempts]);
+
+  const handleRevealSolution = useCallback(() => {
+    if (!activeQuestion) return;
+    const qId = activeQuestion.id;
+    const currentStatus = questionStatus[qId];
+    if (currentStatus === 'correct' || currentStatus === 'revealed') return;
+
+    const answer = activeQuestion.answer || '';
+
+    setModalInput(answer.split(''));
+    const nextStatus = { ...questionStatus, [qId]: 'revealed' };
+    setQuestionStatus(nextStatus);
+    setModalFeedback({ type: 'revealed', text: '✎ Çözüm gösterildi.' });
+
+    setUserGrid((prev) => {
+      const next = { ...prev };
+      for (let i = 0; i < answer.length; i++) {
+        const r = activeQuestion.direction === 'across' ? (activeQuestion.startRow ?? activeQuestion.row) : (activeQuestion.startRow ?? activeQuestion.row) + i;
+        const c = activeQuestion.direction === 'across' ? (activeQuestion.startCol ?? activeQuestion.col) + i : (activeQuestion.startCol ?? activeQuestion.col);
+        next[`${r},${c}`] = answer[i];
+      }
+      return next;
+    });
+
+    // 1.5 saniye sonra kapat
+    setTimeout(() => {
+      setActiveQuestion(null);
+    }, 1500);
+  }, [activeQuestion, questionStatus]);
+
+  // Fiziksel klavye dinleyicisi
+  useEffect(() => {
+    if (!activeQuestion) return;
+    const handler = (e) => {
+      const key = e.key.toUpperCase();
+      if (key === 'BACKSPACE') {
+        handleBackspace();
+        e.preventDefault();
+      } else if (key === 'ENTER') {
+        handleModalCheck();
+        e.preventDefault();
+      } else if (key === 'ESCAPE') {
+        setActiveQuestion(null);
+        e.preventDefault();
+      } else if (key.length === 1 && /[A-ZÇĞİÖŞÜ]/.test(key)) {
+        handleCharInput(key);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeQuestion, modalInput, modalActiveCharIndex, handleBackspace, handleCharInput, handleModalCheck]);
+
+  const handleGridCellClick = (r, c) => {
+    const cell = cells[r]?.[c];
+    if (!cell?.letter) return;
+    // Bu hücreye sahip bir placed sorusunu buluyoruz
+    const foundQuestion = placed.find((q) => {
+      const len = q.answer?.length || 0;
+      for (let i = 0; i < len; i++) {
+        const qr = q.direction === 'across' ? (q.startRow ?? q.row) : (q.startRow ?? q.row) + i;
+        const qc = q.direction === 'across' ? (q.startCol ?? q.col) + i : (q.startCol ?? q.col);
+        if (qr === r && qc === c) return true;
+      }
+      return false;
+    });
+    if (foundQuestion) {
+      handleSelectQuestion(foundQuestion);
+    }
   };
 
   const handleKeyDown = (r, c, e) => {
     const key = e.key.toUpperCase();
-    if (key === 'BACKSPACE') {
-      setUserGrid((prev) => {
-        const next = { ...prev };
-        next[`${r},${c}`] = '';
-        return next;
-      });
+    if (key === 'ARROWRIGHT') {
+      if (c + 1 < cols && cells[r]?.[c + 1]?.letter) {
+        setActiveCell([r, c + 1]);
+      }
       e.preventDefault();
       return;
     }
-    if (key === 'ARROWRIGHT') { setActiveCell([r, c + 1]); e.preventDefault(); return; }
-    if (key === 'ARROWLEFT') { setActiveCell([r, c - 1]); e.preventDefault(); return; }
-    if (key === 'ARROWUP') { setActiveCell([r - 1, c]); e.preventDefault(); return; }
-    if (key === 'ARROWDOWN') { setActiveCell([r + 1, c]); e.preventDefault(); return; }
-    if (key === ' ') { setDirection((d) => (d === 'across' ? 'down' : 'across')); e.preventDefault(); return; }
-    if (key.length === 1 && /[A-ZÇĞİÖŞÜ]/.test(key)) {
-      setUserGrid((prev) => {
-        const next = { ...prev };
-        next[`${r},${c}`] = key;
-        return next;
+    if (key === 'ARROWLEFT') {
+      if (c - 1 >= 0 && cells[r]?.[c - 1]?.letter) {
+        setActiveCell([r, c - 1]);
+      }
+      e.preventDefault();
+      return;
+    }
+    if (key === 'ARROWUP') {
+      if (r - 1 >= 0 && cells[r - 1]?.[c]?.letter) {
+        setActiveCell([r - 1, c]);
+      }
+      e.preventDefault();
+      return;
+    }
+    if (key === 'ARROWDOWN') {
+      if (r + 1 < rows && cells[r + 1]?.[c]?.letter) {
+        setActiveCell([r + 1, c]);
+      }
+      e.preventDefault();
+      return;
+    }
+    if (key === ' ' || key === 'ENTER' || (key.length === 1 && /[A-ZÇĞİÖŞÜ]/.test(key))) {
+      const foundQuestion = placed.find((q) => {
+        const len = q.answer?.length || 0;
+        for (let i = 0; i < len; i++) {
+          const qr = q.direction === 'across' ? (q.startRow ?? q.row) : (q.startRow ?? q.row) + i;
+          const qc = q.direction === 'across' ? (q.startCol ?? q.col) + i : (q.startCol ?? q.col);
+          if (qr === r && qc === c) return true;
+        }
+        return false;
       });
-      const next = getNextCell(r, c, direction);
-      if (next) setActiveCell(next);
+      if (foundQuestion) {
+        handleSelectQuestion(foundQuestion);
+      }
       e.preventDefault();
     }
   };
 
   const checkAnswer = () => {
-    let correct = 0;
-    let total = 0;
+    const puzzleGridState = {};
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cell = cells[r]?.[c];
         if (cell?.letter) {
-          total++;
-          if (userGrid[`${r},${c}`] === cell.letter) correct++;
+          puzzleGridState[`${r},${c}`] = userGrid[`${r},${c}`] || '';
         }
       }
     }
-    onAnswer?.({ success: correct === total && total > 0, correct, total });
+    const evalResult = evaluateStorylineRuntimePuzzle({
+      activity,
+      state: { 
+        puzzleGrid: puzzleGridState,
+        puzzleQuestionStatus: questionStatus,
+        puzzleAttempts: attempts
+      }
+    });
+    onAnswer?.(evalResult);
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, overflow: 'auto' }}>
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 8, overflow: 'auto', flexWrap: 'wrap' }}>
         <div
           style={{
             display: 'grid',
             gridTemplateRows: `repeat(${rows}, ${cellSize}px)`,
             gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
             gap: 1,
-            background: '#e2e8f0',
-            border: '1px solid #cbd5e1',
+            background: '#cbd5e1',
+            border: '1px solid #94a3b8',
             width: totalWidth + cols - 1,
             height: totalHeight + rows - 1,
           }}
@@ -104,14 +422,7 @@ function CrosswordGrid({ activity, onAnswer }) {
                 <div
                   key={`${r}-${c}`}
                   tabIndex={hasLetter ? 0 : -1}
-                  onClick={() => {
-                    if (hasLetter) {
-                      if (activeCell && activeCell[0] === r && activeCell[1] === c) {
-                        setDirection((d) => (d === 'across' ? 'down' : 'across'));
-                      }
-                      setActiveCell([r, c]);
-                    }
-                  }}
+                  onClick={() => handleGridCellClick(r, c)}
                   onKeyDown={(e) => handleKeyDown(r, c, e)}
                   style={{
                     background: hasLetter ? (isActive ? '#3b82f6' : '#fff') : '#1e293b',
@@ -139,25 +450,314 @@ function CrosswordGrid({ activity, onAnswer }) {
           )}
         </div>
         {settings.showClues !== false && (
-          <div style={{ minWidth: 180, maxWidth: 260, fontSize: 12, maxHeight: totalHeight, overflow: 'auto' }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Yatay</div>
-            {placed.filter((p) => p.direction === 'across').map((p) => (
-              <div key={p.id} style={{ marginBottom: 2, color: '#475569' }}>
-                <strong>{p.number}</strong>. {p.question}
-              </div>
-            ))}
-            <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 4 }}>Dikey</div>
-            {placed.filter((p) => p.direction === 'down').map((p) => (
-              <div key={p.id} style={{ marginBottom: 2, color: '#475569' }}>
-                <strong>{p.number}</strong>. {p.question}
-              </div>
-            ))}
+          <div style={{ minWidth: 200, flex: 1, fontSize: 13, maxHeight: totalHeight, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 800, color: '#1e293b', borderBottom: '2px solid #e2e8f0', pb: 2, mb: 4 }}>YATAY SORULAR</div>
+              {placed.filter((p) => p.direction === 'across').map((p) => {
+                const status = questionStatus[p.id];
+                const isCorrect = status === 'correct';
+                const isIncorrect = status === 'incorrect';
+                const isRevealed = status === 'revealed';
+
+                let color = '#475569';
+                let bg = 'transparent';
+                let icon = '';
+
+                if (isCorrect) {
+                  color = '#166534';
+                  bg = '#dcfce7';
+                  icon = ' ✓';
+                } else if (isIncorrect) {
+                  color = '#991b1b';
+                  bg = '#fee2e2';
+                  icon = ' ×';
+                } else if (isRevealed) {
+                  color = '#5b21b6';
+                  bg = '#f3e8ff';
+                  icon = ' ✎';
+                }
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => handleSelectQuestion(p)}
+                    style={{
+                      padding: '4px 6px',
+                      borderRadius: 6,
+                      marginBottom: 2,
+                      color,
+                      background: bg,
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    <strong>{p.number}</strong>. {p.question || p.clue} {icon}
+                  </div>
+                );
+              })}
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, color: '#1e293b', borderBottom: '2px solid #e2e8f0', pb: 2, mb: 4 }}>DİKEY SORULAR</div>
+              {placed.filter((p) => p.direction === 'down').map((p) => {
+                const status = questionStatus[p.id];
+                const isCorrect = status === 'correct';
+                const isIncorrect = status === 'incorrect';
+                const isRevealed = status === 'revealed';
+
+                let color = '#475569';
+                let bg = 'transparent';
+                let icon = '';
+
+                if (isCorrect) {
+                  color = '#166534';
+                  bg = '#dcfce7';
+                  icon = ' ✓';
+                } else if (isIncorrect) {
+                  color = '#991b1b';
+                  bg = '#fee2e2';
+                  icon = ' ×';
+                } else if (isRevealed) {
+                  color = '#5b21b6';
+                  bg = '#f3e8ff';
+                  icon = ' ✎';
+                }
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => handleSelectQuestion(p)}
+                    style={{
+                      padding: '4px 6px',
+                      borderRadius: 6,
+                      marginBottom: 2,
+                      color,
+                      background: bg,
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    <strong>{p.number}</strong>. {p.question || p.clue} {icon}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
-      <button onClick={checkAnswer} style={{ padding: '6px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+      <button onClick={checkAnswer} style={{ padding: '8px 18px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 800 }}>
         Kontrol Et
       </button>
+
+      {/* Soru Cevaplama Modalı */}
+      {activeQuestion && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1300,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            backdropFilter: settings.backdropBlur === false ? 'none' : 'blur(4px)',
+          }}
+        >
+          <div
+            ref={modalContainerRef}
+            style={{
+              width: 'min(540px, 100%)',
+              borderRadius: 20,
+              background: '#ffffff',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                Soru {activeQuestion.number} ({activeQuestion.direction === 'across' ? 'Yatay' : 'Dikey'})
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 12 }}>
+                Deneme Sayısı: {attempts[activeQuestion.id] || 0}
+              </div>
+            </div>
+            
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', lineHeight: 1.5 }}>
+              {activeQuestion.question || activeQuestion.clue}
+            </div>
+
+            {/* Geri Bildirim Alanı */}
+            {modalFeedback && (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  background: modalFeedback.type === 'success' ? '#dcfce7' : modalFeedback.type === 'error' ? '#fee2e2' : '#f3e8ff',
+                  color: modalFeedback.type === 'success' ? '#15803d' : modalFeedback.type === 'error' ? '#b91c1c' : '#6d28d9',
+                  border: `1px solid ${modalFeedback.type === 'success' ? '#bbf7d0' : modalFeedback.type === 'error' ? '#fecaca' : '#e9d5ff'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                {modalFeedback.text}
+              </div>
+            )}
+
+            {/* Harf Kutuları */}
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', my: 8 }}>
+              {modalInput.map((char, index) => {
+                const isActive = modalActiveCharIndex === index;
+                return (
+                  <div
+                    key={index}
+                    onClick={() => setModalActiveCharIndex(index)}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 8,
+                      border: `2px solid ${isActive ? '#4f46e5' : '#cbd5e1'}`,
+                      background: isActive ? '#f5f3ff' : '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 16,
+                      fontWeight: 800,
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                      boxShadow: isActive ? '0 0 0 3px #c7d2fe' : 'none',
+                    }}
+                  >
+                    {char}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Türkçe Sanal Klavye */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+              {TURKISH_KEYBOARD.map((row, rIdx) => (
+                <div key={rIdx} style={{ display: 'flex', gap: 4 }}>
+                  {row.map((char) => (
+                    <button
+                      key={char}
+                      onClick={() => handleCharInput(char)}
+                      style={{
+                        minWidth: 30,
+                        height: 32,
+                        borderRadius: 6,
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: '#334155',
+                        cursor: 'pointer',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '0 8px',
+                      }}
+                    >
+                      {char}
+                    </button>
+                  ))}
+                  {rIdx === 2 && (
+                    <button
+                      onClick={handleBackspace}
+                      style={{
+                        height: 32,
+                        borderRadius: 6,
+                        border: '1px solid #fecaca',
+                        background: '#fef2f2',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        padding: '0 10px',
+                      }}
+                    >
+                      ← Sil
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Aksiyonlar */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={handleModalCheck}
+                disabled={questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed'}
+                style={{
+                  flex: '2 1 140px',
+                  height: 38,
+                  borderRadius: 10,
+                  border: 'none',
+                  background: '#4f46e5',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 'not-allowed' : 'pointer',
+                  fontSize: 12,
+                  whiteSpace: 'nowrap',
+                  opacity: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 0.5 : 1
+                }}
+              >
+                ✓ Kontrol Et
+              </button>
+              {settings.allowHints !== false && (
+                <button
+                  onClick={handleRevealSolution}
+                  disabled={questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed'}
+                  style={{
+                    flex: '1 1 110px',
+                    height: 38,
+                    borderRadius: 10,
+                    border: '1px solid #d97706',
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    fontWeight: 800,
+                    cursor: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 'not-allowed' : 'pointer',
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                    opacity: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 0.5 : 1
+                  }}
+                >
+                  ✎ Çözümü Göster
+                </button>
+              )}
+              <button
+                onClick={() => setActiveQuestion(null)}
+                style={{
+                  flex: '1 1 70px',
+                  height: 38,
+                  borderRadius: 10,
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  color: '#475569',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -200,15 +800,48 @@ function WordSearchGrid({ activity, onAnswer }) {
     setSelectedCells(newCells);
   };
 
-  const handleMouseUp = () => {
+  const completeSelection = (selection = selectedCells) => {
     setIsDragging(false);
-    const word = selectedCells.map(([r, c]) => cells[r]?.[c]?.letter).join('');
+    const word = selection.map(([r, c]) => cells[r]?.[c]?.letter).join('');
     const reverseWord = word.split('').reverse().join('');
     const found = placed.find((p) => !foundWords.includes(p.id) && (p.answer === word || p.answer === reverseWord));
     if (found) {
-      setFoundWords((prev) => [...prev, found.id]);
+      const nextFound = [...foundWords, found.id];
+      setFoundWords(nextFound);
+      const evalResult = evaluateStorylineRuntimePuzzle({
+        activity,
+        state: { puzzleFoundWords: nextFound }
+      });
+      onAnswer?.(evalResult);
     }
     setSelectedCells([]);
+  };
+
+  const handleMouseUp = () => completeSelection();
+
+  const handleCellKeyDown = (event, r, c) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    if (!selectedCells.length) {
+      setSelectedCells([[r, c]]);
+      return;
+    }
+    const start = selectedCells[0];
+    const dr = r - start[0];
+    const dc = c - start[1];
+    const steps = Math.max(Math.abs(dr), Math.abs(dc));
+    if (!steps) {
+      completeSelection([start]);
+      return;
+    }
+    const stepR = dr / steps;
+    const stepC = dc / steps;
+    if (!Number.isInteger(stepR) || !Number.isInteger(stepC)) return;
+    const selection = Array.from({ length: steps + 1 }, (_, index) => [
+      start[0] + stepR * index,
+      start[1] + stepC * index,
+    ]);
+    completeSelection(selection);
   };
 
   const isSelected = (r, c) => selectedCells.some(([sr, sc]) => sr === r && sc === c);
@@ -217,7 +850,7 @@ function WordSearchGrid({ activity, onAnswer }) {
       if (!foundWords.includes(p.id)) return false;
       const [dr, dc] = p.direction.split(',').map(Number);
       for (let i = 0; i < p.answer.length; i++) {
-        if (p.startRow + dr * i === r && p.startCol + dc * i === c) return true;
+        if ((p.startRow ?? p.row) + dr * i === r && (p.startCol ?? p.col) + dc * i === c) return true;
       }
       return false;
     });
@@ -245,10 +878,13 @@ function WordSearchGrid({ activity, onAnswer }) {
             const sel = isSelected(r, c);
             const found = isFound(r, c);
             return (
-              <div
+              <button
                 key={`${r}-${c}`}
+                type="button"
+                aria-label={`${r + 1}. satır ${c + 1}. sütun: ${cells[r]?.[c]?.letter || ''}`}
                 onMouseDown={() => handleMouseDown(r, c)}
                 onMouseEnter={() => handleMouseEnter(r, c)}
+                onKeyDown={(event) => handleCellKeyDown(event, r, c)}
                 style={{
                   background: found ? '#22c55e' : sel ? '#3b82f6' : '#fff',
                   color: found ? '#fff' : '#1e293b',
@@ -259,10 +895,12 @@ function WordSearchGrid({ activity, onAnswer }) {
                   fontWeight: 700,
                   cursor: 'pointer',
                   userSelect: 'none',
+                  border: 'none',
+                  padding: 0,
                 }}
               >
                 {cells[r]?.[c]?.letter}
-              </div>
+              </button>
             );
           })
         )}
@@ -271,7 +909,7 @@ function WordSearchGrid({ activity, onAnswer }) {
         Bulunan: {foundWords.length} / {placed.length}
       </div>
       {foundWords.length === placed.length && placed.length > 0 && (
-        <div style={{ color: '#22c55e', fontWeight: 700, marginTop: 4 }}>Tum kelimeleri buldunuz!</div>
+        <div style={{ color: '#22c55e', fontWeight: 700, marginTop: 4 }}>Tüm kelimeleri buldunuz!</div>
       )}
     </div>
   );
@@ -302,15 +940,17 @@ function SudokuGrid({ activity, onAnswer }) {
   };
 
   const checkAnswer = () => {
-    const solution = activity.puzzleSolution;
-    if (!solution) return;
-    let correct = 0;
+    const puzzleGridState = {};
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        if (Number(userGrid[`${r},${c}`]) === solution[r][c]) correct++;
+        puzzleGridState[`${r},${c}`] = userGrid[`${r},${c}`] || '';
       }
     }
-    onAnswer?.({ success: correct === 81, correct, total: 81 });
+    const evalResult = evaluateStorylineRuntimePuzzle({
+      activity,
+      state: { puzzleGrid: puzzleGridState }
+    });
+    onAnswer?.(evalResult);
   };
 
   return (
@@ -372,10 +1012,14 @@ function MazeGrid({ activity, onAnswer }) {
       const newPos = { r: nr, c: nc };
       setPlayerPos(newPos);
       if (cells[nr]?.[nc]?.isEnd) {
-        onAnswer?.({ success: true, correct: 1, total: 1 });
+        const evalResult = evaluateStorylineRuntimePuzzle({
+          activity,
+          state: { puzzleMazeReachedEnd: true }
+        });
+        onAnswer?.(evalResult);
       }
     },
-    [cells, cols, onAnswer, playerPos, rows]
+    [activity, cells, cols, onAnswer, playerPos, rows]
   );
 
   useEffect(() => {
@@ -422,7 +1066,33 @@ function MazeGrid({ activity, onAnswer }) {
           })
         )}
       </div>
-      <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>Ok tuslari ile hareket edin. Kirmizi kareye ulasin.</div>
+      <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>Ok tuşları ile hareket edin. Kırmızı kareye ulaşın.</div>
+      <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Yukarı', dr: -1, dc: 0 },
+          { label: 'Sol', dr: 0, dc: -1 },
+          { label: 'Sağ', dr: 0, dc: 1 },
+          { label: 'Aşağı', dr: 1, dc: 0 },
+        ].map((control) => (
+          <button
+            key={control.label}
+            type="button"
+            onClick={() => move(control.dr, control.dc)}
+            style={{
+              minWidth: 66,
+              height: 32,
+              borderRadius: 6,
+              border: '1px solid #cbd5e1',
+              background: '#fff',
+              color: '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {control.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -430,11 +1100,11 @@ function MazeGrid({ activity, onAnswer }) {
 function MemoryGrid({ activity, onAnswer }) {
   const cards = activity.puzzlePlaced || [];
   const [flipped, setFlipped] = useState([]);
-  const [matched, setMatched] = useState([]);
+  const [matched, setMatched] = useState([]); // matched pairIds
   const [moves, setMoves] = useState(0);
 
   const handleFlip = (index) => {
-    if (flipped.length >= 2 || flipped.includes(index) || matched.includes(index)) return;
+    if (flipped.length >= 2 || flipped.includes(index) || matched.some(pid => cards[index]?.pairId === pid)) return;
     const newFlipped = [...flipped, index];
     setFlipped(newFlipped);
     setMoves((m) => m + 1);
@@ -443,8 +1113,14 @@ function MemoryGrid({ activity, onAnswer }) {
       const c2 = cards[newFlipped[1]];
       if (c1.pairId === c2.pairId && newFlipped[0] !== newFlipped[1]) {
         setTimeout(() => {
-          setMatched((prev) => [...prev, ...newFlipped]);
+          const nextMatched = [...matched, c1.pairId];
+          setMatched(nextMatched);
           setFlipped([]);
+          const evalResult = evaluateStorylineRuntimePuzzle({
+            activity,
+            state: { puzzleMemoryMatched: nextMatched }
+          });
+          onAnswer?.(evalResult);
         }, 600);
       } else {
         setTimeout(() => setFlipped([]), 800);
@@ -452,21 +1128,19 @@ function MemoryGrid({ activity, onAnswer }) {
     }
   };
 
-  useEffect(() => {
-    if (matched.length === cards.length && cards.length > 0) {
-      onAnswer?.({ success: true, correct: cards.length / 2, total: cards.length / 2, moves });
-    }
-  }, [cards.length, matched.length, moves, onAnswer]);
+  const isCardMatched = (card) => matched.includes(card?.pairId);
 
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 72px)', gap: 8 }}>
         {cards.map((card, index) => {
           const isFlipped = flipped.includes(index);
-          const isMatched = matched.includes(index);
+          const isMatched = isCardMatched(card);
           return (
-            <div
+            <button
               key={card.id}
+              type="button"
+              aria-label={isFlipped || isMatched ? card.text : 'Kartı çevir'}
               onClick={() => handleFlip(index)}
               style={{
                 width: 72,
@@ -483,10 +1157,11 @@ function MemoryGrid({ activity, onAnswer }) {
                 textAlign: 'center',
                 padding: 4,
                 transition: 'background 0.3s',
+                border: 'none',
               }}
             >
               {isFlipped || isMatched ? card.text : '?'}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -502,10 +1177,10 @@ export default function PreviewPuzzleFlow({ activity, onAnswer }) {
     <div style={{ padding: 16 }}>
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#1e293b' }}>
         {puzzleType === 'crossword' && 'Kare Bulmaca'}
-        {puzzleType === 'wordsearch' && 'Kelime Avi'}
+        {puzzleType === 'wordsearch' && 'Kelime Avı'}
         {puzzleType === 'sudoku' && 'Sudoku'}
         {puzzleType === 'maze' && 'Labirent'}
-        {puzzleType === 'memory' && 'Hafiza Kartlari'}
+        {puzzleType === 'memory' && 'Hafıza Kartları'}
       </div>
       {puzzleType === 'crossword' && <CrosswordGrid activity={activity} onAnswer={onAnswer} />}
       {puzzleType === 'wordsearch' && <WordSearchGrid activity={activity} onAnswer={onAnswer} />}

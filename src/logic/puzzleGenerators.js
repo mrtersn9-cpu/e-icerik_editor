@@ -19,6 +19,17 @@ function canPlaceWord(grid, word, row, col, direction) {
     if (row + len < rows && grid[row + len][col].letter) return false;
   }
 
+  let isGridEmpty = true;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c].letter) {
+        isGridEmpty = false;
+        break;
+      }
+    }
+    if (!isGridEmpty) break;
+  }
+
   let intersections = 0;
   for (let i = 0; i < len; i++) {
     const r = direction === 'across' ? row : row + i;
@@ -29,19 +40,21 @@ function canPlaceWord(grid, word, row, col, direction) {
     if (cell.letter) {
       if (cell.letter !== word[i]) return false;
       intersections++;
-    }
-    const adjacentBefore = direction === 'across'
-      ? (r > 0 ? grid[r - 1][c].letter : null)
-      : (c > 0 ? grid[r][c - 1].letter : null);
-    const adjacentAfter = direction === 'across'
-      ? (r < rows - 1 ? grid[r + 1][c].letter : null)
-      : (c < cols - 1 ? grid[r][c + 1].letter : null);
-    if (intersections === 0) {
+    } else {
+      const adjacentBefore = direction === 'across'
+        ? (r > 0 ? grid[r - 1][c].letter : null)
+        : (c > 0 ? grid[r][c - 1].letter : null);
+      const adjacentAfter = direction === 'across'
+        ? (r < rows - 1 ? grid[r + 1][c].letter : null)
+        : (c < cols - 1 ? grid[r][c + 1].letter : null);
       if (adjacentBefore || adjacentAfter) return false;
     }
   }
 
-  return intersections > 0 || true;
+  if (isGridEmpty) {
+    return true;
+  }
+  return intersections > 0;
 }
 
 function placeWord(grid, word, row, col, direction, number) {
@@ -106,7 +119,11 @@ function checkIfStartOfOtherWord(grid, row, col, excludeDirection) {
   return false;
 }
 
-function tryPlaceWords(grid, words, index, placed) {
+function tryPlaceWords(grid, words, index, placed, startTime, status) {
+  if (startTime && Date.now() - startTime > 1000) {
+    status.budgetExceeded = true;
+    return false;
+  }
   if (index >= words.length) return true;
 
   const word = words[index];
@@ -123,7 +140,7 @@ function tryPlaceWords(grid, words, index, placed) {
           placeWord(grid, word.answer, row, col, direction, number);
           placed.push({ ...word, direction, startRow: row, startCol: col, number });
 
-          if (tryPlaceWords(grid, words, index + 1, placed)) return true;
+          if (tryPlaceWords(grid, words, index + 1, placed, startTime, status)) return true;
 
           placed.pop();
           unplaceWord(grid, word.answer, row, col, direction);
@@ -141,7 +158,10 @@ export function generateCrossword(questions, rows, cols) {
     .map((q) => ({ ...q, answer: q.answer.trim().toUpperCase().replace(/\s/g, '') }))
     .sort((a, b) => b.answer.length - a.answer.length);
 
-  if (!cleanQuestions.length) return { grid: createEmptyGrid(rows, cols), placed: [] };
+  const startTime = Date.now();
+  const status = { budgetExceeded: false };
+
+  if (!cleanQuestions.length) return { grid: createEmptyGrid(rows, cols), placed: [], unplaced: [], budgetExceeded: false };
 
   let bestGrid = null;
   let bestPlaced = null;
@@ -149,6 +169,10 @@ export function generateCrossword(questions, rows, cols) {
 
   const attempts = 20;
   for (let attempt = 0; attempt < attempts; attempt++) {
+    if (Date.now() - startTime > 1000) {
+      status.budgetExceeded = true;
+      break;
+    }
     const shuffled = attempt > 0
       ? [...cleanQuestions].sort(() => Math.random() - 0.5)
       : [...cleanQuestions];
@@ -156,25 +180,41 @@ export function generateCrossword(questions, rows, cols) {
     const placed = [];
 
     const first = shuffled[0];
-    const startRow = Math.floor((rows - first.answer.length) / 2);
-    const startCol = Math.floor((cols - first.answer.length) / 2);
     const firstDir = first.direction || 'across';
+    const startRow = Math.max(0, Math.floor((rows - (firstDir === 'down' ? first.answer.length : 1)) / 2));
+    const startCol = Math.max(0, Math.floor((cols - (firstDir === 'across' ? first.answer.length : 1)) / 2));
+
+    if ((firstDir === 'across' && startCol + first.answer.length > cols) ||
+        (firstDir === 'down' && startRow + first.answer.length > rows)) {
+      continue;
+    }
+
     placeWord(grid, first.answer, startRow, startCol, firstDir, 1);
     placed.push({ ...first, direction: firstDir, startRow, startCol, number: 1 });
 
     const remaining = shuffled.slice(1);
-    tryPlaceWords(grid, remaining, 0, placed);
+    tryPlaceWords(grid, remaining, 0, placed, startTime, status);
 
     const score = placed.length + placed.reduce((sum, p) => sum + p.answer.length, 0);
     if (score > bestScore) {
       bestScore = score;
       bestGrid = grid;
-      bestPlaced = placed;
+      bestPlaced = [...placed];
     }
     if (placed.length === cleanQuestions.length) break;
   }
 
-  return { grid: bestGrid || createEmptyGrid(rows, cols), placed: bestPlaced || [] };
+  const finalGrid = bestGrid || createEmptyGrid(rows, cols);
+  const finalPlaced = bestPlaced || [];
+  const placedIds = new Set(finalPlaced.map(p => p.id));
+  const unplaced = cleanQuestions.filter(q => !placedIds.has(q.id));
+
+  return {
+    grid: finalGrid,
+    placed: finalPlaced,
+    unplaced,
+    budgetExceeded: status.budgetExceeded
+  };
 }
 
 export function generateWordSearch(words, rows, cols) {
@@ -194,9 +234,21 @@ export function generateWordSearch(words, rows, cols) {
     { dr: -1, dc: 1 },
   ];
 
+  const startTime = Date.now();
+  const status = { budgetExceeded: false };
   const placed = [];
+
   for (const word of cleanWords) {
+    if (Date.now() - startTime > 1000) {
+      status.budgetExceeded = true;
+      break;
+    }
+
     for (let attempt = 0; attempt < 200; attempt++) {
+      if (Date.now() - startTime > 1000) {
+        status.budgetExceeded = true;
+        break;
+      }
       const dir = directions[Math.floor(Math.random() * directions.length)];
       const maxRow = dir.dr > 0 ? rows - word.answer.length : dir.dr < 0 ? word.answer.length - 1 : rows - 1;
       const minRow = dir.dr < 0 ? word.answer.length - 1 : 0;
@@ -237,7 +289,10 @@ export function generateWordSearch(words, rows, cols) {
     }
   }
 
-  return { grid, placed };
+  const placedIds = new Set(placed.map((p) => p.id));
+  const unplaced = cleanWords.filter((w) => !placedIds.has(w.id));
+
+  return { grid, placed, unplaced, budgetExceeded: status.budgetExceeded };
 }
 
 function isValidSudoku(grid, row, col, num) {

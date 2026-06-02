@@ -46,6 +46,20 @@ function getDragDropSettings(activity = {}) {
 }
 const DRAG_DROP_ANIMATION_PRESETS = [
   {
+    id: 'funReturn',
+    label: 'Eğlenceli Dönüş',
+    icon: '★',
+    activeScale: 1.045,
+    settleDuration: 285,
+    returnDuration: 330,
+    activeShadow: '0 20px 36px rgba(37,99,235,.28), 0 0 0 4px rgba(56,189,248,.18)',
+    settledShadow: '0 12px 26px rgba(34,197,94,.18), 0 0 0 2px rgba(34,197,94,.18)',
+    pulseColor: '37,99,235',
+    hoverFilter: 'brightness(1.055) saturate(1.04)',
+    previewAnimation: '_ddPreviewFunReturn',
+    previewDuration: 1040,
+  },
+  {
     id: 'soft',
     label: 'Yumuşak',
     icon: 'S',

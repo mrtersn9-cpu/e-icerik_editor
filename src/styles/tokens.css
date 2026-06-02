@@ -43,10 +43,20 @@
   --eic-light-bg: #f8fafc;
   --eic-light-panel: #ffffff;
   --eic-light-panel-alt: #f1f5f9;
+  --eic-light-panel-soft: #f8fbff;
+  --eic-light-panel-raised: #fbfdff;
   --eic-light-border: #cbd5e1;
+  --eic-light-border-soft: #e2e8f0;
   --eic-light-border-strong: #94a3b8;
   --eic-light-text: #0f172a;
   --eic-light-muted: #475569;
+  --eic-light-disabled-text: #94a3b8;
+  --eic-light-accent: #2563eb;
+  --eic-light-accent-strong: #1d4ed8;
+  --eic-light-accent-dark: #174ea6;
+  --eic-light-accent-soft: #eff6ff;
+  --eic-light-accent-border: #bfdbfe;
+  --eic-tab-active: #0f5bff; /* ribbon tab underline / label */
 
   /* Input */
   --eic-shell-input-bg: #0f172a;
@@ -57,6 +67,7 @@
   --eic-radius-md: 6px;
   --eic-radius-lg: 8px;
   --eic-radius-xl: 12px;
+  --eic-radius-card: 16px; /* library rows, login cards */
   --eic-radius-round: 999px;
 
   /* Spacing */
@@ -72,8 +83,59 @@
   --eic-type-md: 14px;
   --eic-type-lg: 18px;
   --eic-type-xl: 24px;
+  --eic-type-caption: 10px;
+  --eic-type-control: 11px;
+  --eic-type-body: 12px;
+  --eic-type-title: 14px;
+  --eic-type-section-title: 18px;
+  --eic-type-display: 24px;
+
+  /* Font weights */
+  --eic-weight-normal: 600;
+  --eic-weight-semibold: 700;
+  --eic-weight-bold: 900;
+
+  /* Semantic type roles (mirror the product's usage) */
+  --eic-h1-size: 38px;
+  --eic-h1-weight: 850;
+  --eic-h1-lh: 1.08; /* hero */
+  --eic-h2-size: 28px;
+  --eic-h2-weight: 800;
+  --eic-h2-lh: 1.16;
+  --eic-h3-size: 18px;
+  --eic-h3-weight: 900;
+  --eic-h3-lh: 1.25;
+  --eic-eyebrow-size: 11px;
+  --eic-eyebrow-weight: 900; /* UPPERCASE */
+  --eic-label-size: 12px;
+  --eic-label-weight: 900;
+  --eic-p-size: 14px;
+  --eic-p-weight: 500;
+  --eic-p-lh: 1.6;
 
   /* Shadows */
   --eic-shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.25);
   --eic-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --eic-shadow-topbar: 0 4px 14px rgba(15, 23, 42, 0.2);
+  --eic-shadow-card: 0 12px 30px rgba(14, 165, 233, 0.12); /* light hover */
+  --eic-shadow-modal: 0 24px 54px rgba(15, 23, 42, 0.22);
+  --eic-shadow-login: 0 30px 80px rgba(15, 23, 42, 0.16);
+}
+
+/* ─── Object tones — learner-content color families ──────────────────────── */
+/* CSS-var mirror of EDITOR_THEME.objectTones (src/theme/core.js).           */
+/* Every placed shape/button can be tinted from one of these 11 ramps.       */
+/* Flat vars: --eic-tone-<name>-<role>; roles: base · strong · soft · fill · border · text */
+:root {
+  --eic-tone-blue-base: #2563eb; --eic-tone-blue-strong: #1d4ed8; --eic-tone-blue-soft: #eff6ff; --eic-tone-blue-fill: #dbeafe; --eic-tone-blue-border: #60a5fa; --eic-tone-blue-text: #174ea6;
+  --eic-tone-cyan-base: #0284c7; --eic-tone-cyan-strong: #0369a1; --eic-tone-cyan-soft: #e0f2fe; --eic-tone-cyan-fill: #e0f2fe; --eic-tone-cyan-border: #7dd3fc; --eic-tone-cyan-text: #075985;
+  --eic-tone-green-base: #16a34a; --eic-tone-green-strong: #15803d; --eic-tone-green-soft: #f0fdf4; --eic-tone-green-fill: #dcfce7; --eic-tone-green-border: #86efac; --eic-tone-green-text: #15803d;
+  --eic-tone-amber-base: #d97706; --eic-tone-amber-strong: #b45309; --eic-tone-amber-soft: #fffbeb; --eic-tone-amber-fill: #fef3c7; --eic-tone-amber-border: #fcd34d; --eic-tone-amber-text: #b45309;
+  --eic-tone-red-base: #dc2626; --eic-tone-red-strong: #b91c1c; --eic-tone-red-soft: #fef2f2; --eic-tone-red-fill: #fee2e2; --eic-tone-red-border: #fecaca; --eic-tone-red-text: #b91c1c;
+  --eic-tone-purple-base: #7c3aed; --eic-tone-purple-strong: #6d28d9; --eic-tone-purple-soft: #f5f3ff; --eic-tone-purple-fill: #ede9fe; --eic-tone-purple-border: #c4b5fd; --eic-tone-purple-text: #6d28d9;
+  --eic-tone-pink-base: #ec4899; --eic-tone-pink-strong: #be185d; --eic-tone-pink-soft: #fdf2f8; --eic-tone-pink-fill: #fce7f3; --eic-tone-pink-border: #f9a8d4; --eic-tone-pink-text: #be185d;
+  --eic-tone-teal-base: #0f766e; --eic-tone-teal-strong: #0f766e; --eic-tone-teal-soft: #f0fdfa; --eic-tone-teal-fill: #ccfbf1; --eic-tone-teal-border: #5eead4; --eic-tone-teal-text: #0f766e;
+  --eic-tone-orange-base: #ea580c; --eic-tone-orange-strong: #c2410c; --eic-tone-orange-soft: #fff7ed; --eic-tone-orange-fill: #ffedd5; --eic-tone-orange-border: #fdba74; --eic-tone-orange-text: #c2410c;
+  --eic-tone-slate-base: #64748b; --eic-tone-slate-strong: #334155; --eic-tone-slate-soft: #f8fafc; --eic-tone-slate-fill: #f1f5f9; --eic-tone-slate-border: #cbd5e1; --eic-tone-slate-text: #475569;
+  --eic-tone-indigo-base: #818cf8; --eic-tone-indigo-strong: #4f46e5; --eic-tone-indigo-soft: #eef2ff; --eic-tone-indigo-fill: #e0e7ff; --eic-tone-indigo-border: #a5b4fc; --eic-tone-indigo-text: #4338ca;
 }

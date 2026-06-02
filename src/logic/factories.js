@@ -180,6 +180,15 @@ function createDefaultSlideLayers() {
 function ensureSlideDefaultLayers(layers = [], activity = {}) {
   const normalizedLayers =
     Array.isArray(layers) && layers.length ? layers : createDefaultSlideLayers();
+  if (activity?.autoLayers === false) {
+    return normalizedLayers.map((layer, index) => ({
+      ...layer,
+      id: index === 0 || layer?.kind === 'base' ? 'base' : layer.id || uid(),
+      kind: index === 0 || layer?.kind === 'base' ? 'base' : layer.kind || 'overlay',
+      autoName: index === 0 || layer?.kind === 'base' ? true : !!layer.autoName,
+      visible: layer.visible !== false,
+    }));
+  }
   const resolvedNames = buildResolvedLayerNameMap(normalizedLayers, activity);
   const baseLayer =
     normalizedLayers.find((layer) => layer?.kind === 'base' || layer?.id === 'base') ||
@@ -445,14 +454,14 @@ function buildVectorPathFromPoints(points = [], closePath = true) {
 }
 
 function getBezierPointAt(fromPoint, toPoint, t = 0.5) {
-  const p0 = { x: fromPoint.x, y: fromPoint.y };
-  const p1 = fromPoint.cpOut || p0;
-  const p2 = toPoint.cpIn || { x: toPoint.x, y: toPoint.y };
-  const p3 = { x: toPoint.x, y: toPoint.y };
+  const start = { x: fromPoint.x, y: fromPoint.y };
+  const cpOut = fromPoint.cpOut || start;
+  const cpIn = toPoint.cpIn || { x: toPoint.x, y: toPoint.y };
+  const end = { x: toPoint.x, y: toPoint.y };
   const u = 1 - t;
   return {
-    x: u ** 3 * p0.x + 3 * u ** 2 * t * p1.x + 3 * u * t ** 2 * p2.x + t ** 3 * p3.x,
-    y: u ** 3 * p0.y + 3 * u ** 2 * t * p1.y + 3 * u * t ** 2 * p2.y + t ** 3 * p3.y,
+    x: u ** 3 * start.x + 3 * u ** 2 * t * cpOut.x + 3 * u * t ** 2 * cpIn.x + t ** 3 * end.x,
+    y: u ** 3 * start.y + 3 * u ** 2 * t * cpOut.y + 3 * u * t ** 2 * cpIn.y + t ** 3 * end.y,
   };
 }
 
@@ -531,8 +540,35 @@ function alignVectorAnchors(points = [], indices = [], mode = 'left') {
   });
 }
 
+function createBaseOnlySlide(name = 'Sahne', index = 0) {
+  return {
+    ...createSlide(name, index),
+    name,
+    sceneName: name,
+    autoLayers: false,
+    layers: [createLayer('', 0, { kind: 'base' })],
+    activeLayerId: 'base',
+  };
+}
+
+function createDefaultActivitySlides() {
+  const practiceSlideName = 'Etkinlik 1';
+  return [
+    createBaseOnlySlide('Etkinlik Girişi', 0),
+    createBaseOnlySlide('Etkinlik Tanıtımı', 1),
+    {
+      ...createSlide(practiceSlideName, 2),
+      name: practiceSlideName,
+      sceneName: practiceSlideName,
+      objects: [],
+      triggers: [],
+    },
+  ];
+}
+
 function createActivity(name, type = 'selection') {
-  const firstSlide = createSlide('Slider 1', 0);
+  const defaultSlides = createDefaultActivitySlides();
+  const firstSlide = defaultSlides[0];
   const base = {
     id: uid(),
     name,
@@ -557,7 +593,7 @@ function createActivity(name, type = 'selection') {
     selectedObjectId: firstSlide.selectedObjectId,
     timeline: firstSlide.timeline,
     triggers: firstSlide.triggers,
-    slides: [firstSlide],
+    slides: defaultSlides,
     currentSlideId: firstSlide.id,
     startSlideId: firstSlide.id,
     settings: { ...DEFAULT_ACTIVITY_SETTINGS },
@@ -619,35 +655,49 @@ function createActivity(name, type = 'selection') {
   };
 
   // Type-specific data
+  if (type === 'selection') {
+    base.mcQuestion = "Türkiye'nin başkenti hangi şehirdir?";
+    base.mcOptions = [
+      { id: uid(), label: 'Ankara', isCorrect: true },
+      { id: uid(), label: 'İstanbul', isCorrect: false },
+      { id: uid(), label: 'İzmir', isCorrect: false },
+      { id: uid(), label: 'Bursa', isCorrect: false },
+    ];
+  }
+
   if (type === 'sequence') {
+    base.mcQuestion = 'Su döngüsü adımlarını doğru sırayla düzenleyin.';
     base.sequenceItems = [
-      { id: uid(), label: 'Birinci Adım', order: 1 },
-      { id: uid(), label: 'İkinci Adım', order: 2 },
-      { id: uid(), label: 'Üçüncü Adım', order: 3 },
+      { id: uid(), label: 'Buharlaşma', order: 1 },
+      { id: uid(), label: 'Yoğunlaşma', order: 2 },
+      { id: uid(), label: 'Yağış', order: 3 },
+      { id: uid(), label: 'Akış', order: 4 },
     ];
     base.sequenceShuffle = true;
     base.sequenceDirection = 'vertical';
   }
 
   if (type === 'matching') {
+    base.mcQuestion = 'Ülkeleri başkentleriyle eşleştirin.';
     base.matchingPairs = [
-      { id: uid(), left: 'Sol 1', right: 'Sağ 1' },
-      { id: uid(), left: 'Sol 2', right: 'Sağ 2' },
-      { id: uid(), left: 'Sol 3', right: 'Sağ 3' },
+      { id: uid(), left: 'Türkiye', right: 'Ankara' },
+      { id: uid(), left: 'Fransa', right: 'Paris' },
+      { id: uid(), left: 'Almanya', right: 'Berlin' },
+      { id: uid(), left: 'İtalya', right: 'Roma' },
     ];
     base.matchingShuffle = true;
   }
 
   if (type === 'text-entry') {
-    base.textEntryPrompt = 'Cevabınızı yazınız:';
-    base.textEntryAcceptedAnswers = [''];
+    base.textEntryPrompt = 'Türkiye\'nin en büyük gölü hangisidir?';
+    base.textEntryAcceptedAnswers = ['Van Gölü', 'Van', 'Van Golu'];
     base.textEntryCaseSensitive = false;
     base.textEntryMaxLength = 500;
   }
 
   if (type === 'numeric') {
-    base.numericPrompt = 'Sayısal cevabınızı giriniz:';
-    base.numericCorrectValue = 0;
+    base.numericPrompt = 'Bir dik üçgende dik açı kaç derecedir?';
+    base.numericCorrectValue = 90;
     base.numericTolerance = 0;
     base.numericMin = null;
     base.numericMax = null;
@@ -662,7 +712,10 @@ function createActivity(name, type = 'selection') {
 
   if (type === 'puzzle') {
     base.puzzleType = 'crossword';
-    base.puzzleQuestions = [];
+    base.puzzleQuestions = [
+      { id: uid(), clue: 'Türkiye\'nin başkenti', answer: 'ANKARA', direction: 'across', row: 0, col: 0 },
+      { id: uid(), clue: 'Dünyanın en büyük okyanusu', answer: 'PASIFIK', direction: 'down', row: 0, col: 2 },
+    ];
     base.puzzleGrid = { rows: 10, cols: 10, cells: [] };
     base.puzzleSettings = {
       showClues: true,
@@ -677,6 +730,24 @@ function createActivity(name, type = 'selection') {
     base.settings.allowRetry = true;
   }
 
+  if (type === 'mixed') {
+    base.mixedItems = [];
+    base.mixedMode = 'auto';
+  }
+
+  if (type === 'hotspot') {
+    base.hotspotQuestion = 'Görseldeki doğru alanları işaretleyin.';
+    base.hotspotImage = null;
+    const hotspotObj = createObject('hotspot');
+    hotspotObj.x = 200;
+    hotspotObj.y = 150;
+    hotspotObj.width = 120;
+    hotspotObj.height = 80;
+    hotspotObj.label = 'Doğru Alan';
+    hotspotObj.hotspotCorrect = true;
+    base.objects = [...(base.objects || []), hotspotObj];
+  }
+
   if (type === 'survey') {
     base.surveyQuestions = [
       {
@@ -689,6 +760,25 @@ function createActivity(name, type = 'selection') {
     ];
     base.surveyAnonymous = true;
     base.settings.showFeedback = false;
+  }
+
+  if (type === 'custom-interaction') {
+    base.customInteraction = {
+      templateId: 'blank',
+      templateName: 'Boş Özel Etkileşim',
+      widgets: [],
+      settings: {
+        zipImportReady: false,
+        runtimeReady: false,
+      },
+      events: [],
+      commands: [],
+      variables: [],
+      triggers: [],
+      test: {
+        status: 'not-run',
+      },
+    };
   }
 
   return base;

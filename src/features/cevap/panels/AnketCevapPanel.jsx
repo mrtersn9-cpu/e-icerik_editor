@@ -45,6 +45,41 @@ export default function AnketCevapPanel({ activity, onUpdate }) {
       <CevapCard number="8" title="Anket Özeti" wide>
         <MiniTable columns={['#', 'Soru', 'Tip']} rows={questions.map((question, index) => ({ id: question.id, cells: [index + 1, question.prompt || '-', question.type || 'likert'] }))} />
       </CevapCard>
+      <CevapCard number="9" title="Yanıt Dağılımı (Önizleme)" wide>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {questions.map((q, idx) => (
+            <div key={q.id}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8 }}>
+                {idx + 1}. {q.prompt || 'Soru'}
+              </div>
+              {q.type === 'likert' || q.type === 'choice' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {(q.options || []).map((opt) => (
+                    <div key={opt} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, width: 80, color: '#475569' }}>{opt}</span>
+                      <div style={{ flex: 1, height: 14, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${Math.round(Math.random() * 80 + 10)}%`,
+                            height: '100%',
+                            background: '#3b82f6',
+                            borderRadius: 4,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: '#64748b' }}>Açık metin yanıtları grafikte gösterilemez.</div>
+              )}
+            </div>
+          ))}
+          {questions.length === 0 && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>Henüz soru eklenmemiş.</div>
+          )}
+        </div>
+      </CevapCard>
     </PanelGrid>
   );
 }

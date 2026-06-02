@@ -1,10 +1,56 @@
+import fs from 'fs';
+import path from 'path';
+
 import {
   auditTtkbEditorState,
   enforceTtkbActivityCompliance,
   enforceTtkbEditorState,
+  findTtkbMissingSemanticIconButtons,
 } from '../utils/ttkbCompliance';
 
+const MOJIBAKE_PATTERNS = [
+  '\u00c4\u00b1',
+  '\u00c4\u0178',
+  '\u00c5\u0178',
+  '\u00c3\u00bc',
+  '\u00c3\u00b6',
+  '\u00c3\u00a7',
+  '\u00c3\u2021',
+  '\u00c4\u00b0',
+  '\u00e2\u0153',
+  '\u00e2\u2020',
+  '\u00e2\u02dc',
+  '\u00e2\u0161',
+  '\u00e2\u009d',
+  '\u00e2\u2013',
+  '\u00e2\u2014',
+  '\u011f\u0178',
+  '\u00c3\u2014',
+];
+
+function collectSourceFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) return collectSourceFiles(fullPath);
+    return /\.(js|jsx|mjs)$/.test(entry.name) ? [fullPath] : [];
+  });
+}
+
 describe('TTKB editor compliance', () => {
+  test('does not expose known mojibake sequences in source strings', () => {
+    const sourceRoot = path.resolve(__dirname, '..');
+    const offenders = [];
+
+    collectSourceFiles(sourceRoot).forEach((file) => {
+      const text = fs.readFileSync(file, 'utf8');
+      MOJIBAKE_PATTERNS.forEach((pattern) => {
+        if (text.includes(pattern)) offenders.push(`${path.relative(sourceRoot, file)}: ${pattern}`);
+      });
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
   test('fixes dark button text in editor data instead of runtime', () => {
     const activity = enforceTtkbActivityCompliance({
       id: 'act-1',
@@ -79,6 +125,68 @@ describe('TTKB editor compliance', () => {
 
     expect(activity.objects[0].label).toBe('MENÜ');
     expect(activity.objects[1].soundIconMode).toBe('icon-only');
+  });
+
+  test('accepts an adjacent linked semantic icon button instead of flagging its label partner', () => {
+    const objects = [
+      {
+        id: 'check-icon',
+        type: 'button',
+        label: '✓',
+        linkedHoverGroup: 'ready-check',
+        linkedActionTargetId: 'check-label',
+        layerId: 'base',
+        x: 20,
+        y: 20,
+        width: 48,
+        height: 44,
+        style: { background: '#16a34a', color: '#ffffff' },
+      },
+      {
+        id: 'check-label',
+        type: 'button',
+        label: 'KONTROL ET',
+        linkedHoverGroup: 'ready-check',
+        layerId: 'base',
+        x: 76,
+        y: 20,
+        width: 160,
+        height: 44,
+        style: { background: '#16a34a', color: '#ffffff' },
+      },
+    ];
+
+    expect(findTtkbMissingSemanticIconButtons(objects)).toEqual([]);
+    expect(enforceTtkbActivityCompliance({ objects }).objects[1].label).toBe('KONTROL ET');
+  });
+
+  test('repairs a genuinely missing semantic icon and a long single-line button', () => {
+    const activity = enforceTtkbActivityCompliance({
+      stageWidth: 800,
+      objects: [
+        {
+          id: 'restart',
+          type: 'button',
+          runtimeAction: 'restart',
+          label: 'YENİDEN BAŞLAT',
+          x: 20,
+          width: 180,
+          style: { background: '#2563eb', color: '#ffffff' },
+        },
+        {
+          id: 'long',
+          type: 'button',
+          label: 'Bu uzun buton metni tek satırda kalmalıdır',
+          x: 20,
+          width: 120,
+          style: { background: '#2563eb', color: '#ffffff', fontSize: 16 },
+        },
+      ],
+    });
+
+    expect(activity.objects[0].label).toBe('↻ YENİDEN BAŞLAT');
+    expect(activity.objects[1].width).toBeGreaterThan(120);
+    expect(activity.objects[1].style.whiteSpace).toBe('nowrap');
   });
 
   test('solidifies popup panels and passes contrast audit after enforcement', () => {

@@ -86,4 +86,33 @@ describe('storyline runtime deck', () => {
       dragDropMatches: { drag1: 'drop1', drag2: 'drop1' },
     });
   });
+
+  test('carries typed activity data required by SCORM evaluation', () => {
+    const [slide] = buildStorylineRuntimeDeck({
+      selActId: 'mixed-1',
+      activities: [
+        {
+          id: 'mixed-1',
+          type: 'mixed',
+          mixedItems: [{ id: 'item-1', type: 'text-entry', acceptedAnswers: ['Ankara'] }],
+          fillBlankSentence: 'Başkent ___ şehridir.',
+          fillBlankAnswers: [{ id: 'blank-0', acceptedValues: ['Ankara'] }],
+          puzzleType: 'crossword',
+          puzzleGrid: { rows: 1, cols: 1, cells: [[{ letter: 'A' }]] },
+          puzzlePlaced: [{ id: 'p-1', question: 'Başkent', startRow: 0, startCol: 0 }],
+          hotspotImage: 'data:image/png;base64,test',
+          hotspotImageAlt: 'Türkiye haritası',
+        },
+      ],
+    });
+
+    expect(slide).toMatchObject({
+      type: 'mixed',
+      mixedItems: [{ id: 'item-1', type: 'text-entry', acceptedAnswers: ['Ankara'] }],
+      fillBlankSentence: 'Başkent ___ şehridir.',
+      puzzleType: 'crossword',
+      puzzleGrid: { rows: 1, cols: 1 },
+      hotspotImageAlt: 'Türkiye haritası',
+    });
+  });
 });

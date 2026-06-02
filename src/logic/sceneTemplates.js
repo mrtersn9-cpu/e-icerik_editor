@@ -1,9 +1,10 @@
-import {
-  ANSWER_LAYER_STYLE_PRESETS,
-} from '../constants';
+import { ANSWER_LAYER_STYLE_PRESETS } from '../constants';
 import { contrastSafeButtonStyle, ensureTtkbButtonTextContrast } from '../editor-logic/colorUtils';
 import { uid } from '../utils/editorHelpers';
-import { normalizeRuntimeActionLabel } from '../utils/storylineRuntime';
+import {
+  isGeneratedAnswerTemplateObject,
+  normalizeRuntimeActionLabel,
+} from '../utils/storylineRuntime';
 
 import {
   createObjectFromActivity,
@@ -882,13 +883,15 @@ function buildLaunchPageSceneTemplate(
       createLinkedButtonIcon(button, iconOptions.icon || '▶', 'start', iconOptions)
     );
   };
-  const introLabel =
-    getActivityContentLanguage(activity) === 'en' ? 'ACTIVITY INTRO' : 'ETKİNLİK TANITIMI';
+  const contentLanguage = getActivityContentLanguage(activity);
+  const introLabel = tx.activityIntro;
   const startLabel = tx.start;
   const helperText =
-    getActivityContentLanguage(activity) === 'en'
-      ? 'Review the intro or jump directly into the questions.'
-      : 'Tanıtımı inceleyebilir ya da doğrudan soru akışına geçebilirsin.';
+    {
+      tr: 'Tanıtımı inceleyebilir ya da doğrudan soru akışına geçebilirsin.',
+      en: 'Review the intro or jump directly into the questions.',
+      de: 'Prüfe die Einführung oder springe direkt zu den Fragen.',
+    }[contentLanguage] || 'Tanıtımı inceleyebilir ya da doğrudan soru akışına geçebilirsin.';
   const encodeSvgAsset = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   const svgGridAsset = encodeSvgAsset(
     `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><path d="M0 0H96V96H0Z" fill="none"/><path d="M0 24H96M0 48H96M0 72H96M24 0V96M48 0V96M72 0V96" stroke="rgba(255,255,255,.18)" stroke-width="2"/><path d="M0 0H96V96H0Z" stroke="rgba(255,255,255,.14)" stroke-width="2" fill="none"/></svg>`
@@ -1282,12 +1285,11 @@ function buildLaunchPageSceneTemplate(
         buttonRadius: profile.buttons === 'cards' ? 22 : 999,
       }),
       {
-        size: Math.min(u(104, 'y'), Math.round(buttonH * 0.92)),
+        size: Math.min(u(96, 'y'), Math.round(buttonH * 0.92)),
         tone: introTone,
       }
     );
 
-    // Keep launch start button identical to button-intro start control (size + tone + icon size).
     const startButtonWidth = u(580);
     const startButtonHeight = u(92, 'y');
     const startButtonX = secondX + Math.round((buttonW - startButtonWidth) / 2);
@@ -2169,7 +2171,9 @@ function applySceneTemplateToSlide(slide = {}, options = {}) {
   const replaceExisting = options.replaceExisting === true;
   const respectDeletedSlotsOption = options.respectDeletedSlots !== false;
   const currentObjects = Array.isArray(slide.objects) ? slide.objects : [];
-  const nonTemplateObjects = currentObjects.filter((item) => !isGeneratedSceneTemplateObject(item));
+  const nonTemplateObjects = currentObjects.filter(
+    (item) => !isGeneratedSceneTemplateObject(item) && !isGeneratedAnswerTemplateObject(item)
+  );
   const currentGeneratedObjects = currentObjects
     .filter(
       (item) =>
@@ -2179,7 +2183,7 @@ function applySceneTemplateToSlide(slide = {}, options = {}) {
     .sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0));
   const currentTriggers = Array.isArray(slide.triggers) ? slide.triggers : [];
   const nonTemplateTriggers = currentTriggers.filter(
-    (item) => !isGeneratedSceneTemplateObject(item)
+    (item) => !isGeneratedSceneTemplateObject(item) && !isGeneratedAnswerTemplateObject(item)
   );
   const rawManualClickTargets = new Set(
     nonTemplateTriggers

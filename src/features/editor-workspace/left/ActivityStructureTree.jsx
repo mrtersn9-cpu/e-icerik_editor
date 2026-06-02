@@ -24,9 +24,11 @@ export function getSlideDisplayName(slide, index = 0) {
 export default function ActivityStructureTree({
   activity,
   onAddSlide,
+  onCopySlide,
   onDeleteSlide,
   onDuplicateSlide,
   onMoveSlide,
+  onPasteSlide,
   onRenameActivity,
   onRenameSlide,
   onSelectSlide,
@@ -79,6 +81,8 @@ export default function ActivityStructureTree({
           <div style={{ display: 'inline-flex', gap: 3 }}>
             <IconButton icon="add" label="Yeni sahne" onClick={onAddSlide} />
             <IconButton icon="copy" label="Sahne çoğalt" onClick={onDuplicateSlide} />
+            <IconButton icon="copy" label="Sahneyi kopyala" onClick={onCopySlide} />
+            <IconButton icon="add" label="Sahneyi yapıştır" onClick={onPasteSlide} />
             <IconButton
               disabled={currentSlideIndex <= 0}
               icon="up"
@@ -135,6 +139,7 @@ export default function ActivityStructureTree({
           return (
             <div
               key={slide.id}
+              data-slide-tree-item="true"
               role="button"
               tabIndex={0}
               onClick={() => onSelectSlide?.(slide.id)}

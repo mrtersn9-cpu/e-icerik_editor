@@ -32,6 +32,7 @@ When changing anything that can appear in preview or SCORM output, enforce all o
 
 Minimum visual/runtime rules:
 - Keep typography systematic. Same-role text such as button labels, menu labels, headings, body text, feedback titles, and feedback bodies must keep consistent font size, weight, color, and family across scenes and layers.
+- Learner-facing button text must remain on a single readable line. Wrapped, clipped, or unreadable button labels are TTKB risks; generated themes must adjust font size, width, or label treatment before preview/SCORM output.
 - Avoid arbitrary font-size and color changes between packages. Package themes may change tone, but they must not break readability or hierarchy.
 - Use accessible contrast. Text and meaningful icons must remain readable against their backgrounds and should follow WCAG contrast expectations.
 - Prefer calm, educational palettes. Avoid eye-straining neon, excessive glow, heavy blur, decorative clutter, or effects that increase cognitive load.

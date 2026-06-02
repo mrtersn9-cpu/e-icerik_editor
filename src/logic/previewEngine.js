@@ -152,10 +152,9 @@ function getRuntimeObjectVisualState(
 function getTriggerSourceMatches(trigger, objectId) {
   const source = trigger?.target || 'Secili Nesne';
   if (objectId === '__activity__')
-    return source === '__activity__' || source === 'Sahne' || source === 'Secili Nesne';
+    return source === '__activity__' || source === 'Sahne';
   return (
     source === objectId ||
-    source === 'Secili Nesne' ||
     source === 'TiklananNesne' ||
     source === 'selected'
   );

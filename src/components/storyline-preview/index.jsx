@@ -74,6 +74,10 @@ import {
   PreviewTextEntryFlow,
   PreviewFillBlankFlow,
   PreviewPuzzleOverlay,
+  PreviewNumericFlow,
+  PreviewSurveyFlow,
+  PreviewHotspotFlow,
+  PreviewMixedFlow,
 } from '../preview/PreviewExtraFlows';
 import { ShapePreviewIcon } from '../ui';
 
@@ -1876,6 +1880,7 @@ function StorylinePreviewObjectLayer({
               widgetId: obj.widget?.widgetId,
               basePath: obj.widget?.basePath,
               entry: obj.widget?.entry,
+              entryUrl: obj.widget?.entryUrl,
               instanceId: obj.id,
               props: obj.widget?.props || {},
             })}
@@ -3532,7 +3537,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
           when: 'onWidgetEvent',
           eventName,
           state: {
-            variables: runtimeVariables,
+            variables: { ...runtimeVariables, ...updates },
             objectStates,
             hiddenObjectIds,
           },
@@ -3707,7 +3712,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
                 textOverflow: 'ellipsis',
               }}
             >
-              {selectedActivity?.name || 'Sahne'} · {currentSlide?.name || 'Slider'} · {layerName}
+              {selectedActivity?.name || 'Etkinlik'} · {currentSlide?.name || 'Sahne'} · {layerName}
             </div>
           </div>
         </div>
@@ -3899,13 +3904,17 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
                     onWidgetEvent={handleWidgetEvent}
                     widgetRefs={widgetRefs}
                   />
-                  {['matching', 'sequence', 'text-entry', 'fill-blank'].includes(selectedActivity?.type) && (
+                  {['matching', 'sequence', 'text-entry', 'fill-blank', 'puzzle', 'numeric', 'survey', 'hotspot', 'mixed'].includes(selectedActivity?.type) && (
                     <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#f8fafc', overflow: 'auto', padding: 24 }}>
                       {selectedActivity?.type === 'matching' && <PreviewMatchingFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'sequence' && <PreviewSequenceFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'text-entry' && <PreviewTextEntryFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'fill-blank' && <PreviewFillBlankFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'puzzle' && <PreviewPuzzleOverlay activity={selectedActivity} />}
+                      {selectedActivity?.type === 'numeric' && <PreviewNumericFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'survey' && <PreviewSurveyFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'hotspot' && <PreviewHotspotFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'mixed' && <PreviewMixedFlow activity={selectedActivity} />}
                     </div>
                   )}
                 </div>

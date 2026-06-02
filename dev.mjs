@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import net from "node:net";
 
 const children = [];
+const require = createRequire(import.meta.url);
+const reactScriptsBin = require.resolve("react-scripts/bin/react-scripts.js");
 
 function run(command, args, name, extraEnv = {}) {
   const child = spawn(command, args, {
@@ -29,10 +32,6 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-function getBin(name) {
-  return process.platform === "win32" ? `${name}.cmd` : name;
-}
-
 function probePort(port) {
   return new Promise((resolve) => {
     const tester = net.createServer();
@@ -56,12 +55,13 @@ async function findAvailablePort(startPort = 4001, attempts = 20) {
 
 async function boot() {
   const apiPort = await findAvailablePort(Number(process.env.PORT || 4001));
-  process.env.PORT = String(apiPort);
-  process.env.REACT_APP_API_PORT = String(apiPort);
+  const clientPort = await findAvailablePort(Number(process.env.CLIENT_PORT || 3000));
   console.log(`Local API port: ${apiPort}`);
+  console.log(`Local editor URL: http://localhost:${clientPort}`);
   run("node", ["server.mjs"], "api", { PORT: String(apiPort) });
-  run(getBin("npx"), ["react-scripts", "start"], "client", {
+  run(process.execPath, [reactScriptsBin, "start"], "client", {
     BROWSER: "none",
+    PORT: String(clientPort),
     REACT_APP_API_PORT: String(apiPort),
   });
 }

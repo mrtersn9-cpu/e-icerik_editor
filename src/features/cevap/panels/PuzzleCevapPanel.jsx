@@ -69,25 +69,69 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
             onClick={() => {
               if (puzzleType === 'crossword') {
                 const result = generateCrossword(questions, grid.rows, grid.cols);
-                patch({ puzzleGrid: { ...grid, cells: result.grid }, puzzlePlaced: result.placed });
+                patch({ 
+                  puzzleGrid: { ...grid, cells: result.grid }, 
+                  puzzlePlaced: result.placed,
+                  puzzleUnplaced: result.unplaced || [],
+                  puzzleBudgetExceeded: !!result.budgetExceeded
+                });
               } else if (puzzleType === 'wordsearch') {
                 const result = generateWordSearch(questions, grid.rows, grid.cols);
-                patch({ puzzleGrid: { ...grid, cells: result.grid }, puzzlePlaced: result.placed });
+                patch({ 
+                  puzzleGrid: { ...grid, cells: result.grid }, 
+                  puzzlePlaced: result.placed,
+                  puzzleUnplaced: result.unplaced || [],
+                  puzzleBudgetExceeded: !!result.budgetExceeded
+                });
               } else if (puzzleType === 'sudoku') {
                 const result = generateSudoku(settings.sudokuDifficulty);
-                patch({ puzzleGrid: { rows: 9, cols: 9, cells: result.grid }, puzzlePlaced: [], puzzleSolution: result.solution });
+                patch({ puzzleGrid: { rows: 9, cols: 9, cells: result.grid }, puzzlePlaced: [], puzzleSolution: result.solution, puzzleUnplaced: [], puzzleBudgetExceeded: false });
               } else if (puzzleType === 'maze') {
                 const result = generateMaze(grid.rows, grid.cols);
-                patch({ puzzleGrid: { ...grid, cells: result.grid }, puzzlePlaced: [] });
+                patch({ puzzleGrid: { ...grid, cells: result.grid }, puzzlePlaced: [], puzzleUnplaced: [], puzzleBudgetExceeded: false });
               } else if (puzzleType === 'memory') {
                 const result = generateMemoryPairs(questions);
-                patch({ puzzleGrid: { rows: 4, cols: 4, cells: [] }, puzzlePlaced: result.cards });
+                patch({ puzzleGrid: { rows: 4, cols: 4, cells: [] }, puzzlePlaced: result.cards, puzzleUnplaced: [], puzzleBudgetExceeded: false });
               }
             }}
           >
             Otomatik Oluştur
           </SmallButton>
         </div>
+        {(puzzleType === 'crossword' || puzzleType === 'wordsearch') && (activity.puzzleUnplaced?.length > 0 || activity.puzzleBudgetExceeded) && (
+          <div style={{
+            padding: 12,
+            borderRadius: 10,
+            background: '#fef2f2',
+            border: '1px solid #fee2e2',
+            color: '#991b1b',
+            fontSize: 12,
+            marginBottom: 12,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚠️ Bulmaca Yerleşim Uyarısı</span>
+            </div>
+            {activity.puzzleBudgetExceeded && (
+              <div>Bulmaca oluşturma zaman sınırı (1000ms) aşıldı! Bazı kelimeler yerleştirilemedi.</div>
+            )}
+            {activity.puzzleUnplaced && activity.puzzleUnplaced.length > 0 && (
+              <div>
+                Izgaraya yerleşemeyen kelimeler ({activity.puzzleUnplaced.length}):{' '}
+                <span style={{ fontWeight: 800 }}>
+                  {activity.puzzleUnplaced.map((q) => q.answer).join(', ')}
+                </span>
+                <div style={{ marginTop: 4, fontSize: 11, color: '#7f1d1d' }}>
+                  * Lütfen bu kelimeleri düzeltin, kaldırın veya daha büyük satır/sütun sayısı seçerek yerleşimi yeniden oluşturun.
+                  <br />
+                  * Yerleşemeyen kelime bulunurken <strong>Önizleme ve SCORM Paketi oluşturulamaz!</strong>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 8 }}>
           {puzzleType === 'crossword' && (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -103,9 +147,9 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
                 >
                   <span style={{ fontWeight: 900, color: '#64748b' }}>{index + 1}</span>
                   <TextInput
-                    value={q.question}
+                    value={q.question || q.clue || ''}
                     placeholder="Tanim"
-                    onChange={(value) => patchQuestion(q.id, { question: value })}
+                    onChange={(value) => patchQuestion(q.id, { question: value, clue: value })}
                   />
                   <TextInput
                     value={q.answer}
@@ -176,9 +220,9 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
                 >
                   <span style={{ fontWeight: 900, color: '#64748b' }}>{index + 1}</span>
                   <TextInput
-                    value={q.question}
+                    value={q.question || q.clue || ''}
                     placeholder="Kart A"
-                    onChange={(value) => patchQuestion(q.id, { question: value })}
+                    onChange={(value) => patchQuestion(q.id, { question: value, clue: value })}
                   />
                   <TextInput
                     value={q.answer}

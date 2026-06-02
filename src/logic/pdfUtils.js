@@ -123,7 +123,7 @@ function buildPdfSelectionBlueprint(storyboardPages = []) {
         return {
           mcMode: 'multi',
           mcQuestion: sanitizePdfText(
-            page?.instruction || 'Asagidaki ifadelerden dogru olanlari isaretleyiniz.'
+            page?.instruction || 'Aşağıdaki ifadelerden doğru olanları işaretleyiniz.'
           ),
           mcOptions,
         };
@@ -141,7 +141,7 @@ function buildPdfSelectionBlueprint(storyboardPages = []) {
       if (mcOptions.length) {
         return {
           mcMode: 'multi',
-          mcQuestion: sanitizePdfText(page?.instruction || 'Uygun kutucuklari isaretleyiniz.'),
+          mcQuestion: sanitizePdfText(page?.instruction || 'Uygun kutucukları işaretleyiniz.'),
           mcOptions,
         };
       }

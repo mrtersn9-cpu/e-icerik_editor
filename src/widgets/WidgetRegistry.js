@@ -62,10 +62,12 @@ export function buildWidgetIframeSrc(widgetConfig = {}) {
   const widgetId = widgetConfig.widgetId || '';
   const basePath = widgetConfig.basePath || '';
   const entry = widgetConfig.entry || 'index.html';
+  const entryUrl = String(widgetConfig.entryUrl || '').trim();
   const props = widgetConfig.props || {};
 
-  let src = basePath ? `${basePath}/${entry}` : getBuiltinWidgetEntryUrl(widgetId);
+  let src = basePath ? `${basePath}/${entry}` : entryUrl || getBuiltinWidgetEntryUrl(widgetId);
   if (!src) return '';
+  if (/^(blob:|data:)/i.test(src)) return src;
 
   const params = new URLSearchParams();
   params.set('instanceId', widgetConfig.instanceId || '');

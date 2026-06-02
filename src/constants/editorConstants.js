@@ -2,6 +2,14 @@ import { EDITOR_THEME } from '../theme';
 
 import { DEFAULT_LMS_CONFIG } from './activityConstants';
 
+// ─── Panel Genişlik Sınırları ─────────────────────────────────────────────────
+// Tek doğruluk kaynağı: sürükleme clamp'i, render min'i ve sıfırlama hep buradan
+// okur; böylece "sürükleme alt sınırda etkisiz" tutarsızlığı oluşmaz.
+export const PANEL_LIMITS = {
+  left: { min: 220, max: 360, default: 260 },
+  right: { min: 300, max: 560, default: 360 },
+};
+
 // ─── Nesne Presetleri ─────────────────────────────────────────────────────────
 
 export const OBJ_PRESETS = {
@@ -880,8 +888,11 @@ export const SLIDE_STATE_KEYS = [
   'stageWidth',
   'stageHeight',
   'backgroundColor',
+  'background',
   'svgMarkup',
   'svgName',
+  'integratedPdfSource',
+  'pdfIntegrationSanitizeReport',
   'layers',
   'activeLayerId',
   'nextActivityId',

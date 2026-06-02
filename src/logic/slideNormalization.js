@@ -59,6 +59,7 @@ function normalizeSlideTriggersForScene(triggers = [], objects = [], layers = []
     'onMediaStart',
     'onStateChange',
     'onVariableChange',
+    'onWidgetEvent',
     'onDropCorrect',
     'onDropIncorrect',
     'onSubmit',

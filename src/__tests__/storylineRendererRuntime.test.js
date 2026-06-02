@@ -240,6 +240,33 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(state.activeLayerId).toBe('layer-normal');
   });
 
+  test('routes puzzle evaluation with the activity-shaped slide contract', () => {
+    const runtimeApi = getSharedStorylineRendererRuntimeApi();
+    const state = {
+      activeLayerId: 'base',
+      hidden: {},
+      objectStates: {},
+      dragPositions: {},
+      dropAssignments: {},
+      puzzleGrid: { '0,0': 'A' },
+    };
+    const result = runtimeApi.storylineRendererCheckAnswer({
+      slide: {
+        type: 'puzzle',
+        puzzleType: 'crossword',
+        puzzleGrid: { cells: [[{ letter: 'A' }]] },
+        puzzlePlaced: [],
+        layers: [{ id: 'base', name: 'base', kind: 'base' }],
+        objects: [],
+      },
+      state,
+      stage: document.createElement('div'),
+      render: () => {},
+    });
+
+    expect(result).toMatchObject({ success: true, correct: 1, total: 1 });
+  });
+
   test('keeps placed drag visible on feedback layer and shows result badge', () => {
     const renderer = loadRuntimeRenderer();
     const slide = {

@@ -1,3 +1,5 @@
+import { parseAndEvaluate } from '../logic/formulaEngine';
+
 import {
   findRuntimeLayerByKeys,
   getRuntimeButtonAction,
@@ -788,7 +790,27 @@ function getRuntimeTriggerAction(action = '') {
   return value;
 }
 
-function getCommandsForTrigger(trigger = {}, slide = {}) {
+function resolveStorylineRuntimeTemplate(value, variables = {}) {
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveStorylineRuntimeTemplate(item, variables));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        resolveStorylineRuntimeTemplate(item, variables),
+      ])
+    );
+  }
+  if (typeof value !== 'string') return value;
+  const exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+  if (exact) return variables[exact[1]] ?? '';
+  return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, variableId) =>
+    String(variables[variableId] ?? '')
+  );
+}
+
+function getCommandsForTrigger(trigger = {}, slide = {}, context = {}) {
   if (String(trigger.action || '').startsWith('runtime:')) {
     return getStorylineRuntimeCommandsForAction(getRuntimeTriggerAction(trigger.action), {
       slide,
@@ -835,14 +857,39 @@ function getCommandsForTrigger(trigger = {}, slide = {}) {
       },
     ];
   }
-  if (trigger.action === 'DegiskenAta' && trigger.value)
+  if (trigger.action === 'DegiskenAta' && trigger.value) {
+    let evaluatedValue = normalizeStorylineRuntimeValue(trigger.extra);
+    try {
+      const varMap = {};
+      const definitions = context.variableDefinitions || [];
+      const values = context.variables || {};
+      
+      definitions.forEach((def) => {
+        if (def?.id) {
+          const currentVal = def.id in values ? values[def.id] : def.value;
+          varMap[def.id] = currentVal;
+          if (def.name) {
+            varMap[def.name] = currentVal;
+          }
+        }
+      });
+      
+      Object.entries(values).forEach(([id, val]) => {
+        varMap[id] = val;
+      });
+
+      evaluatedValue = parseAndEvaluate(trigger.extra, varMap);
+    } catch (e) {
+      // Formül geçerli değilse veya parse hatası verirse, fallback olarak normalize edilmiş değeri kullan
+    }
     return [
       {
         type: 'setVariable',
         variableId: trigger.value,
-        value: normalizeStorylineRuntimeValue(trigger.extra),
+        value: evaluatedValue,
       },
     ];
+  }
   if (
     (trigger.action === 'DegiskenArttir' || trigger.action === 'DegiskenAzalt') &&
     trigger.value
@@ -866,7 +913,7 @@ function getCommandsForTrigger(trigger = {}, slide = {}) {
         type: 'sendWidgetCommand',
         widgetId: trigger.value,
         command: trigger.extra || '',
-        payload: trigger.payload || {},
+        payload: resolveStorylineRuntimeTemplate(trigger.payload || {}, context.variables || {}),
       },
     ];
   }
@@ -945,12 +992,12 @@ export function getStorylineRuntimeCommandsForObject({
   }
   const manualTriggers = matchingTriggers.filter((trigger) => !trigger.generatedBy);
   const manualTriggerCommands = collapseStorylineNavigationCommands(
-    manualTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide))
+    manualTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide, context))
   );
   if (manualTriggers.length) return manualTriggerCommands;
 
   const triggerCommands = collapseStorylineNavigationCommands(
-    matchingTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide))
+    matchingTriggers.flatMap((trigger) => getCommandsForTrigger(trigger, slide, context))
   );
   if (triggerCommands.length) return triggerCommands;
 
@@ -1023,6 +1070,7 @@ export function evaluateStorylineRuntimeSequence({ slide = {}, state = {} } = {}
   return {
     type: 'sequence',
     success: success && correctOrder.length > 0,
+    completed: true,
     userOrder,
     correctOrder,
   };
@@ -1057,7 +1105,16 @@ export function evaluateStorylineRuntimeTextEntry({ slide = {}, state = {} } = {
 }
 
 export function evaluateStorylineRuntimeFillBlank({ slide = {}, state = {} } = {}) {
-  const answers = slide.fillBlankAnswers || [];
+  let answers = slide.fillBlankAnswers || [];
+  if (answers.length === 0 && slide.fillBlankSentence) {
+    const tokens = slide.fillBlankSentence.match(/\{(.+?)\}/g);
+    if (tokens) {
+      answers = tokens.map((t, i) => ({
+        id: `blank-${i}`,
+        acceptedValues: [t.slice(1, -1)]
+      }));
+    }
+  }
   const userValues = state.fillBlankValues || {};
   const results = answers.map((answer) => {
     const userValue = String(userValues[answer.id] || '').trim();
@@ -1085,9 +1142,11 @@ export function evaluateStorylineRuntimeFillBlank({ slide = {}, state = {} } = {
   const allCorrect = results.every((r) => r.matched);
   const totalPoints = results.reduce((sum, r) => sum + r.points, 0);
   const earnedPoints = results.filter((r) => r.matched).reduce((sum, r) => sum + r.points, 0);
+  const completed = answers.length > 0 && answers.every((ans) => String(userValues[ans.id] || '').trim() !== '');
   return {
     type: 'fill-blank',
     success: allCorrect && answers.length > 0,
+    completed,
     results,
     totalPoints,
     earnedPoints,
@@ -1135,7 +1194,7 @@ export function getStorylineRuntimeCommandsForDrop({
       return false;
     })
     .filter((trigger) => evaluateStorylineTriggerConditions(trigger, context))
-    .flatMap((trigger) => getCommandsForTrigger(trigger, slide));
+    .flatMap((trigger) => getCommandsForTrigger(trigger, slide, context));
 }
 
 export function evaluateStorylineRuntimePuzzle({ activity = {}, state = {} } = {}) {
@@ -1144,48 +1203,284 @@ export function evaluateStorylineRuntimePuzzle({ activity = {}, state = {} } = {
   const placed = activity.puzzlePlaced || [];
 
   if (puzzleType === 'crossword') {
-    let correct = 0;
-    let total = 0;
-    for (let r = 0; r < grid.length; r++) {
-      for (let c = 0; c < (grid[r]?.length || 0); c++) {
-        const cell = grid[r]?.[c];
-        if (cell?.letter) {
-          total++;
-          if (state.puzzleGrid?.[`${r},${c}`] === cell.letter) correct++;
+    const total = placed.length;
+    if (total > 0) {
+      let correct = 0;
+      let revealed = 0;
+
+      placed.forEach((p) => {
+        const status = state.puzzleQuestionStatus?.[p.id];
+        if (status === 'correct') {
+          correct++;
+        } else if (status === 'revealed') {
+          revealed++;
+        }
+      });
+
+      const completed = correct + revealed === total;
+      const success = correct === total;
+      const score = total > 0 ? correct / total : 0;
+
+      return {
+        type: 'puzzle',
+        puzzleType: 'crossword',
+        success,
+        completed,
+        correct,
+        revealed,
+        total,
+        score
+      };
+    } else {
+      let correct = 0;
+      let totalCells = 0;
+      for (let r = 0; r < grid.length; r++) {
+        for (let c = 0; c < (grid[r]?.length || 0); c++) {
+          const cell = grid[r]?.[c];
+          if (cell?.letter) {
+            totalCells++;
+            if (state.puzzleGrid?.[r + ',' + c] === cell.letter) correct++;
+          }
         }
       }
+      const success = correct === totalCells && totalCells > 0;
+      return {
+        type: 'puzzle',
+        puzzleType: 'crossword',
+        success,
+        completed: success,
+        correct,
+        revealed: 0,
+        total: totalCells,
+        score: totalCells > 0 ? correct / totalCells : 0
+      };
     }
-    return { success: correct === total && total > 0, correct, total };
   }
 
   if (puzzleType === 'wordsearch') {
     const found = state.puzzleFoundWords || [];
     const total = placed.length;
-    return { success: found.length === total && total > 0, correct: found.length, total };
+    const success = found.length === total && total > 0;
+    return {
+      type: 'puzzle',
+      puzzleType: 'wordsearch',
+      success,
+      completed: success,
+      correct: found.length,
+      revealed: 0,
+      total,
+      score: total > 0 ? found.length / total : 0
+    };
   }
 
   if (puzzleType === 'sudoku') {
     const solution = activity.puzzleSolution;
-    if (!solution) return { success: false, correct: 0, total: 81 };
+    if (!solution) {
+      return {
+        type: 'puzzle',
+        puzzleType: 'sudoku',
+        success: false,
+        completed: false,
+        correct: 0,
+        revealed: 0,
+        total: 81,
+        score: 0
+      };
+    }
     let correct = 0;
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
-        if (Number(state.puzzleGrid?.[`${r},${c}`]) === solution[r][c]) correct++;
+        if (Number(state.puzzleGrid?.[r + ',' + c]) === solution[r][c]) correct++;
       }
     }
-    return { success: correct === 81, correct, total: 81 };
+    const success = correct === 81;
+    return {
+      type: 'puzzle',
+      puzzleType: 'sudoku',
+      success,
+      completed: success,
+      correct,
+      revealed: 0,
+      total: 81,
+      score: correct / 81
+    };
   }
 
   if (puzzleType === 'maze') {
     const reachedEnd = state.puzzleMazeReachedEnd || false;
-    return { success: reachedEnd, correct: reachedEnd ? 1 : 0, total: 1 };
+    const success = reachedEnd;
+    return {
+      type: 'puzzle',
+      puzzleType: 'maze',
+      success,
+      completed: success,
+      correct: reachedEnd ? 1 : 0,
+      revealed: 0,
+      total: 1,
+      score: reachedEnd ? 1 : 0
+    };
   }
 
   if (puzzleType === 'memory') {
     const matched = state.puzzleMemoryMatched || [];
     const total = (placed.length || 0) / 2;
-    return { success: matched.length === total && total > 0, correct: matched.length, total };
+    const success = matched.length === total && total > 0;
+    return {
+      type: 'puzzle',
+      puzzleType: 'memory',
+      success,
+      completed: success,
+      correct: matched.length,
+      revealed: 0,
+      total,
+      score: total > 0 ? matched.length / total : 0
+    };
   }
 
   return { success: false, correct: 0, total: 0 };
+}
+
+export function evaluateStorylineRuntimeNumeric({ slide = {}, state = {} } = {}) {
+  const correctValue = Number(slide.numericCorrectValue ?? 0);
+  const tolerance = Number(slide.numericTolerance ?? 0);
+  const min = slide.numericMin != null ? Number(slide.numericMin) : -Infinity;
+  const max = slide.numericMax != null ? Number(slide.numericMax) : Infinity;
+  const userValue = Number(state.numericValue);
+
+  if (!Number.isFinite(userValue)) {
+    return { type: 'numeric', success: false, score: 0, feedback: 'empty' };
+  }
+
+  const inRange = userValue >= min && userValue <= max;
+  const withinTolerance = tolerance === 0
+    ? userValue === correctValue
+    : Math.abs(userValue - correctValue) <= tolerance;
+
+  const success = inRange && withinTolerance;
+  return {
+    type: 'numeric',
+    success,
+    score: success ? 1 : 0,
+    userValue,
+    correctValue,
+    tolerance,
+    feedback: success ? 'correct' : 'incorrect',
+  };
+}
+
+export function evaluateStorylineRuntimeSurvey({ state = {} } = {}) {
+  const responses = state.surveyResponses || {};
+  const answeredCount = Object.values(responses).filter(Boolean).length;
+  return {
+    type: 'survey',
+    success: true,
+    score: 0,
+    responses,
+    answeredCount,
+    feedback: 'submitted',
+  };
+}
+
+export function evaluateStorylineRuntimeHotspot({ slide = {}, objects = null, state = {} } = {}) {
+  const baseObjects = getBaseRuntimeObjects(slide, objects);
+  const hotspots = baseObjects.filter((obj) => obj.type === 'hotspot');
+  const clickedHotspots = state.clickedHotspots || [];
+
+  const correctHotspots = hotspots.filter((h) => h.hotspotCorrect !== false);
+  const incorrectHotspots = hotspots.filter((h) => h.hotspotCorrect === false);
+
+  const correctClicks = clickedHotspots.filter((id) =>
+    correctHotspots.some((h) => h.id === id)
+  ).length;
+  const incorrectClicks = clickedHotspots.filter((id) =>
+    incorrectHotspots.some((h) => h.id === id)
+  ).length;
+
+  const allCorrectClicked = correctHotspots.every((h) => clickedHotspots.includes(h.id));
+  const noIncorrectClicked = incorrectClicks === 0;
+  const success = allCorrectClicked && noIncorrectClicked && correctHotspots.length > 0;
+
+  return {
+    type: 'hotspot',
+    success,
+    completed: clickedHotspots.length > 0,
+    score: success ? 1 : 0,
+    correctClicks,
+    incorrectClicks,
+    totalCorrect: correctHotspots.length,
+    clickedCount: clickedHotspots.length,
+    feedback: success ? 'correct' : 'incorrect',
+  };
+}
+
+export function evaluateStorylineRuntimeMixed({ slide = {}, state = {} } = {}) {
+  const items = slide.mixedItems || [];
+  const userAnswers = state.mixedAnswers || {};
+  let totalPoints = 0;
+  let earnedPoints = 0;
+
+  const results = items.map((item) => {
+    const userAns = userAnswers[item.id];
+    let matched = false;
+    const points = item.points || 1;
+    totalPoints += points;
+
+    if (item.type === 'selection') {
+      const options = item.options || [];
+      const correctIds = options.filter(o => o.isCorrect).map(o => o.id);
+      const userSelected = Array.isArray(userAns) ? userAns : (userAns ? [userAns] : []);
+      matched = correctIds.length === userSelected.length && correctIds.every(id => userSelected.includes(id));
+    } else if (item.type === 'drag-drop') {
+      const pairs = item.pairs || [];
+      const userPairs = userAns || {};
+      matched = pairs.length > 0 && pairs.every(p => 
+        String(userPairs[p.id] || '').trim().toLowerCase() === String(p.right || '').trim().toLowerCase()
+      );
+    } else if (item.type === 'text-entry' || item.type === 'numeric') {
+      const accepted = (item.acceptedAnswers || []).map(v => String(v || '').trim().toLowerCase());
+      matched = accepted.includes(String(userAns || '').trim().toLowerCase());
+    } else if (item.type === 'fill-blank') {
+      const accepted = (item.acceptedAnswers || []).map(v => String(v || '').trim().toLowerCase());
+      const userBlanks = userAns || {};
+      matched = accepted.length > 0 && accepted.every((val, idx) => 
+        String(userBlanks[idx] || '').trim().toLowerCase() === val
+      );
+    }
+    if (matched) earnedPoints += points;
+    return { id: item.id, matched, points };
+  });
+
+  const completed = items.length > 0 && items.every((item) => {
+    const userAns = userAnswers[item.id];
+    if (userAns == null) return false;
+    if (item.type === 'selection') {
+      const arr = Array.isArray(userAns) ? userAns : [userAns];
+      return arr.filter(Boolean).length > 0;
+    }
+    if (item.type === 'drag-drop') {
+      const pairs = item.pairs || [];
+      return pairs.length > 0 && pairs.every(p => userAns[p.id] != null && String(userAns[p.id]).trim() !== '');
+    }
+    if (item.type === 'fill-blank') {
+      let blankCount = 0;
+      String(item.sentence || '').split(/(___|\\{.+?\\})/g).filter(Boolean).forEach(part => {
+        const blank = part === '___' || (part.charAt(0) === '{' && part.charAt(part.length - 1) === '}');
+        if (blank) blankCount++;
+      });
+      for (let i = 0; i < blankCount; i++) {
+        if (userAns[i] == null || String(userAns[i]).trim() === '') return false;
+      }
+      return true;
+    }
+    return String(userAns).trim() !== '';
+  });
+
+  return {
+    type: 'mixed',
+    success: results.length > 0 && results.every(r => r.matched),
+    completed,
+    results,
+    totalPoints,
+    earnedPoints
+  };
 }

@@ -209,7 +209,7 @@ function GeneralTab({ activity, controller, warnings }) {
             { label: 'Tetikleyici', value: triggers.length, tone: '#16a34a' },
             { label: 'Ortam Dosyası', value: mediaCount, tone: '#8b5cf6' },
             { label: 'Timeline', value: timeline.length, tone: '#0ea5e9' },
-            { label: 'Slide', value: controller.slides?.length || 0, tone: '#f59e0b' },
+            { label: 'Sahne', value: controller.slides?.length || 0, tone: '#f59e0b' },
           ]}
         />
       </PanelCard>

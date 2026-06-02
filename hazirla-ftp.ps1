@@ -5,9 +5,8 @@ $buildDir = Join-Path $root "build"
 $templateDir = Join-Path $root "ftp-hosting"
 $outputDir = Join-Path $root "deploy-ftp"
 $stagingDir = Join-Path $root "deploy-ftp-temp"
-$outputConfig = Join-Path $outputDir "api\config.php"
 $backupScript = Join-Path $root "yedekle.ps1"
-$preservedConfig = $null
+$previousGenerateSourcemap = $env:GENERATE_SOURCEMAP
 
 function Get-MainJsFromManifest {
     param([string]$ManifestPath)
@@ -35,6 +34,11 @@ try {
         Write-Host ""
     }
 
+    if (Test-Path $buildDir) {
+        Remove-Item -LiteralPath $buildDir -Recurse -Force
+    }
+
+    $env:GENERATE_SOURCEMAP = "false"
     $LASTEXITCODE = 0
     npm run build
     if ($LASTEXITCODE -ne 0) {
@@ -51,10 +55,6 @@ try {
         throw "Build index.html bulunamadi: $buildIndex"
     }
 
-    if (Test-Path $outputConfig) {
-        $preservedConfig = Get-Content -LiteralPath $outputConfig -Raw
-    }
-
     if (Test-Path $stagingDir) {
         Remove-Item -LiteralPath $stagingDir -Recurse -Force
     }
@@ -65,9 +65,9 @@ try {
     Copy-Item -Path (Join-Path $templateDir "*") -Destination $stagingDir -Recurse -Force
     Copy-Item -Path (Join-Path $buildDir "*") -Destination $stagingDir -Recurse -Force
 
-    if ($null -ne $preservedConfig) {
-        $stagingConfig = Join-Path $stagingDir "api\config.php"
-        Set-Content -LiteralPath $stagingConfig -Value $preservedConfig -Encoding UTF8
+    $stagingConfig = Join-Path $stagingDir "api\config.php"
+    if (Test-Path $stagingConfig) {
+        Remove-Item -LiteralPath $stagingConfig -Force
     }
 
     $stagingManifest = Join-Path $stagingDir "asset-manifest.json"
@@ -86,7 +86,8 @@ try {
         "date=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         "mainJs=$stagingMainJs"
         "mainJsSha256=$mainJsHash"
-        "configPreserved=$($null -ne $preservedConfig)"
+        "configIncluded=false"
+        "configPolicy=api/config.php deploy paketine yazilmaz; sunucudaki mevcut config korunur."
         "uploadCheck=Bu dosya sunucuda gorunmuyorsa yeni deploy yuklenmemistir."
     ) -join "`n"
     Set-Content -LiteralPath (Join-Path $stagingDir "DEPLOY-KONTROL.txt") -Value $buildInfo -Encoding UTF8
@@ -100,16 +101,13 @@ try {
     Write-Host ""
     Write-Host "FTP paketi hazirlandi:" $outputDir
     Write-Host "Main JS:" $stagingMainJs
-    if ($null -ne $preservedConfig) {
-        Write-Host "Mevcut api/config.php korundu."
-    } else {
-        Write-Host "config dosyasini duzenleyip bu klasorun icerigini sitene yukleyebilirsin."
-    }
+    Write-Host "api/config.php deploy paketine yazilmadi; sunucudaki mevcut config korunur."
 }
 catch {
     Write-Host "Paket hazirlanirken bir hata olustu: $_" -ForegroundColor Red
     exit 1
 }
 finally {
+    $env:GENERATE_SOURCEMAP = $previousGenerateSourcemap
     Pop-Location
 }

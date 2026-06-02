@@ -1,31 +1,31 @@
 import React from 'react';
 
-const EDITOR_THEME = {
-  shellMuted: '#91a6c6',
-  shellBorder: '#22324d',
-  shellInset: '#0d1728',
-  shellText: '#e6eefc',
-  shellAccentStrong: '#0ea5e9',
-  shellMutedSoft: '#627998',
-  shellPanelAlt: '#16223b',
-};
+import { EDITOR_THEME } from '../theme';
 
 function Inp({ label, value, onChange, type = 'text', placeholder = '', rows }) {
   const base = {
     width: '100%',
     padding: '5px 8px',
-    borderRadius: 5,
-    border: '1px solid #333',
-    background: '#0f0f20',
-    color: '#E0E0E0',
-    fontSize: 11,
+    borderRadius: EDITOR_THEME.radiusMd,
+    border: `1px solid ${EDITOR_THEME.shellInputBorder}`,
+    background: EDITOR_THEME.shellInputBg,
+    color: EDITOR_THEME.shellText,
+    fontSize: EDITOR_THEME.typeControl,
     boxSizing: 'border-box',
     outline: 'none',
   };
   return (
     <div>
       {label && (
-        <label style={{ fontSize: 9, color: '#78909C', display: 'block', marginBottom: 2 }}>
+        <label
+          style={{
+            fontSize: EDITOR_THEME.typeCaption,
+            color: EDITOR_THEME.shellMuted,
+            display: 'block',
+            marginBottom: 2,
+            fontWeight: EDITOR_THEME.weightSemibold,
+          }}
+        >
           {label}
         </label>
       )}
@@ -55,7 +55,13 @@ function SelectInp({ label, value, onChange, options }) {
     <div>
       {label && (
         <label
-          style={{ fontSize: 9, color: EDITOR_THEME.shellMuted, display: 'block', marginBottom: 2 }}
+          style={{
+            fontSize: EDITOR_THEME.typeCaption,
+            color: EDITOR_THEME.shellMuted,
+            display: 'block',
+            marginBottom: 2,
+            fontWeight: EDITOR_THEME.weightSemibold,
+          }}
         >
           {label}
         </label>
@@ -66,11 +72,11 @@ function SelectInp({ label, value, onChange, options }) {
         style={{
           width: '100%',
           padding: '5px 8px',
-          borderRadius: 5,
+          borderRadius: EDITOR_THEME.radiusMd,
           border: `1px solid ${EDITOR_THEME.shellBorder}`,
           background: EDITOR_THEME.shellInset,
           color: EDITOR_THEME.shellText,
-          fontSize: 11,
+          fontSize: EDITOR_THEME.typeControl,
           boxSizing: 'border-box',
           outline: 'none',
         }}
@@ -99,10 +105,10 @@ function Btn({
       disabled={disabled}
       style={{
         padding: small ? '4px 10px' : '6px 14px',
-        borderRadius: 6,
+        borderRadius: EDITOR_THEME.radiusMd,
         cursor: disabled ? 'default' : 'pointer',
-        fontSize: small ? 10 : 11,
-        fontWeight: 600,
+        fontSize: small ? EDITOR_THEME.typeCaption : EDITOR_THEME.typeControl,
+        fontWeight: EDITOR_THEME.weightNormal,
         border: `1px solid ${color}`,
         transition: 'all .15s',
         background: disabled ? EDITOR_THEME.shellInset : color + '22',
@@ -123,7 +129,7 @@ function Modal({ title, onClose, width = 400, children }) {
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#000c',
+        background: 'rgba(2,6,23,.78)',
         zIndex: 1000,
         display: 'flex',
         alignItems: 'center',
@@ -133,14 +139,14 @@ function Modal({ title, onClose, width = 400, children }) {
       <div
         style={{
           background: EDITOR_THEME.shellPanelAlt,
-          borderRadius: 14,
-          padding: 24,
+          borderRadius: EDITOR_THEME.radiusXl,
+          padding: EDITOR_THEME.spaceXl,
           width,
           maxWidth: '92vw',
           border: `1px solid ${EDITOR_THEME.shellBorder}`,
           maxHeight: '85vh',
           overflowY: 'auto',
-          boxShadow: '0 18px 48px rgba(2,8,23,.45)',
+          boxShadow: EDITOR_THEME.shadowLg,
         }}
       >
         <div
@@ -148,10 +154,16 @@ function Modal({ title, onClose, width = 400, children }) {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 18,
+            marginBottom: EDITOR_THEME.spaceLg,
           }}
         >
-          <span style={{ fontWeight: 700, fontSize: 14, color: EDITOR_THEME.shellText }}>
+          <span
+            style={{
+              fontWeight: EDITOR_THEME.weightSemibold,
+              fontSize: EDITOR_THEME.typeTitle,
+              color: EDITOR_THEME.shellText,
+            }}
+          >
             {title}
           </span>
           <button

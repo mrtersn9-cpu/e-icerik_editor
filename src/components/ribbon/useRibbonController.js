@@ -20,6 +20,7 @@ import { createObjectFromActivity } from '../../logic/activityFactory';
 import {
   commitMaterializedActivity,
   getActivitySlides,
+  pasteActivitySlide,
   selectActivitySlide,
 } from '../../logic/activityHelpers';
 import {
@@ -124,6 +125,7 @@ export default function useRibbonController({
   setStoryRibbonTab,
   setZoom,
   showToast,
+  slideClipboardRef: externalSlideClipboardRef,
   storyRibbonTab,
   updateActivity,
   zoom,
@@ -142,6 +144,8 @@ export default function useRibbonController({
   );
   const view = activity?.viewOptions || {};
   const animationClipboardRef = useRef(null);
+  const localSlideClipboardRef = useRef(null);
+  const slideClipboardRef = externalSlideClipboardRef || localSlideClipboardRef;
 
   const patchActivity = useCallback(
     (patch) => {
@@ -333,6 +337,27 @@ export default function useRibbonController({
       )
     );
   }, [activity, currentSlide, slides, updateActivity]);
+
+  const copySlide = useCallback(() => {
+    if (!currentSlide) return false;
+    slideClipboardRef.current = currentSlide;
+    showToast?.(`"${currentSlide.sceneName || currentSlide.name || 'Sahne'}" kopyalandı.`, 'success');
+    return true;
+  }, [currentSlide, showToast, slideClipboardRef]);
+
+  const pasteSlide = useCallback(() => {
+    if (!activity || !slideClipboardRef.current) {
+      showToast?.('Yapıştırmak için önce bir sahne kopyalayın.', 'info');
+      return false;
+    }
+    const nextActivity = pasteActivitySlide(activity, slideClipboardRef.current, currentSlide?.id);
+    updateActivity(nextActivity);
+    const pastedSlide = getActivitySlides(nextActivity).find(
+      (slide) => slide.id === nextActivity.currentSlideId
+    );
+    showToast?.(`"${pastedSlide?.sceneName || pastedSlide?.name || 'Sahne'}" yapıştırıldı.`, 'success');
+    return true;
+  }, [activity, currentSlide?.id, showToast, slideClipboardRef, updateActivity]);
 
   const deleteSlide = useCallback(() => {
     if (!activity || !currentSlide || slides.length <= 1) return;
@@ -869,6 +894,7 @@ export default function useRibbonController({
       },
       bringFront: () => canvasRef.current?.bringFront?.(),
       copy: () => canvasRef.current?.copySelected?.(),
+      copySlide,
       copySelectedAnimation: () => {
         if (!selectedTimelineItem) {
           showToast?.('Kopyalanacak animasyon seçili değil.', 'info');
@@ -936,6 +962,7 @@ export default function useRibbonController({
       openScenePanel: () => handleEditorTabSelect('sahne'),
       openTextStudio: () => openTextStudioWindow?.(true),
       paste: () => canvasRef.current?.pasteClipboard?.(),
+      pasteSlide,
       pasteSelectedAnimation: () => {
         if (!animationClipboardRef.current) {
           showToast?.('Önce bir animasyon kopyala.', 'info');

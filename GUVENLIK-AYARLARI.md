@@ -1,49 +1,56 @@
-# Guvenlik Ayarlari
+# Güvenlik Ayarları
 
-Canli ortamda varsayilan gelistirme degerleriyle calistirmayin. Sunucuyu baslatmadan once asagidaki ortam degiskenlerini tanimlayin.
+Yerel Node.js sunucusu ve FTP/PHP yayını farklı veri katmanları kullanır. Canlı ortamda varsayılan geliştirme değerleriyle çalışmayın.
 
-## Zorunlu
+## Yerel Node.js + SQLite
 
-- `EICERIK_USER1_PASSWORD`: Ilk editor kullanicisinin sifresi.
-- `EICERIK_USER2_PASSWORD`: Ikinci editor kullanicisinin sifresi.
-- `EICERIK_SESSION_TOKEN_SECRET`: Imzali oturum tokenlari icin uzun ve rastgele secret.
-- `EICERIK_ADMIN_TOKEN`: `/api/admin/*` kullanici yonetimi endpointleri icin admin token.
-- `EICERIK_ALLOWED_ORIGINS`: Virgulle ayrilmis izinli origin listesi.
+`server.mjs` için zorunlu canlı ortam değişkenleri:
 
-## Onerilen
+- `EICERIK_USER1_PASSWORD`: İlk editör kullanıcısının şifresi.
+- `EICERIK_USER2_PASSWORD`: İkinci editör kullanıcısının şifresi.
+- `EICERIK_SESSION_TOKEN_SECRET`: İmzalı oturum tokenları için uzun ve rastgele secret.
+- `EICERIK_ADMIN_TOKEN`: `/api/admin/*` yönetim endpointleri için admin token.
+- `EICERIK_ALLOWED_ORIGINS`: Virgülle ayrılmış izinli origin listesi.
 
-- `EICERIK_SESSION_TTL_MS`: Aktif heartbeat oturum kilidi suresi. Varsayilan `60000`.
-- `EICERIK_SESSION_TOKEN_TTL_MS`: Bearer token gecerlilik suresi. Varsayilan 8 saat.
-- `EICERIK_LOGIN_RATE_MAX_ATTEMPTS`: Rate limit penceresindeki hatali giris siniri. Varsayilan `5`.
-- `EICERIK_LOGIN_RATE_WINDOW_MS`: Rate limit penceresi. Varsayilan 5 dakika.
-- `EICERIK_LOGIN_RATE_LOCK_MS`: Kilit suresi. Varsayilan 10 dakika.
-- `EICERIK_BODY_LIMIT_BYTES`: API JSON body limiti. Varsayilan `10000000`.
-- `EICERIK_DATA_DIR`: Veritabani ve guvenlik log klasoru. Test/servis ayrimi icin kullanilabilir.
+Önerilen değişkenler:
 
-## Guvenlik Loglari
+- `EICERIK_SESSION_TTL_MS`: Aktif heartbeat oturum kilidi süresi. Varsayılan `60000`.
+- `EICERIK_SESSION_TOKEN_TTL_MS`: Bearer token geçerlilik süresi. Varsayılan 8 saat.
+- `EICERIK_LOGIN_RATE_MAX_ATTEMPTS`: Rate limit penceresindeki hatalı giriş sınırı. Varsayılan `5`.
+- `EICERIK_LOGIN_RATE_WINDOW_MS`: Rate limit penceresi. Varsayılan 5 dakika.
+- `EICERIK_LOGIN_RATE_LOCK_MS`: Kilit süresi. Varsayılan 10 dakika.
+- `EICERIK_BODY_LIMIT_BYTES`: API JSON body limiti. Varsayılan `10000000`.
+- `EICERIK_DATA_DIR`: SQLite veritabanı ve güvenlik log klasörü.
 
-Sunucu guvenlik olaylarini `data/security-events.log` dosyasina JSON Lines formatinda yazar. Loglara parola, admin token veya session token yazilmaz. Yonetim modalinda olay tipi, kullanici ID ve tarih araligi ile filtreleme yapilabilir.
+Node sunucusu güvenlik olaylarını `data/security-events.log` dosyasına JSON Lines formatında yazar. Loglara parola, admin token veya session token yazılmaz.
 
-Kaydedilen baslica olaylar:
-
-- Basarili ve basarisiz girisler
-- Login rate limit
-- Oturum cikisi, kick istegi ve zorla devralma
-- Admin kullanici olusturma, guncelleme ve sifre degistirme
-- Izin verilmeyen origin denemeleri
-
-## Admin API
-
-Admin endpointleri `X-Admin-Token` header'i ister. `EICERIK_ADMIN_TOKEN` tanimli degilse admin API `ADMIN_DISABLED` yaniti verir.
+Node admin endpointleri:
 
 - `GET /api/admin/users`
 - `POST /api/admin/users`
 - `PATCH /api/admin/users/:id`
 - `PUT /api/admin/users/:id/password`
-- `GET /api/admin/security-events?limit=100&type=login&userId=user1&from=2026-04-01&to=2026-04-20`
+- `GET /api/admin/security-events`
+- `GET /api/admin/backup`
 
-## LMS Ogrenci Ciktisi
+## FTP/PHP + MySQL
 
-Editor yedegi icin normal `Dışa Aktar`, ogrenciye verilecek LMS/JSON paketi icin `Güvenli LMS` kullanin. Guvenli cikti cevap anahtari alanlarini, cozum/cevap goster aksiyonlarini ve LMS gizli anahtarlarini dosyadan cikarir; runtime eventlerinde de cevap detayi ve secret alanlari inspect edilebilir objelere yazilmaz.
+Canlı hosting ayarları sunucudaki `api/config.php` dosyasında tutulur:
 
-Not: Tamamen offline ve client-side otomatik puanlama isteyen bir pakette cevap anahtari tarayiciya verilirse teknik olarak gizlenemez. Bu nedenle ogrenciye dagitilacak guvenli cikti cevap anahtarini paketten ayirir.
+- `db_host`, `db_port`, `db_name`, `db_user`, `db_pass`
+- `admin_token`
+- `users`
+- `allowed_origins`
+- `pdf_analysis_mode`
+
+`api/config.php` parola içerebilir. Git'e eklenmez, deploy paketine yazılmaz ve sunucuda ayrıca korunur. FTP/PHP API ile Node API güvenlik özellikleri birebir aynı kabul edilmemelidir; canlıya çıkmadan önce hedef ortamda oturum, origin, admin yedeği ve yetki kontrolleri denenmelidir.
+
+## Öğrenci Çıktıları
+
+- Editör yedeği için `Dışa Aktar` kullanılır.
+- Cevap anahtarlarını ayıran JSON için `Güvenli LMS` kullanılır.
+- LMS'e yüklenecek paket için yalnızca `SCORM 1.2 ZIP` kullanılır.
+- SCORM dışa aktarımı tarayıcıda üretilir; PHP tarafındaki eski SCORM export endpointleri kapalıdır.
+- Harici HTTP/HTTPS link veya embed varsa SCORM üretiminden önce TTKB/KVKK/telif uyarısı gösterilir.
+
+Tamamen çevrimdışı ve tarayıcı içinde otomatik puanlayan içerikte cevap anahtarını teknik olarak bütünüyle gizlemek mümkün değildir. Öğrenciye dağıtılacak çıktı türünü amaca göre seçin.

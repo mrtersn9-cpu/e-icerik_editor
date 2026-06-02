@@ -1,5 +1,7 @@
 ﻿# Changelog
 
+> Bu dosya `kaydet.ps1` tarafından üretilen tarihsel kayıttır. Güncel sistem mimarisi için `SISTEM-REHBERI.md` dosyasını kullanın.
+
 ## 2026-04-15 14:36 - kaydet.ps1 strict mode ve git uyari duzeltmesi
 
 - Dal: master

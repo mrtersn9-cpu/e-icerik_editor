@@ -2,8 +2,16 @@ import { PDFDocument } from 'pdf-lib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { WORKFLOW_STATUS_META } from './constants';
-import { EDITOR_THEME } from './theme';
+// EDITOR_THEME no longer used; PdfCleanStudio now uses inline light-mode tokens.
 import { getAssetUrl } from './utils/assetUrl';
+import {
+  PDF_INTEGRATION_CONFIRM_BYTES,
+  PDF_INTEGRATION_WARN_BYTES,
+  buildPdfIntegrationPlan,
+  buildPdfPageSourceId,
+  hashPdfIntegrationContent,
+  sanitizeSvgForPdfIntegration,
+} from './utils/pdfActivityIntegration';
 
 let pdfJsLoaderPromise = null;
 
@@ -787,21 +795,28 @@ function resolveColorPickerValue(val, fallback = '#ffffff') {
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 
 const T = {
-  bg: EDITOR_THEME.shellBg,
-  surface: EDITOR_THEME.shellPanel,
-  surfaceAlt: EDITOR_THEME.shellPanelAlt,
-  surfaceHover: EDITOR_THEME.shellPanelElevated,
-  border: EDITOR_THEME.shellBorderSoft,
-  borderHi: EDITOR_THEME.shellBorderStrong,
-  text: EDITOR_THEME.shellText,
-  muted: EDITOR_THEME.shellMuted,
-  accent: EDITOR_THEME.shellAccent,
-  accentBg: EDITOR_THEME.shellAccentSoft,
-  accentBorder: EDITOR_THEME.shellAccentBorder,
-  success: EDITOR_THEME.shellSuccess,
-  warn: EDITOR_THEME.shellWarning,
-  danger: EDITOR_THEME.shellDanger,
+  bg: '#f7faff',
+  surface: '#ffffff',
+  surfaceAlt: '#f8fafc',
+  surfaceHover: '#f1f5f9',
+  shell: '#eef4fb',
+  shellSoft: '#f6f9fd',
+  pasteboard: '#0d1726',
+  pasteboardAlt: '#111c2d',
+  border: '#d8e2ef',
+  borderHi: '#e5edf6',
+  text: '#0f172a',
+  muted: '#64748b',
+  accent: '#2563eb',
+  accentBg: '#eff6ff',
+  accentBorder: '#93c5fd',
+  success: '#16a34a',
+  warn: '#d97706',
+  danger: '#dc2626',
 };
+
+const PDF_PAGE_SIDEBAR_WIDTH = 240;
+const PDF_RIGHT_PANEL_WIDTH = 300;
 
 const WORKFLOW_PILL_STYLE = {
   display: 'inline-flex',
@@ -810,7 +825,7 @@ const WORKFLOW_PILL_STYLE = {
   padding: '4px 9px',
   borderRadius: 999,
   border: `1px solid ${T.border}`,
-  background: 'rgba(255,255,255,.05)',
+  background: '#f1f5f9',
   color: T.text,
   fontSize: 11,
   fontWeight: 800,
@@ -818,14 +833,20 @@ const WORKFLOW_PILL_STYLE = {
 };
 
 function tbBtn(active = false, opts = {}) {
+  const isDanger = opts.danger && !opts.disabled;
   return {
-    height: opts.small ? 30 : 36,
-    padding: opts.small ? '0 9px' : '0 13px',
-    borderRadius: opts.small ? 6 : 8,
-    border: active ? `1px solid ${T.accentBorder}` : `1px solid ${T.border}`,
-    background: active ? T.accentBg : 'rgba(255,255,255,.04)',
-    color: opts.danger ? T.danger : active ? T.accent : T.text,
-    fontWeight: opts.small ? 600 : 700,
+    height: opts.small ? 28 : 32,
+    padding: opts.small ? '0 10px' : '0 13px',
+    borderRadius: opts.small ? 8 : 9,
+    border: active
+      ? `1px solid ${isDanger ? '#fca5a5' : '#93c5fd'}`
+      : `1px solid ${isDanger ? '#fecaca' : T.border}`,
+    background: active
+      ? (isDanger ? '#fef2f2' : 'linear-gradient(180deg,#ffffff 0%,#eaf2ff 100%)')
+      : (isDanger ? '#fef2f2' : '#ffffff'),
+    color: isDanger ? '#dc2626' : active ? '#1d4ed8' : '#334155',
+    boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,.9), 0 1px 2px rgba(37,99,235,.12)' : 'inset 0 1px 0 rgba(255,255,255,.85)',
+    fontWeight: opts.small ? 700 : 800,
     fontSize: opts.small ? 10.5 : 11,
     cursor: opts.disabled ? 'default' : 'pointer',
     opacity: opts.disabled ? 0.4 : 1,
@@ -835,17 +856,17 @@ function tbBtn(active = false, opts = {}) {
     whiteSpace: 'nowrap',
     flexShrink: 0,
     pointerEvents: opts.disabled ? 'none' : 'auto',
-    transition: 'background .1s, border-color .1s',
+    transition: 'background .15s, border-color .15s, box-shadow .15s, color .15s',
   };
 }
 
 function iconTypeLabel(item) {
-  if (item.text !== undefined) return { icon: 'T', color: '#a78bfa' };
-  if (item.targetBox) return { icon: item.isClone ? '📋' : '✂', color: '#38bdf8' };
-  if (item.type === 'checkbox') return { icon: '☑', color: '#4ade80' };
-  if (item.type === 'draggable') return { icon: '⊞', color: '#fb923c' };
-  if (item.type === 'answer') return { icon: 'A', color: '#facc15' };
-  if (item.type === 'note') return { icon: '📝', color: '#a3e635' };
+  if (item.text !== undefined) return { icon: 'T', color: '#7c3aed' };
+  if (item.targetBox) return { icon: item.isClone ? '📋' : '✂', color: '#0284c7' };
+  if (item.type === 'checkbox') return { icon: '☑', color: '#16a34a' };
+  if (item.type === 'draggable') return { icon: '⊞', color: '#d97706' };
+  if (item.type === 'answer') return { icon: 'A', color: '#ca8a04' };
+  if (item.type === 'note') return { icon: '📝', color: '#65a30d' };
   if (item.type === 'handwriting') return { icon: '✍', color: '#c084fc' };
   return { icon: '□', color: T.muted };
 }
@@ -871,8 +892,7 @@ function SectionLabel({ children }) {
         fontSize: 11,
         fontWeight: 800,
         color: T.muted,
-        textTransform: 'uppercase',
-        letterSpacing: 1.6,
+        letterSpacing: 0.3,
         padding: '0 0 6px',
       }}
     >
@@ -1003,6 +1023,10 @@ export default function PdfCleanStudio({
   title = 'PDF Düzenleme Stüdyosu',
   fullScreen = false,
   onClose = null,
+  integrationBook = null,
+  integrationBooks = [],
+  integrationActivities = [],
+  onIntegratePages = null,
 }) {
   // ── Core state
   const [file, setFile] = useState(null);
@@ -1052,6 +1076,10 @@ export default function PdfCleanStudio({
   const [layerVisibility, setLayerVisibility] = useState({});
   const [pageJumpValue, setPageJumpValue] = useState('');
   const [cursorCoords, setCursorCoords] = useState(null);
+  const [integrationPages, setIntegrationPages] = useState({});
+  const [integrationPreview, setIntegrationPreview] = useState(null);
+  const [integrationBusy, setIntegrationBusy] = useState(false);
+  const [integrationBookId, setIntegrationBookId] = useState(integrationBook?.id || '');
 
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -1140,6 +1168,39 @@ export default function PdfCleanStudio({
       totalEdits: counts.totalEdits,
     };
   }, [bulkBusy, busy, pageWorkflowList]);
+  const availableIntegrationBooks = useMemo(() => {
+    const list = Array.isArray(integrationBooks) ? integrationBooks : [];
+    const merged = integrationBook?.id
+      ? [integrationBook, ...list.filter((book) => book?.id !== integrationBook.id)]
+      : list;
+    return merged.filter((book) => book?.id);
+  }, [integrationBook, integrationBooks]);
+  const resolvedIntegrationBook = useMemo(
+    () =>
+      availableIntegrationBooks.find((book) => book.id === integrationBookId) ||
+      integrationBook ||
+      availableIntegrationBooks[0] ||
+      null,
+    [availableIntegrationBooks, integrationBook, integrationBookId]
+  );
+  const canIntegrateToActivities =
+    !!resolvedIntegrationBook?.id && typeof onIntegratePages === 'function';
+  const integrationPageList = useMemo(() => {
+    const count = Math.max(numPages || 0, thumbnails.length || 0);
+    return Array.from({ length: count }, (_, index) => {
+      const pageNumber = index + 1;
+      const config = integrationPages[pageNumber] || {};
+      return {
+        pageNumber,
+        deleted: config.deleted === true,
+        include: config.deleted === true ? false : config.include !== false,
+        flow: config.flow === 'continue' ? 'continue' : 'new',
+      };
+    });
+  }, [integrationPages, numPages, thumbnails.length]);
+  const includedIntegrationCount = integrationPageList.filter((item) => item.include).length;
+  const currentIntegrationPage = integrationPageList.find((item) => item.pageNumber === currentPage);
+  const currentPageDeleted = currentIntegrationPage?.deleted === true;
 
   const currentSelection = useMemo(() => {
     if (selectedType === 'patch') return pagePatches.find((i) => i.id === selectedId) || null;
@@ -1637,7 +1698,167 @@ export default function PdfCleanStudio({
     }
   };
 
+  const updateIntegrationPage = (pageNumber, patch = {}) => {
+    setIntegrationPages((prev) => ({
+      ...prev,
+      [pageNumber]: {
+        include: prev[pageNumber]?.include !== false,
+        flow: prev[pageNumber]?.flow === 'continue' ? 'continue' : 'new',
+        deleted: prev[pageNumber]?.deleted === true,
+        ...patch,
+      },
+    }));
+    setIntegrationPreview(null);
+  };
+
+  const setAllIntegrationPages = (include) => {
+    const next = {};
+    for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
+      next[pageNumber] = { include, flow: 'new', deleted: false };
+    }
+    setIntegrationPages(next);
+    setIntegrationPreview(null);
+  };
+
+  const softDeleteCurrentPage = () => {
+    updateIntegrationPage(currentPage, { include: false, deleted: true });
+    setStatus(`Sayfa ${currentPage} silindi olarak işaretlendi; entegrasyona dahil edilmeyecek.`);
+  };
+
+  const restoreCurrentPage = () => {
+    updateIntegrationPage(currentPage, { include: true, deleted: false, flow: 'new' });
+    setStatus(`Sayfa ${currentPage} geri alındı ve entegrasyona dahil edildi.`);
+  };
+
+  const buildIntegrationPreview = async () => {
+    if (!pdfDoc || !file) {
+      setStatus('Önce PDF yükleyin.');
+      return null;
+    }
+    if (!canIntegrateToActivities) {
+      setStatus('Sisteme entegrasyon için hedef kitap seçin.');
+      return null;
+    }
+    const selectedPages = integrationPageList.filter((item) => item.include);
+    if (!selectedPages.length) {
+      setStatus('Entegrasyona dahil edilmiş sayfa yok.');
+      return null;
+    }
+    setIntegrationBusy(true);
+    setStatus('Entegrasyon önizlemesi hazırlanıyor...');
+    try {
+      const pages = [];
+      const oversized = [];
+      for (const item of selectedPages) {
+        const rawSvg = await buildPageSvgString(item.pageNumber);
+        const { svgContent, sanitizeReport } = sanitizeSvgForPdfIntegration(rawSvg || '');
+        const pageHash = hashPdfIntegrationContent(svgContent);
+        const pageSize = sanitizeReport.sanitizedBytes || svgContent.length;
+        if (pageSize > PDF_INTEGRATION_CONFIRM_BYTES) {
+          oversized.push({ pageNumber: item.pageNumber, pageSize });
+        }
+        pages.push({
+          bookId: resolvedIntegrationBook.id,
+          bookName: resolvedIntegrationBook.name,
+          fileName: file.name,
+          pageNumber: item.pageNumber,
+          originalPageNumber: item.pageNumber,
+          include: true,
+          flow: item.flow,
+          svgContent,
+          pageHash,
+          pdfPageId: buildPdfPageSourceId({
+            fileName: file.name,
+            pageNumber: item.pageNumber,
+            pageHash,
+          }),
+          sanitizeReport,
+          integratedAt: new Date().toISOString(),
+        });
+      }
+      if (oversized.length) {
+        const list = oversized
+          .map((item) => `Sayfa ${item.pageNumber}: ${(item.pageSize / 1024 / 1024).toFixed(1)} MB`)
+          .join('\n');
+        const ok = window.confirm(
+          `Bazı SVG arka planları 5 MB üzerinde.\n\n${list}\n\n` +
+            'Bu durum editor performansını etkileyebilir. Açık onayla devam edilsin mi?'
+        );
+        if (!ok) {
+          setStatus('5 MB üzeri SVG için entegrasyon iptal edildi.');
+          return null;
+        }
+      }
+      const excludedPages = integrationPageList
+        .filter((item) => !item.include)
+        .map((item) => ({
+          bookId: resolvedIntegrationBook.id,
+          bookName: resolvedIntegrationBook.name,
+          fileName: file.name,
+          pageNumber: item.pageNumber,
+          originalPageNumber: item.pageNumber,
+          include: false,
+          flow: item.flow,
+          deleted: item.deleted === true,
+        }));
+      const plan = buildPdfIntegrationPlan({
+        pages: [...pages, ...excludedPages],
+        activities: integrationActivities,
+        book: resolvedIntegrationBook,
+      });
+      setIntegrationPreview(plan);
+      setStatus(
+        `Önizleme hazır: ${plan.createCount} yeni, ${plan.duplicateCount} atlanacak, ${plan.excludedCount} hariç.`
+      );
+      return plan;
+    } catch (err) {
+      setStatus(err?.message || 'Entegrasyon önizlemesi hazırlanamadı.');
+      return null;
+    } finally {
+      setIntegrationBusy(false);
+    }
+  };
+
+  const integratePdfPages = async () => {
+    const plan = await buildIntegrationPreview();
+    if (!plan || !plan.createCount) {
+      if (plan) setStatus('Yeni oluşturulacak etkinlik yok.');
+      return;
+    }
+    const warningCount = plan.createEntries.filter(
+      (entry) => (entry.page?.sanitizeReport?.warnings || []).length > 0
+    ).length;
+    const ok = window.confirm(
+      `${resolvedIntegrationBook?.name || 'Kitap'} için ${plan.createCount} etkinlik oluşturulacak.\n` +
+        `${plan.duplicateCount} sayfa daha önce entegre edildiği için atlanacak.\n` +
+        `${plan.excludedCount} sayfa hariç tutulacak.\n` +
+        `${plan.continuationGroupCount} devam grubu kurulacak.` +
+        (warningCount ? `\n\n${warningCount} SVG için güvenlik/performans uyarısı var.` : '') +
+        '\n\nDevam edilsin mi?'
+    );
+    if (!ok) {
+      setStatus('Sisteme entegrasyon iptal edildi.');
+      return;
+    }
+    try {
+      const result = await onIntegratePages({ plan });
+      const createdCount = result?.createdCount ?? plan.createCount;
+      setStatus(`${createdCount} etkinlik sisteme entegre edildi.`);
+      setIntegrationPreview(null);
+    } catch (err) {
+      setStatus(err?.message || 'Sisteme entegrasyon tamamlanamadı.');
+    }
+  };
+
   // ── Effects
+  useEffect(() => {
+    if (integrationBook?.id) {
+      setIntegrationBookId(integrationBook.id);
+    } else if (!integrationBookId && availableIntegrationBooks[0]?.id) {
+      setIntegrationBookId(availableIntegrationBooks[0].id);
+    }
+  }, [availableIntegrationBooks, integrationBook, integrationBookId]);
+
   useEffect(() => {
     const node = containerRef.current;
     if (!node || typeof ResizeObserver === 'undefined') return;
@@ -1666,6 +1887,8 @@ export default function PdfCleanStudio({
       setSelectedId(null);
       setSelectedType(null);
       setActiveMaskId(null);
+      setIntegrationPages({});
+      setIntegrationPreview(null);
       resetHistory({}, {}, {});
       return;
     }
@@ -1690,6 +1913,15 @@ export default function PdfCleanStudio({
         setSelectedId(null);
         setSelectedType(null);
         setActiveMaskId(null);
+        setIntegrationPages(
+          Object.fromEntries(
+            Array.from({ length: pdf.numPages }, (_, index) => [
+              index + 1,
+              { include: true, flow: 'new', deleted: false },
+            ])
+          )
+        );
+        setIntegrationPreview(null);
         resetHistory({}, {}, {});
         setStatus(`"${file.name}" yüklendi. ${pdf.numPages} sayfa.`);
       } catch (err) {
@@ -2199,7 +2431,7 @@ export default function PdfCleanStudio({
               <div key={k} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <kbd
                   style={{
-                    background: 'rgba(255,255,255,.08)',
+                    background: '#e2e8f0',
                     border: `1px solid ${T.border}`,
                     borderRadius: 4,
                     padding: '2px 7px',
@@ -2234,7 +2466,7 @@ export default function PdfCleanStudio({
                 height: 24,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 5,
-                background: 'rgba(255,255,255,.06)',
+                background: 'rgba(15,23,42,.04)',
                 color: T.text,
                 fontSize: 11,
               }}
@@ -2273,7 +2505,7 @@ export default function PdfCleanStudio({
                 height: 24,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 5,
-                background: 'rgba(255,255,255,.06)',
+                background: 'rgba(15,23,42,.04)',
                 color: T.text,
                 fontSize: 11,
               }}
@@ -2339,7 +2571,7 @@ export default function PdfCleanStudio({
               color: T.muted,
               padding: '6px 8px',
               borderRadius: 6,
-              background: 'rgba(56,189,248,.08)',
+              background: 'rgba(37,99,235,.06)',
               border: `1px solid ${T.accentBorder}`,
             }}
           >
@@ -2441,7 +2673,7 @@ export default function PdfCleanStudio({
                 minHeight: 70,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 6,
-                background: 'rgba(255,255,255,.06)',
+                background: 'rgba(15,23,42,.04)',
                 color: T.text,
                 fontSize: 11,
                 padding: '6px 8px',
@@ -2467,7 +2699,7 @@ export default function PdfCleanStudio({
                 height: 24,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 5,
-                background: 'rgba(255,255,255,.06)',
+                background: 'rgba(15,23,42,.04)',
                 color: T.text,
                 fontSize: 11,
                 padding: '0 6px',
@@ -2641,6 +2873,258 @@ export default function PdfCleanStudio({
     </div>
   );
 
+  const renderIntegrationPanel = () => (
+    <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 10,
+          border: `1px solid ${canIntegrateToActivities ? '#bbf7d0' : '#fde68a'}`,
+          background: canIntegrateToActivities ? 'rgba(34,197,94,.08)' : '#fffbeb',
+          color: canIntegrateToActivities ? '#166534' : '#92400e',
+          fontSize: 12,
+          lineHeight: 1.5,
+          fontWeight: 800,
+        }}
+      >
+        {canIntegrateToActivities
+          ? `${resolvedIntegrationBook.name} kitabına etkinlik olarak entegre edilecek.`
+          : 'Entegrasyon için hedef kitap seçin.'}
+      </div>
+
+      {availableIntegrationBooks.length > 0 && (
+        <label style={{ display: 'grid', gap: 6, fontSize: 11, color: T.muted, fontWeight: 900 }}>
+          Hedef kitap
+          <select
+            value={resolvedIntegrationBook?.id || ''}
+            onChange={(event) => {
+              setIntegrationBookId(event.target.value);
+              setIntegrationPreview(null);
+            }}
+            style={{
+              height: 34,
+              borderRadius: 8,
+              border: `1px solid ${T.border}`,
+              background: '#ffffff',
+              color: T.text,
+              fontSize: 12,
+              fontWeight: 800,
+              padding: '0 10px',
+            }}
+          >
+            {availableIntegrationBooks.map((book) => (
+              <option key={book.id} value={book.id}>
+                {book.name || 'Kitap'}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setAllIntegrationPages(true)}
+          disabled={!numPages}
+          style={{ ...tbBtn(false, { small: true, disabled: !numPages }), justifyContent: 'center' }}
+        >
+          Tümünü dahil et
+        </button>
+        <button
+          type="button"
+          onClick={() => setAllIntegrationPages(false)}
+          disabled={!numPages}
+          style={{ ...tbBtn(false, { small: true, disabled: !numPages }), justifyContent: 'center' }}
+        >
+          Tümünü hariç tut
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        <SectionLabel>Sayfa Entegrasyonu</SectionLabel>
+        {integrationPageList.length ? (
+          integrationPageList.map((item) => (
+            <div
+              key={item.pageNumber}
+              style={{
+                display: 'grid',
+                gap: 7,
+                padding: 10,
+                borderRadius: 10,
+                border: `1px solid ${item.include ? '#bfdbfe' : T.border}`,
+                background: item.deleted ? '#fff1f2' : item.include ? '#eff6ff' : T.surfaceAlt,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <strong style={{ fontSize: 12, color: T.text }}>
+                  Sayfa {item.pageNumber}
+                  {item.deleted ? ' · Silindi' : ''}
+                </strong>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: T.muted }}>
+                  <input
+                    type="checkbox"
+                    checked={item.include}
+                    disabled={item.deleted}
+                    onChange={(event) =>
+                      updateIntegrationPage(item.pageNumber, { include: event.target.checked })
+                    }
+                  />
+                  Dahil et
+                </label>
+              </div>
+              <select
+                value={item.deleted ? 'deleted' : item.include ? item.flow : 'exclude'}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === 'deleted') {
+                    updateIntegrationPage(item.pageNumber, { include: false, deleted: true });
+                    return;
+                  }
+                  if (value === 'exclude') {
+                    updateIntegrationPage(item.pageNumber, { include: false, deleted: false });
+                    return;
+                  }
+                  updateIntegrationPage(item.pageNumber, { include: true, deleted: false, flow: value });
+                }}
+                style={{
+                  height: 32,
+                  borderRadius: 8,
+                  border: `1px solid ${T.border}`,
+                  background: '#ffffff',
+                  color: T.text,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  padding: '0 9px',
+                }}
+              >
+                <option value="new">Yeni etkinlik başlat</option>
+                <option value="continue">Önceki etkinliğin devamı</option>
+                <option value="exclude">Hariç tut</option>
+                <option value="deleted">Sayfayı sil</option>
+              </select>
+              {item.deleted ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateIntegrationPage(item.pageNumber, {
+                      include: true,
+                      deleted: false,
+                      flow: 'new',
+                    })
+                  }
+                  style={{ ...tbBtn(false, { small: true }), justifyContent: 'center' }}
+                >
+                  Geri al
+                </button>
+              ) : null}
+            </div>
+          ))
+        ) : (
+          <div style={{ fontSize: 12, color: T.muted }}>PDF yüklendiğinde sayfalar burada görünür.</div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        <button
+          type="button"
+          onClick={buildIntegrationPreview}
+          disabled={!file || integrationBusy || !canIntegrateToActivities}
+          style={{
+            ...tbBtn(false, {
+              small: true,
+              disabled: !file || integrationBusy || !canIntegrateToActivities,
+            }),
+            justifyContent: 'center',
+          }}
+        >
+          {integrationBusy ? 'Önizleme hazırlanıyor...' : 'Entegrasyon Önizlemesi'}
+        </button>
+        <button
+          type="button"
+          onClick={integratePdfPages}
+          disabled={!file || integrationBusy || !canIntegrateToActivities || !includedIntegrationCount}
+          style={{
+            ...tbBtn(false, {
+              small: true,
+              disabled:
+                !file || integrationBusy || !canIntegrateToActivities || !includedIntegrationCount,
+            }),
+            justifyContent: 'center',
+            background:
+              file && canIntegrateToActivities && includedIntegrationCount ? '#2563eb' : undefined,
+            color: file && canIntegrateToActivities && includedIntegrationCount ? '#ffffff' : undefined,
+          }}
+        >
+          Sisteme Entegre Et
+        </button>
+      </div>
+
+      {integrationPreview && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <SectionLabel>Önizleme</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[
+              { label: 'Oluşturulacak', value: integrationPreview.createCount },
+              { label: 'Atlanacak', value: integrationPreview.duplicateCount },
+              { label: 'Hariç', value: integrationPreview.excludedCount },
+              { label: 'Devam Grubu', value: integrationPreview.continuationGroupCount },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  padding: '9px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${T.border}`,
+                  background: '#ffffff',
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 900, color: T.text }}>{item.value}</div>
+                <div style={{ fontSize: 11, color: T.muted }}>{item.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {integrationPreview.entries.map((entry) => {
+              const warnings = entry.page?.sanitizeReport?.warnings || [];
+              return (
+                <div
+                  key={entry.planId}
+                  style={{
+                    padding: 9,
+                    borderRadius: 9,
+                    border: `1px solid ${entry.status === 'create' ? '#bfdbfe' : '#e5e7eb'}`,
+                    background: entry.status === 'create' ? '#eff6ff' : '#f8fafc',
+                    fontSize: 11,
+                    lineHeight: 1.45,
+                    color: T.text,
+                  }}
+                >
+                  <strong>Sayfa {entry.originalPageNumber}</strong>{' '}
+                  {entry.status === 'create'
+                    ? `→ ${entry.activityName}`
+                    : `→ ${entry.reason || 'Atlanacak'}`}
+                  {entry.hasBackButton ? <div>Base layer: Geri butonu</div> : null}
+                  {entry.hasForwardButton ? <div>Correct layer: İleri butonu</div> : null}
+                  {warnings.length ? (
+                    <div style={{ color: '#b45309', fontWeight: 800 }}>
+                      Uyarı: {warnings.join(' ')}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
+        SVG {(PDF_INTEGRATION_WARN_BYTES / 1024 / 1024).toFixed(0)} MB üstünde uyarılır,{' '}
+        {(PDF_INTEGRATION_CONFIRM_BYTES / 1024 / 1024).toFixed(0)} MB üstünde açık onay
+        istenir. Duplicate kontrolü V0’da sanitize edilmiş SVG hash’iyle çalışır.
+      </div>
+    </div>
+  );
+
   // ── Main canvas area
   const renderCanvas = () => (
     <div
@@ -2651,9 +3135,10 @@ export default function PdfCleanStudio({
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
-        background: 'radial-gradient(ellipse at center, #0d1a2f 0%, #07101c 100%)',
+        background:
+          'radial-gradient(circle at 50% 15%,rgba(56,189,248,.10),transparent 28%), linear-gradient(180deg,#111c2d 0%,#0b1422 100%)',
         overflow: 'auto',
-        padding: 24,
+        padding: 28,
       }}
     >
       {!file ? (
@@ -2666,6 +3151,11 @@ export default function PdfCleanStudio({
             textAlign: 'center',
             color: T.muted,
             userSelect: 'none',
+            background: 'rgba(255,255,255,.96)',
+            border: `1px solid ${T.borderHi}`,
+            borderRadius: 18,
+            padding: '34px 42px',
+            boxShadow: '0 24px 52px rgba(2,6,23,.24)',
           }}
         >
           <div
@@ -2720,8 +3210,10 @@ export default function PdfCleanStudio({
             height: pageViewport.height,
             flex: '0 0 auto',
             background: '#ffffff',
-            borderRadius: 12,
-            boxShadow: '0 32px 64px rgba(0,0,0,.54)',
+            border: '1px solid rgba(226,232,240,.92)',
+            borderRadius: 10,
+            boxShadow:
+              '0 34px 70px rgba(2,6,23,.38), 0 0 0 1px rgba(255,255,255,.08)',
             overflow: 'hidden',
           }}
         >
@@ -2746,7 +3238,7 @@ export default function PdfCleanStudio({
                   left: g.x !== undefined ? `${g.x / 10}%` : 0,
                   width: g.x !== undefined ? 1 : '100%',
                   height: g.y !== undefined ? 1 : '100%',
-                  background: 'rgba(56,189,248,.5)',
+                  background: 'rgba(37,99,235,.35)',
                   zIndex: 100,
                   pointerEvents: 'none',
                 }}
@@ -2864,7 +3356,7 @@ export default function PdfCleanStudio({
                         transformOrigin: 'center',
                         zIndex: (patch.zIndex || 0) + 30,
                         cursor: 'move',
-                        outline: active ? '2px solid rgba(56,189,248,.78)' : 'none',
+                        outline: active ? '2px solid rgba(37,99,235,.6)' : 'none',
                         outlineOffset: 0,
                       }}
                     >
@@ -2981,8 +3473,8 @@ export default function PdfCleanStudio({
                       cursor: editing ? 'text' : 'move',
                       zIndex: (el.zIndex || 0) + 50,
                       outline: active
-                        ? '2px solid rgba(56,189,248,.7)'
-                        : '1px solid rgba(255,255,255,.5)',
+                        ? '2px solid rgba(37,99,235,.5)'
+                        : '1px solid rgba(148,163,184,.5)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent:
@@ -3083,7 +3575,7 @@ export default function PdfCleanStudio({
                   width: `${boxWidth(draftRect) / 10}%`,
                   height: `${boxHeight(draftRect) / 10}%`,
                   border: `2px solid ${mode === 'patch' ? T.accent : '#7dd3fc'}`,
-                  background: mode === 'patch' ? 'rgba(56,189,248,.12)' : 'rgba(125,211,252,.12)',
+                  background: mode === 'patch' ? 'rgba(37,99,235,.08)' : 'rgba(96,165,250,.1)',
                   zIndex: 90,
                   pointerEvents: 'none',
                 }}
@@ -3143,7 +3635,7 @@ export default function PdfCleanStudio({
       );
 
     return (
-      <div style={{ display: 'grid', gap: 5, padding: 10 }}>
+      <div style={{ display: 'grid', gap: 7, padding: 12 }}>
         {allItems.map((item, idx) => {
           const { icon, color } = iconTypeLabel(item);
           const vis = visible(item.id);
@@ -3154,15 +3646,32 @@ export default function PdfCleanStudio({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
-                padding: '7px 10px',
-                borderRadius: 8,
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 10,
                 border: active ? `1px solid ${T.accentBorder}` : `1px solid ${T.border}`,
-                background: active ? T.accentBg : T.surfaceAlt,
+                background: active ? 'linear-gradient(180deg,#ffffff 0%,#eff6ff 100%)' : '#ffffff',
                 opacity: vis ? 1 : 0.45,
+                boxShadow: active ? '0 8px 18px rgba(37,99,235,.10)' : '0 4px 10px rgba(15,23,42,.04)',
               }}
             >
-              <span style={{ fontSize: 13, color, minWidth: 18, textAlign: 'center' }}>{icon}</span>
+              <span
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 8,
+                  background: `${color}14`,
+                  color,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  flexShrink: 0,
+                }}
+              >
+                {icon}
+              </span>
               <button
                 onClick={() => selectItem(item)}
                 style={{
@@ -3171,13 +3680,14 @@ export default function PdfCleanStudio({
                   border: 'none',
                   color: T.text,
                   fontSize: 11,
-                  fontWeight: active ? 700 : 500,
+                  fontWeight: active ? 850 : 700,
                   cursor: 'pointer',
                   textAlign: 'left',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   padding: 0,
+                  lineHeight: 1.25,
                 }}
               >
                 {idx + 1}.{' '}
@@ -3193,12 +3703,15 @@ export default function PdfCleanStudio({
               <button
                 onClick={() => toggleVis(item.id)}
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  width: 26,
+                  height: 26,
+                  borderRadius: 8,
+                  background: vis ? '#f8fafc' : '#ffffff',
+                  border: `1px solid ${T.border}`,
                   color: vis ? T.muted : T.border,
                   cursor: 'pointer',
                   fontSize: 12,
-                  padding: '0 3px',
+                  padding: 0,
                 }}
                 title="Görünürlük"
               >
@@ -3207,12 +3720,15 @@ export default function PdfCleanStudio({
               <button
                 onClick={() => deleteItem(item)}
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  width: 26,
+                  height: 26,
+                  borderRadius: 8,
+                  background: '#fff7f7',
+                  border: '1px solid #fecaca',
                   color: T.danger,
                   cursor: 'pointer',
                   fontSize: 12,
-                  padding: '0 3px',
+                  padding: 0,
                 }}
                 title="Sil"
               >
@@ -3232,7 +3748,7 @@ export default function PdfCleanStudio({
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'rgba(0,0,0,.7)',
+        background: 'rgba(15,23,42,.45)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -3241,12 +3757,12 @@ export default function PdfCleanStudio({
     >
       <div
         style={{
-          background: '#0f1d34',
+          background: '#ffffff',
           border: `1px solid ${T.borderHi}`,
           borderRadius: 20,
           padding: 28,
           minWidth: 340,
-          boxShadow: '0 24px 64px rgba(0,0,0,.6)',
+          boxShadow: '0 24px 64px rgba(15,23,42,.4)',
           color: T.text,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -3269,7 +3785,7 @@ export default function PdfCleanStudio({
             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <kbd
                 style={{
-                  background: 'rgba(255,255,255,.08)',
+                  background: '#e2e8f0',
                   border: `1px solid ${T.borderHi}`,
                   borderRadius: 5,
                   padding: '3px 9px',
@@ -3294,7 +3810,7 @@ export default function PdfCleanStudio({
             height: 36,
             borderRadius: 8,
             border: `1px solid ${T.border}`,
-            background: 'rgba(255,255,255,.06)',
+            background: 'rgba(15,23,42,.04)',
             color: T.text,
             cursor: 'pointer',
             fontSize: 11,
@@ -3339,8 +3855,8 @@ export default function PdfCleanStudio({
             position: 'absolute',
             inset: 0,
             zIndex: 9000,
-            background: 'rgba(56,189,248,.18)',
-            border: '3px dashed rgba(56,189,248,.6)',
+            background: 'rgba(37,99,235,.12)',
+            border: '3px dashed rgba(37,99,235,.45)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -3358,31 +3874,31 @@ export default function PdfCleanStudio({
       {/* ── Header ── */}
       <div
         style={{
-          height: 48,
+          height: 52,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          padding: '0 14px',
+          padding: '0 14px 0 12px',
           borderBottom: `1px solid ${T.border}`,
-          background: 'linear-gradient(180deg,rgba(13,21,37,.97),rgba(8,14,28,.99))',
+          background: 'linear-gradient(180deg,#ffffff 0%,#f6f9fd 100%)',
           gap: 12,
-          boxShadow: '0 1px 6px rgba(0,0,0,.3)',
+          boxShadow: '0 1px 0 rgba(255,255,255,.9), 0 8px 22px rgba(15,23,42,.08)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              background: 'linear-gradient(135deg,#1565c0,#38bdf8)',
+              width: 34,
+              height: 34,
+              borderRadius: 11,
+              background: 'linear-gradient(135deg,#2563eb 0%,#38bdf8 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 16,
               fontWeight: 900,
               color: '#fff',
-              boxShadow: '0 2px 8px rgba(56,189,248,.25)',
+              boxShadow: '0 8px 18px rgba(37,99,235,.22), inset 0 1px 0 rgba(255,255,255,.38)',
             }}
           >
             P
@@ -3391,7 +3907,9 @@ export default function PdfCleanStudio({
             <div style={{ fontSize: 12, fontWeight: 800, color: T.text, lineHeight: 1 }}>
               PDF Düzenleme Stüdyosu
             </div>
-            <div style={{ fontSize: 11, color: T.muted, letterSpacing: 0.4 }}>E-İçerik Editörü</div>
+            <div style={{ fontSize: 11, color: T.muted, letterSpacing: 0.2 }}>
+              E-İçerik Studio
+            </div>
           </div>
         </div>
         <div style={{ width: 1, height: 28, background: T.border, flexShrink: 0 }} />
@@ -3401,7 +3919,7 @@ export default function PdfCleanStudio({
               <span
                 style={{
                   fontSize: 11,
-                  fontWeight: 700,
+                  fontWeight: 800,
                   color: T.accent,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -3410,7 +3928,18 @@ export default function PdfCleanStudio({
               >
                 📄 {file.name}
               </span>
-              <span style={{ fontSize: 11, color: T.muted, whiteSpace: 'nowrap' }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: T.muted,
+                  whiteSpace: 'nowrap',
+                  padding: '3px 8px',
+                  borderRadius: 999,
+                  border: `1px solid ${T.border}`,
+                  background: '#ffffff',
+                  fontWeight: 700,
+                }}
+              >
                 {numPages} sayfa
               </span>
               {busy && <span style={{ fontSize: 11, color: T.warn }}>⟳ İşleniyor...</span>}
@@ -3452,16 +3981,16 @@ export default function PdfCleanStudio({
       {/* ── Toolbar ── */}
       <div
         style={{
-          height: 42,
+          height: 44,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           padding: '0 10px',
           borderBottom: `1px solid ${T.border}`,
-          background: 'linear-gradient(180deg, rgba(8,14,28,.94), rgba(7,12,22,.97))',
+          background: T.shellSoft,
           gap: 4,
           overflowX: 'auto',
-          boxShadow: '0 1px 4px rgba(0,0,0,.15)',
+          boxShadow: '0 1px 0 rgba(255,255,255,.8)',
         }}
       >
         <div
@@ -3613,7 +4142,7 @@ export default function PdfCleanStudio({
                   textAlign: 'center',
                   border: `1px solid ${T.borderHi}`,
                   borderRadius: 5,
-                  background: 'rgba(255,255,255,.07)',
+                  background: 'rgba(15,23,42,.06)',
                   color: T.text,
                   fontSize: 11,
                 }}
@@ -3631,83 +4160,13 @@ export default function PdfCleanStudio({
         )}
       </div>
 
-      {file && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: '8px 12px',
-            borderBottom: `1px solid ${T.border}`,
-            background: 'linear-gradient(180deg, rgba(9,16,30,.92), rgba(7,12,22,.96))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div
-            style={{
-              minWidth: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              flex: '1 1 280px',
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  color: T.accent,
-                  textTransform: 'uppercase',
-                  letterSpacing: 1.1,
-                }}
-              >
-                Workflow
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginTop: 2 }}>
-                Belge hazırlık özeti
-              </div>
-            </div>
-            <WorkflowBadge meta={documentWorkflow.statusMeta} />
-            <WorkflowBadge
-              meta={currentPageWorkflow.statusMeta}
-              compact
-              label={`Sayfa ${currentPage}`}
-            />
-            <span style={WORKFLOW_PILL_STYLE}>Ort. kalite %{documentWorkflow.averageQuality}</span>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: 6,
-              flexWrap: 'wrap',
-              flex: '999 1 420px',
-            }}
-          >
-            <span style={WORKFLOW_PILL_STYLE}>{documentWorkflow.readyPages} hazır</span>
-            {documentWorkflow.reviewPages > 0 && (
-              <span style={WORKFLOW_PILL_STYLE}>{documentWorkflow.reviewPages} kontrol</span>
-            )}
-            {documentWorkflow.draftPages > 0 && (
-              <span style={WORKFLOW_PILL_STYLE}>{documentWorkflow.draftPages} taslak</span>
-            )}
-            <span style={WORKFLOW_PILL_STYLE}>{documentWorkflow.totalEdits} düzenleme</span>
-          </div>
-        </div>
-      )}
-
       {/* ── Settings Panel ── */}
       {showSettings && (
         <div
           style={{
             flexShrink: 0,
             borderBottom: `1px solid ${T.border}`,
-            background: 'rgba(8,14,28,.92)',
+            background: '#f1f5f9',
             padding: '14px 16px',
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))',
@@ -3848,11 +4307,11 @@ export default function PdfCleanStudio({
       >
         <div
           style={{
-            width: isSidebarOpen ? 168 : 0,
+            width: isSidebarOpen ? PDF_PAGE_SIDEBAR_WIDTH : 0,
             flexShrink: 0,
             overflow: 'hidden',
             borderRight: isSidebarOpen ? `1px solid ${T.border}` : 'none',
-            background: 'linear-gradient(180deg, rgba(8,14,28,.95), rgba(6,10,20,.98))',
+            background: '#f7f9fc',
             transition: 'width .22s cubic-bezier(.4,0,.2,1)',
             display: 'flex',
             flexDirection: 'column',
@@ -3860,51 +4319,54 @@ export default function PdfCleanStudio({
         >
           <div
             style={{
-              padding: '10px 12px 8px',
-              borderBottom: `1px solid ${T.border}`,
+              padding: '12px 12px 10px',
+              borderBottom: `1px solid ${T.borderHi}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              gap: 8,
               flexShrink: 0,
+              background: '#ffffff',
             }}
           >
             <span
               style={{
-                fontSize: 11,
-                fontWeight: 800,
-                color: T.muted,
-                textTransform: 'uppercase',
-                letterSpacing: 1.2,
+                fontSize: 12.5,
+                fontWeight: 950,
+                color: T.text,
+                letterSpacing: 0.2,
               }}
             >
               SAYFALAR ({numPages || 0})
             </span>
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {documentWorkflow.readyPages > 0 && (
                 <span
                   style={{
-                    fontSize: 11,
-                    fontWeight: 700,
+                    fontSize: 10,
+                    fontWeight: 850,
                     color: T.success,
-                    background: 'rgba(74,222,128,.12)',
-                    border: '1px solid rgba(74,222,128,.2)',
-                    borderRadius: 9,
-                    padding: '2px 6px',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: 999,
+                    padding: '3px 7px',
+                    lineHeight: 1,
                   }}
                 >
-                  {documentWorkflow.readyPages}/{documentWorkflow.pageCount || numPages} hazır
+                  {documentWorkflow.readyPages} hazır
                 </span>
               )}
               {documentWorkflow.reviewPages > 0 && (
                 <span
                   style={{
-                    fontSize: 11,
-                    fontWeight: 700,
+                    fontSize: 10,
+                    fontWeight: 850,
                     color: T.warn,
-                    background: 'rgba(251,191,36,.12)',
-                    border: '1px solid rgba(251,191,36,.2)',
-                    borderRadius: 9,
-                    padding: '2px 6px',
+                    background: '#fefce8',
+                    border: '1px solid #fde68a',
+                    borderRadius: 999,
+                    padding: '3px 7px',
+                    lineHeight: 1,
                   }}
                 >
                   {documentWorkflow.reviewPages} kontrol
@@ -3912,7 +4374,14 @@ export default function PdfCleanStudio({
               )}
             </div>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '6px 8px 10px' }}>
+          <div
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              padding: 12,
+            }}
+          >
             {thumbnails.map((thumb) => {
               const active = thumb.pageNumber === currentPage;
               const pageWorkflow =
@@ -3939,16 +4408,20 @@ export default function PdfCleanStudio({
                   style={{
                     width: '100%',
                     position: 'relative',
-                    border: active ? `2px solid ${T.accent}` : `1px solid ${statusMeta.border}`,
-                    borderRadius: 10,
-                    background: active ? 'rgba(56,189,248,.1)' : 'rgba(255,255,255,.02)',
-                    padding: 5,
+                    border: active ? `1px solid ${T.accent}` : `1px solid ${statusMeta.border}`,
+                    borderRadius: 8,
+                    background: active
+                      ? 'linear-gradient(180deg,#ffffff 0%,#eef5ff 100%)'
+                      : '#ffffff',
+                    padding: 7,
                     cursor: 'pointer',
                     textAlign: 'left',
-                    marginBottom: 6,
+                    marginBottom: 8,
                     display: 'block',
-                    transition: 'border-color .15s, background .15s',
-                    boxShadow: active ? '0 10px 18px rgba(14,165,233,.12)' : 'none',
+                    transition: 'border-color .15s, background .15s, box-shadow .15s',
+                    boxShadow: active
+                      ? '0 0 0 2px rgba(37,99,235,.16), 0 8px 18px rgba(37,99,235,.10)'
+                      : '0 1px 2px rgba(15,23,42,.04)',
                   }}
                 >
                   <div
@@ -3956,17 +4429,21 @@ export default function PdfCleanStudio({
                       position: 'absolute',
                       inset: '0 auto 0 0',
                       width: 3,
-                      borderRadius: '10px 0 0 10px',
+                      borderRadius: '8px 0 0 8px',
                       background: statusMeta.color,
                     }}
                   />
                   <div
                     style={{
-                      borderRadius: 5,
+                      height: 132,
+                      borderRadius: 7,
                       overflow: 'hidden',
-                      aspectRatio: '3/4',
-                      background: '#020617',
+                      background: '#f8fafc',
+                      border: `1px solid ${active ? '#bfdbfe' : T.borderHi}`,
                       position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
                     <img
@@ -3975,29 +4452,49 @@ export default function PdfCleanStudio({
                       style={{
                         width: '100%',
                         height: '100%',
-                        objectFit: 'cover',
+                        objectFit: 'contain',
                         display: 'block',
                       }}
                     />
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: 8,
+                        top: 8,
+                        minWidth: 22,
+                        height: 22,
+                        borderRadius: 999,
+                        background: active ? T.accent : 'rgba(15,23,42,.72)',
+                        color: '#ffffff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 11,
+                        fontWeight: 900,
+                        boxShadow: '0 6px 12px rgba(15,23,42,.18)',
+                      }}
+                    >
+                      {thumb.pageNumber}
+                    </span>
                     {active && (
                       <div
                         style={{
                           position: 'absolute',
-                          inset: 0,
-                          border: '2px solid rgba(56,189,248,.5)',
-                          borderRadius: 5,
-                          pointerEvents: 'none',
-                        }}
-                      />
+                        inset: 0,
+                        border: '2px solid rgba(37,99,235,.38)',
+                        borderRadius: 7,
+                        pointerEvents: 'none',
+                      }}
+                    />
                     )}
                   </div>
                   <div
                     style={{
-                      marginTop: 4,
+                      marginTop: 8,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      gap: 4,
+                      gap: 6,
                     }}
                   >
                     <span
@@ -4014,77 +4511,99 @@ export default function PdfCleanStudio({
                   </div>
                   <div
                     style={{
-                      marginTop: 4,
-                      display: 'flex',
+                      marginTop: 8,
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0,1fr) auto',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 4,
+                      gap: 8,
                     }}
                   >
-                    <span
+                    <div
                       style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: T.text,
-                        background: 'rgba(255,255,255,.05)',
-                        border: `1px solid ${T.border}`,
+                        height: 8,
                         borderRadius: 999,
-                        padding: '2px 6px',
-                        lineHeight: 1,
+                        background: '#e2e8f0',
+                        overflow: 'hidden',
                       }}
                     >
+                      <div
+                        style={{
+                          width: `${pageWorkflow.quality}%`,
+                          height: '100%',
+                          borderRadius: 999,
+                          background:
+                            pageWorkflow.quality >= 100
+                              ? 'linear-gradient(90deg,#22c55e,#16a34a)'
+                              : pageWorkflow.quality >= 67
+                                ? 'linear-gradient(90deg,#f59e0b,#d97706)'
+                                : 'linear-gradient(90deg,#94a3b8,#64748b)',
+                        }}
+                      />
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: T.text }}>
                       %{pageWorkflow.quality}
                     </span>
-                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 7,
+                      display: 'flex',
+                      gap: 4,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
                       {maskCount > 0 && (
                         <span
                           style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'rgba(74,222,128,.15)',
-                            color: '#4ade80',
-                            borderRadius: 3,
-                            padding: '1px 3px',
+                            fontSize: 10,
+                            fontWeight: 850,
+                            background: '#dcfce7',
+                            color: '#16a34a',
+                            border: '1px solid #bbf7d0',
+                            borderRadius: 999,
+                            padding: '3px 6px',
                             lineHeight: 1,
                           }}
                           title={`${maskCount} silgi`}
                         >
-                          E
+                          Silgi {maskCount}
                         </span>
                       )}
                       {patchCount > 0 && (
                         <span
                           style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'rgba(56,189,248,.15)',
-                            color: '#38bdf8',
-                            borderRadius: 3,
-                            padding: '1px 3px',
+                            fontSize: 10,
+                            fontWeight: 850,
+                            background: '#e0f2fe',
+                            color: '#0284c7',
+                            border: '1px solid #bae6fd',
+                            borderRadius: 999,
+                            padding: '3px 6px',
                             lineHeight: 1,
                           }}
                           title={`${patchCount} patch`}
                         >
-                          P
+                          Patch {patchCount}
                         </span>
                       )}
                       {textCount > 0 && (
                         <span
                           style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: 'rgba(167,139,250,.15)',
-                            color: '#a78bfa',
-                            borderRadius: 3,
-                            padding: '1px 3px',
+                            fontSize: 10,
+                            fontWeight: 850,
+                            background: '#ede9fe',
+                            color: '#7c3aed',
+                            border: '1px solid #ddd6fe',
+                            borderRadius: 999,
+                            padding: '3px 6px',
                             lineHeight: 1,
                           }}
                           title={`${textCount} metin`}
                         >
-                          T
+                          Metin {textCount}
                         </span>
                       )}
-                    </div>
                   </div>
                 </button>
               );
@@ -4096,7 +4615,7 @@ export default function PdfCleanStudio({
           onClick={() => setIsSidebarOpen((v) => !v)}
           style={{
             position: 'absolute',
-            left: isSidebarOpen ? 168 : 0,
+            left: isSidebarOpen ? PDF_PAGE_SIDEBAR_WIDTH : 0,
             top: '50%',
             transform: 'translateY(-50%)',
             zIndex: 40,
@@ -4104,8 +4623,8 @@ export default function PdfCleanStudio({
             height: 52,
             border: `1px solid ${T.border}`,
             borderLeft: 'none',
-            borderRadius: '0 8px 8px 0',
-            background: 'linear-gradient(180deg, rgba(13,21,37,.95), rgba(8,14,28,.98))',
+            borderRadius: '0 10px 10px 0',
+            background: '#ffffff',
             color: T.muted,
             cursor: 'pointer',
             display: 'flex',
@@ -4114,7 +4633,7 @@ export default function PdfCleanStudio({
             fontSize: 11,
             fontWeight: 700,
             transition: 'left .22s cubic-bezier(.4,0,.2,1)',
-            boxShadow: '2px 0 8px rgba(0,0,0,.3)',
+            boxShadow: '2px 0 10px rgba(15,23,42,.12)',
           }}
         >
           {isSidebarOpen ? '‹' : '›'}
@@ -4134,7 +4653,7 @@ export default function PdfCleanStudio({
               height: 30,
               flexShrink: 0,
               borderTop: `1px solid ${T.border}`,
-              background: 'linear-gradient(180deg, rgba(8,14,28,.9), rgba(6,10,20,.95))',
+              background: '#f1f5f9',
               display: 'flex',
               alignItems: 'center',
               padding: '0 14px',
@@ -4178,12 +4697,12 @@ export default function PdfCleanStudio({
 
         <div
           style={{
-            width: 280,
+            width: PDF_RIGHT_PANEL_WIDTH,
             flexShrink: 0,
             borderLeft: `1px solid ${T.border}`,
             display: 'flex',
             flexDirection: 'column',
-            background: 'linear-gradient(180deg, rgba(8,14,28,.96), rgba(7,12,22,.98))',
+            background: '#ffffff',
             minHeight: 0,
           }}
         >
@@ -4192,12 +4711,13 @@ export default function PdfCleanStudio({
               display: 'flex',
               borderBottom: `1px solid ${T.border}`,
               flexShrink: 0,
-              background: 'rgba(0,0,0,.15)',
+              background: T.shellSoft,
             }}
           >
             {[
               ['katmanlar', 'Katmanlar'],
               ['ozellikler', 'Özellikler'],
+              ['entegre', 'Entegrasyon'],
               ['aktar', 'Dışa Aktar'],
             ].map(([id, label]) => (
               <button
@@ -4205,13 +4725,13 @@ export default function PdfCleanStudio({
                 onClick={() => setRightTab(id)}
                 style={{
                   flex: 1,
-                  height: 38,
+                  height: 40,
                   border: 'none',
                   borderBottom: `2px solid ${rightTab === id ? T.accent : 'transparent'}`,
-                  background: rightTab === id ? T.accentBg : 'transparent',
+                  background: rightTab === id ? '#ffffff' : 'transparent',
                   color: rightTab === id ? T.accent : T.muted,
                   fontSize: 11,
-                  fontWeight: rightTab === id ? 800 : 600,
+                  fontWeight: rightTab === id ? 900 : 700,
                   cursor: 'pointer',
                   letterSpacing: rightTab === id ? 0.3 : 0,
                   transition: 'all .15s',
@@ -4246,8 +4766,7 @@ export default function PdfCleanStudio({
                           fontSize: 11,
                           fontWeight: 800,
                           color: T.muted,
-                          textTransform: 'uppercase',
-                          letterSpacing: 1.1,
+                          letterSpacing: 0.3,
                         }}
                       >
                         Sayfa Akışı
@@ -4301,9 +4820,9 @@ export default function PdfCleanStudio({
                           gap: 5,
                           padding: '4px 8px',
                           borderRadius: 999,
-                          border: `1px solid ${check.ok ? 'rgba(74,222,128,.24)' : 'rgba(251,191,36,.24)'}`,
-                          background: check.ok ? 'rgba(34,197,94,.10)' : 'rgba(251,191,36,.10)',
-                          color: check.ok ? '#86efac' : '#fde68a',
+                          border: `1px solid ${check.ok ? '#bbf7d0' : '#fde68a'}`,
+                          background: check.ok ? 'rgba(34,197,94,.10)' : '#fefce8',
+                          color: check.ok ? '#16a34a' : '#d97706',
                           fontSize: 11,
                           fontWeight: 800,
                         }}
@@ -4344,10 +4863,35 @@ export default function PdfCleanStudio({
                     🗑 Sayfayı Temizle
                   </button>
                 </div>
+                <div
+                  style={{
+                    padding: '0 10px 8px',
+                    borderBottom: `1px solid ${T.border}`,
+                    display: 'flex',
+                    gap: 5,
+                  }}
+                >
+                  <button
+                    onClick={currentPageDeleted ? restoreCurrentPage : softDeleteCurrentPage}
+                    disabled={!file}
+                    style={{
+                      ...tbBtn(false, {
+                        small: true,
+                        disabled: !file,
+                        danger: !currentPageDeleted,
+                      }),
+                      flex: 1,
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {currentPageDeleted ? 'Sayfayı Geri Al' : 'Sayfayı Sil'}
+                  </button>
+                </div>
                 {renderLayers()}
               </div>
             )}
             {rightTab === 'ozellikler' && renderInspector()}
+            {rightTab === 'entegre' && renderIntegrationPanel()}
             {rightTab === 'aktar' && renderExportPanel()}
           </div>
           {pageSummary && rightTab === 'katmanlar' && (
@@ -4359,8 +4903,7 @@ export default function PdfCleanStudio({
                   fontSize: 11,
                   fontWeight: 800,
                   color: T.muted,
-                  textTransform: 'uppercase',
-                  letterSpacing: 1.2,
+                  letterSpacing: 0.3,
                   marginBottom: 5,
                 }}
               >
@@ -4390,7 +4933,7 @@ export default function PdfCleanStudio({
             left: 0,
             right: 0,
             height: 3,
-            background: 'rgba(255,255,255,.08)',
+            background: '#e2e8f0',
           }}
         >
           <div

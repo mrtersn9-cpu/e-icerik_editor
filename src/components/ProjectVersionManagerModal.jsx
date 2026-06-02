@@ -59,7 +59,7 @@ export default function ProjectVersionManagerModal({
   const totalBooks = Array.isArray(books) ? books.length : 0;
 
   return (
-    <Modal title="Proje ve Surumler" onClose={onClose} width={1100}>
+    <Modal title="Proje ve Sürümler" onClose={onClose} width={1100}>
       <div
         style={{
           display: 'grid',
@@ -105,7 +105,7 @@ export default function ProjectVersionManagerModal({
                       : EDITOR_THEME.lightBorder,
                   }}
                 >
-                  {currentProject?.publishedVersionId ? 'Yayinda' : 'Yayinda degil'}
+                  {currentProject?.publishedVersionId ? 'Yayında' : 'Yayında değil'}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: '#64748b' }}>
@@ -132,7 +132,7 @@ export default function ProjectVersionManagerModal({
               )}
               {!dbReady && (
                 <div style={{ fontSize: 11, color: '#b45309' }}>
-                  Veritabanı baglantisi yoksa surumleme ozellikleri pasif kalir.
+                  Veritabanı bağlantısı yoksa sürümleme özellikleri pasif kalır.
                 </div>
               )}
             </div>
@@ -144,28 +144,28 @@ export default function ProjectVersionManagerModal({
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
                 <Inp
-                  label="Bos Proje Adi"
+                  label="Boş Proje Adı"
                   value={newProjectName}
                   onChange={(e) => onNewProjectNameChange(e.target.value)}
                   placeholder="Yeni proje..."
                 />
               </div>
               <Btn onClick={onCreateProject} color="#7C4DFF" disabled={!dbReady}>
-                Olustur
+                Oluştur
               </Btn>
             </div>
           </div>
 
           {/* Version create */}
           <div style={modalCard}>
-            <div style={{ ...sectionTitle, color: '#15803d' }}>Surum Olustur</div>
+            <div style={{ ...sectionTitle, color: '#15803d' }}>Sürüm Oluştur</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
                 <Inp
                   label="Etiket"
                   value={versionLabel}
                   onChange={(e) => onVersionLabelChange(e.target.value)}
-                  placeholder="Orn. Beta 1 / Nisan Guncellemesi"
+                  placeholder="Örn. Beta 1 / Nisan Güncellemesi"
                 />
               </div>
               <Btn
@@ -173,14 +173,14 @@ export default function ProjectVersionManagerModal({
                 color="#4CAF50"
                 disabled={!dbReady || !currentProject}
               >
-                Surum Al
+                Sürüm Al
               </Btn>
               <Btn
                 onClick={() => onCreateVersion(true)}
                 color="#FF9800"
                 disabled={!dbReady || !currentProject}
               >
-                Yayinla
+                Yayınla
               </Btn>
             </div>
           </div>
@@ -197,10 +197,10 @@ export default function ProjectVersionManagerModal({
                 flexWrap: 'wrap',
               }}
             >
-              <div style={sectionTitle}>Surum Gecmisi</div>
+              <div style={sectionTitle}>Sürüm Geçmişi</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span style={statPill}>{versions.length} surum</span>
-                <span style={statPill}>{publishedCount} yayin</span>
+                <span style={statPill}>{versions.length} sürüm</span>
+                <span style={statPill}>{publishedCount} yayın</span>
               </div>
             </div>
             <div
@@ -254,7 +254,7 @@ export default function ProjectVersionManagerModal({
                                 border: '1px solid #fcd34d',
                               }}
                             >
-                              Yayinda
+                              Yayında
                             </span>
                           )}
                         </div>
@@ -287,7 +287,7 @@ export default function ProjectVersionManagerModal({
                             small
                             disabled={!dbReady}
                           >
-                            Yayinla
+                            Yayınla
                           </Btn>
                         )}
                         <Btn
@@ -313,7 +313,7 @@ export default function ProjectVersionManagerModal({
                     borderRadius: 14,
                   }}
                 >
-                  Henuz surum alinmadi.
+                  Henüz sürüm alınmadı.
                 </div>
               )}
             </div>
@@ -402,7 +402,7 @@ export default function ProjectVersionManagerModal({
                         </div>
                         {project.publishedVersionId && (
                           <div style={{ fontSize: 11, color: '#15803d', marginTop: 2 }}>
-                            Yayinda surumu var
+                            Yayında sürümü var
                           </div>
                         )}
                       </div>
@@ -457,7 +457,7 @@ export default function ProjectVersionManagerModal({
                   borderRadius: 14,
                 }}
               >
-                Henuz proje yok.
+                Henüz proje yok.
               </div>
             )}
           </div>

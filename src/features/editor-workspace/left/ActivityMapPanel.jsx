@@ -53,16 +53,6 @@ function RailButton({ active, item, onClick }) {
   );
 }
 
-function isTextEditingTarget(target) {
-  const tagName = String(target?.tagName || '').toLowerCase();
-  return (
-    tagName === 'input' ||
-    tagName === 'textarea' ||
-    tagName === 'select' ||
-    target?.isContentEditable
-  );
-}
-
 function normalizeLayers(activity = {}) {
   const layers =
     Array.isArray(activity.layers) && activity.layers.length
@@ -149,7 +139,7 @@ function DeleteLayerButton({ disabled = false, onClick }) {
   );
 }
 
-function LayerManager({ activity, onSelectionChange, onUpdateActivity }) {
+export function LayerManager({ activity, onSelectionChange, onUpdateActivity }) {
   const [editingLayerId, setEditingLayerId] = useState('');
   const [editingLayerKey, setEditingLayerKey] = useState(0);
   const layers = normalizeLayers(activity || {});
@@ -383,6 +373,8 @@ function LayerManager({ activity, onSelectionChange, onUpdateActivity }) {
 
 export default function ActivityMapPanel({
   activity,
+  onCopySlide,
+  onPasteSlide,
   onSelectionChange,
   onUpdateActivity,
 }) {
@@ -402,7 +394,7 @@ export default function ActivityMapPanel({
 
   const addSlide = () => {
     if (!activity) return;
-    const nextName = `Slide ${slides.length + 1}`;
+    const nextName = `Sahne ${slides.length + 1}`;
     const nextSlide = normalizeSlide(
       { ...createSlide(nextName, slides.length), name: nextName, sceneName: nextName },
       slides.length
@@ -486,19 +478,8 @@ export default function ActivityMapPanel({
     );
   };
 
-  const handleKeyDown = (event) => {
-    if (isTextEditingTarget(event.target)) return;
-    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-    if (!activity || slides.length <= 1) return;
-    event.preventDefault();
-    event.stopPropagation();
-    deleteSlide();
-  };
-
   return (
     <div
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
       style={{
         height: '100%',
         minHeight: 0,
@@ -606,9 +587,11 @@ export default function ActivityMapPanel({
           <ActivityStructureTree
             activity={activity}
             onAddSlide={addSlide}
+            onCopySlide={onCopySlide}
             onDeleteSlide={deleteSlide}
             onDuplicateSlide={duplicateSlide}
             onMoveSlide={moveSlide}
+            onPasteSlide={onPasteSlide}
             onRenameActivity={renameActivity}
             onRenameSlide={renameSlide}
             onSelectSlide={selectSlide}

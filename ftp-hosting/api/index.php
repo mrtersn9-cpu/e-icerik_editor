@@ -5,7 +5,14 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Admin-Token, X-User-Id, X-Session-Id');
+
+// Yavaş bağlantılarda JSON yanıtlarını küçültmek için gzip (sunucu zaten
+// sıkıştırmıyorsa ve istemci destekliyorsa). ob_gzhandler Accept-Encoding'i
+// kendi kontrol eder; çift sıkıştırma riski yok.
+if (!ini_get('zlib.output_compression') && extension_loaded('zlib') && !ob_get_level()) {
+    @ob_start('ob_gzhandler');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -14,6 +21,106 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $config = require __DIR__ . '/config.php';
+$method = $_SERVER['REQUEST_METHOD'];
+$path = get_api_path();
+
+if ($path === '/health') {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+
+    $requireDatabase = in_array(strtolower((string) ($_GET['requireDatabase'] ?? '')), ['1', 'true', 'yes'], true);
+    if ($requireDatabase) {
+        if (has_placeholder_database_config($config)) {
+            send_json(503, [
+                'ok' => false,
+                'api' => 'ready',
+                'database' => 'unavailable',
+                'databaseRequired' => true,
+                'error' => 'Database configuration is incomplete',
+                'code' => 'db_config_incomplete',
+            ]);
+        }
+
+        if (!class_exists('PDO') || !in_array('mysql', PDO::getAvailableDrivers(), true)) {
+            send_json(503, [
+                'ok' => false,
+                'api' => 'ready',
+                'database' => 'unavailable',
+                'databaseRequired' => true,
+                'error' => 'Database driver is unavailable',
+                'code' => 'pdo_mysql_unavailable',
+            ]);
+        }
+
+        try {
+            $dsn = sprintf(
+                'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+                $config['db_host'],
+                $config['db_port'],
+                $config['db_name'],
+                $config['db_charset']
+            );
+            $healthPdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_TIMEOUT => max(1, min(15, (int) ($config['db_connect_timeout'] ?? 5))),
+            ]);
+            $healthPdo->query('SELECT 1');
+        } catch (Throwable $error) {
+            send_json(503, [
+                'ok' => false,
+                'api' => 'ready',
+                'database' => 'unavailable',
+                'databaseRequired' => true,
+                'error' => 'Database connection failed',
+                'code' => 'db_connection_failed',
+            ]);
+        }
+
+        try {
+            ensure_workspace_schema_if_required($healthPdo);
+        } catch (Throwable $error) {
+            send_json(503, [
+                'ok' => false,
+                'api' => 'ready',
+                'database' => 'unavailable',
+                'databaseRequired' => true,
+                'error' => 'Database schema check failed',
+                'code' => 'db_schema_failed',
+            ]);
+        }
+
+        send_json(200, [
+            'ok' => true,
+            'api' => 'ready',
+            'database' => 'ready',
+            'databaseRequired' => true,
+        ]);
+    }
+
+    send_json(200, [
+        'ok' => true,
+        'api' => 'ready',
+        'databaseRequired' => false,
+    ]);
+}
+
+if (has_placeholder_database_config($config)) {
+    send_json(500, [
+        'ok' => false,
+        'error' => 'Database configuration is incomplete',
+        'code' => 'db_config_incomplete',
+    ]);
+}
+
+if (!class_exists('PDO') || !in_array('mysql', PDO::getAvailableDrivers(), true)) {
+    send_json(500, [
+        'ok' => false,
+        'error' => 'Database driver is unavailable',
+        'code' => 'pdo_mysql_unavailable',
+    ]);
+}
 
 try {
     $dsn = sprintf(
@@ -27,19 +134,20 @@ try {
     $pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT => max(1, min(15, (int) ($config['db_connect_timeout'] ?? 5))),
     ]);
-
-    ensure_workspace_schema($pdo);
 } catch (Throwable $error) {
-    send_json(500, ['ok' => false, 'error' => 'Database connection failed']);
+    send_json(500, [
+        'ok' => false,
+        'error' => 'Database connection failed',
+        'code' => 'db_connection_failed',
+    ]);
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
-$path = get_api_path();
-
 try {
-    if ($path === '/health') {
-        send_json(200, ['ok' => true]);
+    if ($path === '/admin/backup' && $method === 'GET') {
+        require_admin_token($config);
+        send_sql_download(build_mysql_backup($pdo), 'eicerik-mysql-backup-' . gmdate('Ymd-His') . '.sql');
     }
 
     if ($path === '/pdf-layout/analyze' && $method === 'POST') {
@@ -556,7 +664,20 @@ function decode_json(string $payload)
 
 function encode_json($payload): string
 {
-    return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+    if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+        $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+    }
+
+    $encoded = json_encode($payload, $flags);
+    if ($encoded !== false) {
+        return $encoded;
+    }
+
+    $message = function_exists('json_last_error_msg') ? json_last_error_msg() : 'JSON encode failed';
+    return '{"ok":false,"error":"JSON encode failed","code":"json_encode_failed","detail":' .
+        json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) .
+        '}';
 }
 
 function send_json(int $statusCode, array $payload): void
@@ -564,6 +685,94 @@ function send_json(int $statusCode, array $payload): void
     http_response_code($statusCode);
     echo encode_json($payload);
     exit;
+}
+
+function send_sql_download(string $sql, string $filename): void
+{
+    $cleanName = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $filename) ?: 'eicerik-backup.sql';
+    header('Content-Type: application/sql; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $cleanName . '"');
+    header('Cache-Control: no-store');
+    echo $sql;
+    exit;
+}
+
+function require_admin_token(array $config): void
+{
+    $expected = trim((string) ($config['admin_token'] ?? ''));
+    if ($expected === '') {
+        send_json(503, [
+            'ok' => false,
+            'code' => 'ADMIN_DISABLED',
+            'error' => 'Admin API devre disi.',
+        ]);
+    }
+    $provided = trim((string) ($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
+    if ($provided === '' || !hash_equals($expected, $provided)) {
+        send_json(403, [
+            'ok' => false,
+            'code' => 'ADMIN_FORBIDDEN',
+            'error' => 'Admin yetkisi gerekli.',
+        ]);
+    }
+}
+
+function quote_mysql_identifier(string $value): string
+{
+    return '`' . str_replace('`', '``', $value) . '`';
+}
+
+function quote_mysql_value(PDO $pdo, $value): string
+{
+    if ($value === null) return 'NULL';
+    if (is_int($value) || is_float($value)) return (string) $value;
+    return $pdo->quote((string) $value);
+}
+
+function build_mysql_backup(PDO $pdo): string
+{
+    $tables = ['app_state', 'projects', 'project_versions'];
+    $lines = [
+        '-- E-Icerik Editor MySQL backup',
+        '-- Created at: ' . gmdate('c'),
+        '-- Includes persistent content tables only; sessions and locks are intentionally excluded.',
+        'SET NAMES utf8mb4;',
+        'SET FOREIGN_KEY_CHECKS=0;',
+        '',
+    ];
+
+    foreach ($tables as $tableName) {
+        $quotedTable = quote_mysql_identifier($tableName);
+        $schemaStmt = $pdo->query('SHOW CREATE TABLE ' . $quotedTable);
+        $schemaRow = $schemaStmt ? $schemaStmt->fetch(PDO::FETCH_ASSOC) : null;
+        if (!$schemaRow) {
+            continue;
+        }
+        $createSql = $schemaRow['Create Table'] ?? array_values($schemaRow)[1] ?? '';
+        if ($createSql === '') {
+            continue;
+        }
+
+        $lines[] = 'DROP TABLE IF EXISTS ' . $quotedTable . ';';
+        $lines[] = $createSql . ';';
+
+        $rows = $pdo->query('SELECT * FROM ' . $quotedTable);
+        if ($rows) {
+            while ($row = $rows->fetch(PDO::FETCH_ASSOC)) {
+                $columns = array_keys($row);
+                $columnSql = implode(', ', array_map('quote_mysql_identifier', $columns));
+                $valueSql = implode(', ', array_map(function ($value) use ($pdo) {
+                    return quote_mysql_value($pdo, $value);
+                }, array_values($row)));
+                $lines[] = 'INSERT INTO ' . $quotedTable . ' (' . $columnSql . ') VALUES (' . $valueSql . ');';
+            }
+        }
+        $lines[] = '';
+    }
+
+    $lines[] = 'SET FOREIGN_KEY_CHECKS=1;';
+    $lines[] = '';
+    return implode("\n", $lines);
 }
 
 function clamp_number(float $value, float $min, float $max): float
@@ -858,6 +1067,77 @@ function ensure_workspace_schema(PDO $pdo): void
     $stmt->execute([':payload' => $emptyState]);
     $pdo->exec('UPDATE projects SET saved_at = UTC_TIMESTAMP() WHERE saved_at IS NULL OR saved_at = ""');
     $pdo->exec('UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ""');
+}
+
+function ensure_workspace_schema_if_required(PDO $pdo): void
+{
+    if (!workspace_schema_is_current($pdo)) {
+        ensure_workspace_schema($pdo);
+    }
+}
+
+function workspace_schema_is_current(PDO $pdo): bool
+{
+    $requiredColumns = [
+        'app_state' => ['id', 'payload', 'updated_at'],
+        'projects' => ['id', 'name', 'payload', 'saved_at', 'created_at', 'published_version_id'],
+        'book_locks' => ['project_id', 'book_id', 'user_id', 'user_name', 'session_id', 'locked_at'],
+        'user_sessions' => ['session_id', 'user_id', 'session_label', 'last_seen_at', 'kick_requested_at'],
+        'project_versions' => ['id', 'project_id', 'version_no', 'label', 'payload', 'created_at', 'is_published'],
+    ];
+
+    try {
+        $stmt = $pdo->query(
+            "SELECT TABLE_NAME, COLUMN_NAME
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME IN ('app_state', 'projects', 'book_locks', 'user_sessions', 'project_versions')"
+        );
+        $foundColumns = [];
+        foreach ($stmt as $row) {
+            $tableName = (string) ($row['TABLE_NAME'] ?? '');
+            $columnName = (string) ($row['COLUMN_NAME'] ?? '');
+            if ($tableName !== '' && $columnName !== '') {
+                $foundColumns[$tableName][$columnName] = true;
+            }
+        }
+
+        foreach ($requiredColumns as $tableName => $columns) {
+            foreach ($columns as $columnName) {
+                if (empty($foundColumns[$tableName][$columnName])) {
+                    return false;
+                }
+            }
+        }
+    } catch (Throwable $error) {
+        return false;
+    }
+
+    return true;
+}
+
+function has_placeholder_database_config(array $config): bool
+{
+    $required = ['db_host', 'db_name', 'db_user', 'db_pass'];
+    foreach ($required as $key) {
+        if (!array_key_exists($key, $config) || trim((string) $config[$key]) === '') {
+            return true;
+        }
+    }
+
+    $placeholderValues = [
+        'veritabani_adi',
+        'veritabani_kullanici',
+        'veritabani_sifre',
+    ];
+
+    foreach (['db_name', 'db_user', 'db_pass'] as $key) {
+        if (in_array(trim((string) $config[$key]), $placeholderValues, true)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function column_exists(PDO $pdo, string $tableName, string $columnName): bool

@@ -175,6 +175,23 @@ describe('server auth and admin API', () => {
     ).toBe(true);
   });
 
+  test('protects manual SQL backup downloads with the admin token', async () => {
+    const forbidden = await requestJson(port, 'GET', '/api/admin/backup');
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.code).toBe('ADMIN_FORBIDDEN');
+
+    const backup = await requestJson(port, 'GET', '/api/admin/backup', null, {
+      'X-Admin-Token': 'test-admin-token',
+    });
+    expect(backup.status).toBe(200);
+    expect(backup.headers['content-disposition']).toContain('eicerik-sql-backup-');
+    expect(backup.body).toContain('CREATE TABLE');
+    expect(backup.body).toContain('INSERT INTO');
+    expect(backup.body).toContain('projects');
+    expect(backup.body).not.toContain('user_sessions');
+    expect(backup.body).not.toContain('book_locks');
+  });
+
   test('keeps production secrets out of server output during tests', () => {
     expect(stderr).not.toContain('test-admin-token');
     expect(stderr).not.toContain('test-session-secret');

@@ -56,6 +56,8 @@ if (!process.env.EICERIK_SESSION_TOKEN_SECRET) {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
+db.exec(`PRAGMA journal_mode = WAL;`);
+db.exec(`PRAGMA busy_timeout = 5000;`);
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -234,6 +236,55 @@ function listSecurityEvents(limit = 100, filters = {}) {
   }
 }
 
+const BACKUP_TABLES = ["app_state", "projects", "project_versions", "editor_users", "review_threads"];
+
+function quoteSqlIdentifier(value = "") {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function quoteSqlValue(value) {
+  if (value == null) return "NULL";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function buildSqliteBackup() {
+  const now = new Date().toISOString();
+  const lines = [
+    "-- E-Icerik Editor SQLite backup",
+    `-- Created at: ${now}`,
+    "-- Includes persistent content tables only; sessions and locks are intentionally excluded.",
+    "PRAGMA foreign_keys=OFF;",
+    "BEGIN TRANSACTION;",
+    "",
+  ];
+
+  BACKUP_TABLES.forEach((tableName) => {
+    const schema = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName)?.sql;
+    if (!schema) return;
+    const columns = db.prepare(`PRAGMA table_info(${quoteSqlIdentifier(tableName)})`).all();
+    const columnNames = columns.map((column) => column.name).filter(Boolean);
+    lines.push(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(tableName)};`);
+    lines.push(`${schema};`);
+    if (columnNames.length) {
+      const rows = db.prepare(`SELECT * FROM ${quoteSqlIdentifier(tableName)}`).all();
+      rows.forEach((row) => {
+        const columnSql = columnNames.map(quoteSqlIdentifier).join(", ");
+        const valueSql = columnNames.map((column) => quoteSqlValue(row[column])).join(", ");
+        lines.push(
+          `INSERT INTO ${quoteSqlIdentifier(tableName)} (${columnSql}) VALUES (${valueSql});`
+        );
+      });
+    }
+    lines.push("");
+  });
+
+  lines.push("COMMIT;", "PRAGMA foreign_keys=ON;", "");
+  return lines.join("\n");
+}
+
 function getRequestIp(req) {
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return forwarded || req.socket?.remoteAddress || "unknown";
@@ -391,6 +442,15 @@ function sendJson(res, statusCode, data) {
 function sendText(res, statusCode, text, contentType = "text/plain; charset=utf-8") {
   res.writeHead(statusCode, securityHeaders(res, contentType));
   res.end(text);
+}
+
+function sendDownload(res, statusCode, data, filename, contentType = "application/octet-stream") {
+  res.writeHead(statusCode, {
+    ...securityHeaders(res, contentType),
+    "Content-Disposition": `attachment; filename="${String(filename || "backup.sql").replace(/"/g, "")}"`,
+    "Cache-Control": "no-store",
+  });
+  res.end(data);
 }
 
 function sendError(res, statusCode, message, code = "") {
@@ -1269,6 +1329,19 @@ async function handleAdminRequest(req, res, url) {
     return;
   }
 
+  if (url.pathname === "/api/admin/backup" && req.method === "GET") {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    logSecurityEvent("admin_backup_downloaded", { ip: getRequestIp(req) });
+    sendDownload(
+      res,
+      200,
+      buildSqliteBackup(),
+      `eicerik-sql-backup-${stamp}.sql`,
+      "application/sql; charset=utf-8"
+    );
+    return;
+  }
+
   if (url.pathname === "/api/admin/users" && req.method === "POST") {
     const body = await readBody(req);
     const userId = normalizeAdminUserId(body.id);
@@ -1362,7 +1435,35 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
     if (url.pathname === "/api/health") {
-      sendJson(res, 200, { ok: true });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "Sat, 26 Jul 1997 05:00:00 GMT");
+
+      const requireDatabase = ["1", "true", "yes"].includes(
+        String(url.searchParams.get("requireDatabase") || "").toLowerCase()
+      );
+      if (!requireDatabase) {
+        sendJson(res, 200, { ok: true, api: "ready", databaseRequired: false });
+        return;
+      }
+      try {
+        db.prepare("SELECT 1 AS ok").get();
+        sendJson(res, 200, {
+          ok: true,
+          api: "ready",
+          database: "ready",
+          databaseRequired: true,
+        });
+      } catch {
+        sendJson(res, 503, {
+          ok: false,
+          api: "ready",
+          database: "unavailable",
+          databaseRequired: true,
+          code: "db_connection_failed",
+          error: "Database connection failed",
+        });
+      }
       return;
     }
 

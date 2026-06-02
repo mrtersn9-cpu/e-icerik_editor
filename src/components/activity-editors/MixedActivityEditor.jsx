@@ -125,11 +125,11 @@ export default function MixedActivityEditor({ activity, onUpdate, getCorrectDrag
             marginBottom: 8,
           }}
         >
-          2. Surukle-Birak Kurgusu
+          2. Sürükle-Bırak Kurgusu
         </div>
         <div style={{ fontSize: 11, color: '#7c2d12', lineHeight: 1.7 }}>
-          Drag-drop ayarlari artik ust panel yerine sagdaki <strong>Cevap</strong> sekmesinde
-          yonetiliyor. Bu sayede soru, eslesme ve cevap mantigi ayni yerde toplanir.
+          Drag-drop ayarları artık üst panel yerine sağdaki <strong>Cevap</strong> sekmesinde
+          yönetiliyor. Bu sayede soru, eşleşme ve cevap mantığı aynı yerde toplanır.
         </div>
       </div>
     </div>

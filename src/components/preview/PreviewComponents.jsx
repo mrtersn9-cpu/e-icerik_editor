@@ -217,7 +217,7 @@ function PreviewDragDrop({ activity }) {
                 zIndex: 1,
               }}
             >
-              {!isMatched && (dz.label || 'BÄ±rak')}
+              {!isMatched && (dz.label || 'Bırak')}
             </div>
           );
         })}
@@ -252,7 +252,7 @@ function PreviewDragDrop({ activity }) {
                 boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,.25)' : 'none',
               }}
             >
-              {d.label || 'SÃ¼rÃ¼kle'}
+              {d.label || 'Sürükle'}
             </div>
           );
         })}
@@ -270,7 +270,7 @@ function PreviewDragDrop({ activity }) {
             fontWeight: 700,
           }}
         >
-          âœ… Tebrikler! TÃ¼mÃ¼ doÄŸru yerleÅŸtirildi.
+          ✓ Tebrikler! Tümü doğru yerleştirildi.
         </div>
       )}
     </div>
@@ -300,10 +300,10 @@ function PreviewSelection({ activity }) {
   return (
     <div style={{ maxWidth: 540, margin: '0 auto', padding: 24 }}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: '#E0E0E0', marginBottom: 16 }}>
-        {activity.mcQuestion || 'Soru metni girilmemiÅŸ'}
+        {activity.mcQuestion || 'Soru metni girilmemiş'}
       </h2>
       <p style={{ fontSize: 12, color: '#78909C', marginBottom: 20 }}>
-        {multi ? 'Birden fazla seÃ§enek iÅŸaretleyebilirsiniz' : 'Tek seÃ§enek iÅŸaretleyiniz'}
+        {multi ? 'Birden fazla seçenek işaretleyebilirsiniz' : 'Tek seçenek işaretleyiniz'}
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {opts.map((o) => {
@@ -326,7 +326,7 @@ function PreviewSelection({ activity }) {
                 transition: 'all .15s',
               }}
             >
-              {o.label || 'SeÃ§enek'}
+              {o.label || 'Seçenek'}
             </button>
           );
         })}
@@ -363,7 +363,7 @@ function PreviewSelection({ activity }) {
             alignItems: 'center',
           }}
         >
-          {correct ? 'âœ… DoÄŸru!' : 'âŒ YanlÄ±ÅŸ!'}
+          {correct ? '✓ Doğru!' : '× Yanlış!'}
           {!correct && (
             <button
               onClick={() => {
@@ -401,16 +401,16 @@ function PreviewDebugOverlay({ theme, data, onClose }) {
     }
   };
   const rows = [
-    ['Asama', data.phase],
+    ['Aşama', data.phase],
     ['Etkinlik', data.activityName],
     ['Slider', data.slideName || data.slideId],
     ['Katman', data.activeLayerId],
     ['Deneme', data.attempts],
-    ['Secimler', data.selectionLabels],
-    ['Eslesmeler', data.matchLabels],
+    ['Seçimler', data.selectionLabels],
+    ['Eşleşmeler', data.matchLabels],
     ['Gizli Nesneler', data.hiddenObjectIds],
     ['Nesne State', data.objectStates],
-    ['Degiskenler', data.variables],
+    ['Değişkenler', data.variables],
   ];
   return (
     <div
@@ -475,7 +475,7 @@ function PreviewDebugOverlay({ theme, data, onClose }) {
             fontWeight: 800,
           }}
         >
-          Ã—
+          ×
         </button>
       </div>
       <div style={{ padding: 16, display: 'grid', gap: 12 }}>
@@ -772,8 +772,8 @@ function ManualLayerPreview({
             Slide Layers
           </div>
           <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.6 }}>
-            Otomatik tanÄ±tÄ±m ve doÄŸru/yanlÄ±ÅŸ ekranlarÄ± kaldÄ±rÄ±ldÄ±. GÃ¶rÃ¼nen alan her zaman{' '}
-            <strong>ana katman + seÃ§tiÄŸin katman</strong>.
+            Otomatik tanıtım ve doğru/yanlış ekranları kaldırıldı. Görünen alan her zaman{' '}
+            <strong>ana katman + seçtiğin katman</strong>.
           </div>
         </div>
 
@@ -807,7 +807,7 @@ function ManualLayerPreview({
               Layer Listesi
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
-              Articulate mantÄ±ÄŸÄ±yla gÃ¶rÃ¼nÃ¼r katmanlarÄ± test et.
+              Articulate mantığıyla görünür katmanları test et.
             </div>
           </div>
           <div
@@ -895,7 +895,7 @@ function ManualLayerPreview({
                       fontWeight: 900,
                     }}
                   >
-                    {isActive ? 'â—' : 'â—‹'}
+                    {isActive ? '●' : '○'}
                   </span>
                 </button>
               );
@@ -926,9 +926,9 @@ function ManualLayerPreview({
               lineHeight: 1.6,
             }}
           >
-            Bu sahne eski otomatik seÃ§im yapÄ±sÄ±nÄ± kullanÄ±yor. Yeni sistemde seÃ§im alanlarÄ±nÄ±
-            doÄŸrudan sahne nesnesi olarak kurup katman geÃ§iÅŸlerini <strong>EtkileÅŸim</strong>{' '}
-            sekmesindeki <strong>Katmana GeÃ§</strong> triggerâ€™larÄ±yla yÃ¶neteceÄŸiz.
+            Bu sahne eski otomatik seçim yapısını kullanıyor. Yeni sistemde seçim alanlarını
+            doğrudan sahne nesnesi olarak kurup katman geçişlerini <strong>Etkileşim</strong>{' '}
+            sekmesindeki <strong>Katmana Geç</strong> trigger'larıyla yöneteceğiz.
           </div>
         )}
 
@@ -1060,9 +1060,9 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
   }, [currentActivity?.id, currentSlideId]);
 
   const devicePresets = [
-    { id: 'desktop', label: 'Masaustu', icon: 'â–­', width: '100%', height: '100%', radius: 16 },
-    { id: 'tablet', label: 'Tablet', icon: 'â–¯', width: 900, height: 680, radius: 24 },
-    { id: 'mobile', label: 'Mobil', icon: 'â–®', width: 430, height: 760, radius: 36 },
+    { id: 'desktop', label: 'Masaüstü', icon: '▭', width: '100%', height: '100%', radius: 16 },
+    { id: 'tablet', label: 'Tablet', icon: '▯', width: 900, height: 680, radius: 24 },
+    { id: 'mobile', label: 'Mobil', icon: '▮', width: 430, height: 760, radius: 36 },
   ];
   const [devicePreset, setDevicePreset] = useState('desktop');
   const debugData = {
@@ -1172,7 +1172,7 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
             Preview Kontrolleri
           </div>
           <div style={{ fontSize: 12, color: '#cbd5e1' }}>
-            Cihaz secin ve katman tabanli sahneyi test edin.
+            Cihaz seçin ve katman tabanlı sahneyi test edin.
           </div>
         </div>
 
@@ -1233,13 +1233,13 @@ function PreviewPlayer({ activity, activities, variables = [] }) {
             onClick={() => setPreviewResetKey((value) => value + 1)}
             style={toolbarBtn(false)}
           >
-            Sifirla
+            Sıfırla
           </button>
           <button
             onClick={() => setDeveloperHintMode((value) => !value)}
             style={toolbarBtn(developerHintMode)}
           >
-            {developerHintMode ? 'Ipucu Acik' : 'Ipucu Modu'}
+            {developerHintMode ? 'İpucu Açık' : 'İpucu Modu'}
           </button>
           <button onClick={() => setDebugOpen((value) => !value)} style={toolbarBtn(debugOpen)}>
             {debugOpen ? 'Debug Acik' : 'Debug'}
@@ -1428,11 +1428,11 @@ function PreviewSelectionFlow({
   const theme = getPackageTheme(activity.buttonPackageId);
   const packageTitle =
     !packageScreen.title || /buton paketi/i.test(packageScreen.title)
-      ? 'Tema Paketi TanÄ±tÄ±mÄ±'
+      ? 'Tema Paketi Tanıtımı'
       : packageScreen.title;
   const packageBody =
     !packageScreen.body || /buton.*davran/i.test(packageScreen.body)
-      ? 'Etkinlikte kullanacaÄŸÄ±n tema paketini ve buton davranÄ±ÅŸlarÄ±nÄ± Ã¶nce incele.'
+      ? 'Etkinlikte kullanacağın tema paketini ve buton davranışlarını önce incele.'
       : packageScreen.body;
   const isBookPreview = activity.type === 'book-preview';
   const autoAnswer = getAutoAnswerSummary(activity);
@@ -2035,7 +2035,7 @@ function PreviewSelectionFlow({
   if (isBookPreview && phase === 'intro') {
     return renderBookPreviewPhase(
       'intro',
-      'TanÄ±tÄ±m',
+      'Tanıtım',
       <>
         {settings.showButtonPackageIntro !== false && packageScreen.enabled !== false && (
           <button
@@ -2044,11 +2044,11 @@ function PreviewSelectionFlow({
             }
             style={screenGhostBtn('intro')}
           >
-            {settings.guideButtonText || 'TanÄ±tÄ±m'}
+            {settings.guideButtonText || 'Tanıtım'}
           </button>
         )}
         <button onClick={() => setPhase(nextAfterIntro)} style={screenBtn('intro')}>
-          {intro.buttonText || 'EtkinliÄŸi BaÅŸlat'}
+          {intro.buttonText || 'Etkinliği Başlat'}
         </button>
       </>
     );
@@ -2063,10 +2063,10 @@ function PreviewSelectionFlow({
           onClick={() => handleSelectionAction(settings.packageBackAction || 'intro', 'intro')}
           style={screenGhostBtn('package')}
         >
-          {packageScreen.backButtonText || 'Geri DÃ¶n'}
+          {packageScreen.backButtonText || 'Geri Dön'}
         </button>
         <button onClick={() => setPhase(nextAfterPackage)} style={screenBtn('package')}>
-          {packageScreen.buttonText || 'MenÃ¼ye GeÃ§'}
+          {packageScreen.buttonText || 'Menüye Geç'}
         </button>
       </>
     );
@@ -2075,9 +2075,9 @@ function PreviewSelectionFlow({
   if (isBookPreview && phase === 'menu') {
     return renderBookPreviewPhase(
       'menu',
-      'MenÃ¼',
+      'Menü',
       <button onClick={() => setPhase(nextAfterMenu)} style={screenBtn('menu')}>
-        {menuScreen.buttonText || 'EtkinliÄŸe GeÃ§'}
+        {menuScreen.buttonText || 'Etkinliğe Geç'}
       </button>
     );
   }
@@ -2086,10 +2086,10 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle('intro');
     return renderShell(
       'intro',
-      'TanÄ±tÄ±m',
+      'Tanıtım',
       <div style={{ color: _cs.textColor || '#123a56', textAlign: 'center' }}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <div style={{ fontSize: 44, marginBottom: 20, lineHeight: 1 }}>ğŸ‘‹</div>
+          <div style={{ fontSize: 44, marginBottom: 20, lineHeight: 1 }}>▶</div>
           <div
             style={{
               fontSize: _cs.titleFontSize || 30,
@@ -2098,10 +2098,10 @@ function PreviewSelectionFlow({
               letterSpacing: -0.5,
             }}
           >
-            {intro.title || `${activity.name} EtkinliÄŸine HoÅŸ Geldin`}
+            {intro.title || `${activity.name} Etkinliğine Hoş Geldin`}
           </div>
           <div style={{ fontSize: 15, lineHeight: 1.75, opacity: 0.78, marginBottom: 32 }}>
-            {intro.body || 'HazÄ±r olduÄŸunda etkinliÄŸi baÅŸlat.'}
+            {intro.body || 'Hazır olduğunda etkinliği başlat.'}
           </div>
           <div
             style={{
@@ -2109,7 +2109,7 @@ function PreviewSelectionFlow({
             }}
           >
             <button onClick={() => setPhase(nextAfterIntro)} style={screenBtn('intro')}>
-              {intro.buttonText || 'â–¶ BaÅŸla'}
+              {intro.buttonText || 'Başla'}
             </button>
           </div>
         </div>
@@ -2157,10 +2157,10 @@ function PreviewSelectionFlow({
               onClick={() => handleSelectionAction(settings.packageBackAction || 'intro', 'intro')}
               style={screenGhostBtn('package')}
             >
-              {packageScreen.backButtonText || 'Geri DÃ¶n'}
+              {packageScreen.backButtonText || 'Geri Dön'}
             </button>
             <button onClick={() => setPhase(nextAfterPackage)} style={screenBtn('package')}>
-              {packageScreen.buttonText || 'MenÃ¼ye GeÃ§ â†’'}
+              {packageScreen.buttonText || 'Menüye Geç'}
             </button>
           </div>
         </div>
@@ -2172,7 +2172,7 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle('menu');
     return renderShell(
       'intro',
-      'MenÃ¼',
+      'Menü',
       <div style={{ color: _cs.textColor || '#123a56', textAlign: 'center' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <div
@@ -2194,7 +2194,7 @@ function PreviewSelectionFlow({
             }}
           >
             <button onClick={() => setPhase(nextAfterMenu)} style={screenBtn('menu')}>
-              {menuScreen.buttonText || 'EtkinliÄŸe GeÃ§ â†’'}
+              {menuScreen.buttonText || 'Etkinliğe Geç'}
             </button>
           </div>
         </div>
@@ -2207,11 +2207,11 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle(_rsKey);
     return renderShell(
       _rsKey,
-      isSuccess ? 'âœ“ DoÄŸru' : 'âœ— YanlÄ±ÅŸ',
+      isSuccess ? '✓ Doğru' : '× Yanlış',
       <div style={{ color: _cs.textColor || '#123a56', textAlign: 'center' }}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
           <div style={{ fontSize: 64, lineHeight: 1, marginBottom: 20 }}>
-            {isSuccess ? 'ğŸ†' : 'ğŸ’ª'}
+            {isSuccess ? '✓' : '×'}
           </div>
           <div
             style={{
@@ -2227,7 +2227,7 @@ function PreviewSelectionFlow({
           </div>
           <div style={{ fontSize: 15, lineHeight: 1.75, opacity: 0.78, marginBottom: 32 }}>
             {isSuccess
-              ? resultScreens.successBody || 'DoÄŸru cevabÄ± buldun, tebrikler!'
+              ? resultScreens.successBody || 'Doğru cevabı buldun, tebrikler!'
               : resultScreens.failureBody || 'Bir kez daha deneyebilirsin.'}
           </div>
           <div
@@ -2237,7 +2237,7 @@ function PreviewSelectionFlow({
           >
             {!isSuccess && canRetry && (
               <button onClick={() => restartSelectionFlow('play')} style={screenBtn(_rsKey)}>
-                {resultScreens.retryText || 'â†º Tekrar Dene'}
+                {resultScreens.retryText || '↻ Tekrar Dene'}
               </button>
             )}
             {!isSuccess && settings.showAnswerLayer !== false && (
@@ -2247,7 +2247,7 @@ function PreviewSelectionFlow({
                 }
                 style={screenGhostBtn(_rsKey)}
               >
-                {settings.answerButtonText || 'CevabÄ± GÃ¶r'}
+                {settings.answerButtonText || 'Cevabı Gör'}
               </button>
             )}
             {isSuccess && hasNextStep && (
@@ -2257,7 +2257,7 @@ function PreviewSelectionFlow({
                 }
                 style={screenBtn(_rsKey)}
               >
-                {nextStepLabel} â†’
+                {nextStepLabel}
               </button>
             )}
             <button
@@ -2266,7 +2266,7 @@ function PreviewSelectionFlow({
               }
               style={screenGhostBtn(_rsKey)}
             >
-              {resultScreens.continueText || 'Yeniden BaÅŸlat'}
+              {resultScreens.continueText || 'Yeniden Başlat'}
             </button>
           </div>
         </div>
@@ -2278,7 +2278,7 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle('answer');
     return renderShell(
       'failure',
-      'DoÄŸru Cevap',
+      'Doğru Cevap',
       <div style={{ color: _cs.textColor || '#123a56' }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
           <div
@@ -2289,7 +2289,7 @@ function PreviewSelectionFlow({
               letterSpacing: -0.4,
             }}
           >
-            {answerScreen.title || 'DoÄŸru Cevap'}
+            {answerScreen.title || 'Doğru Cevap'}
           </div>
           {answerScreen.body && (
             <div style={{ fontSize: 14, lineHeight: 1.7, opacity: 0.72, marginBottom: 20 }}>
@@ -2351,7 +2351,7 @@ function PreviewSelectionFlow({
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 8, color: '#86efac' }}>
-                  OGRNCININ DOGRU CEVAPLARI
+                  Öğrencinin doğru cevapları
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {viewOptions.filter((o) => submittedSelection.includes(o.id) && o.isCorrect)
@@ -2369,12 +2369,12 @@ function PreviewSelectionFlow({
                             gap: 8,
                           }}
                         >
-                          <span style={{ color: '#86efac' }}>âœ“</span>
+                          <span style={{ color: '#86efac' }}>✓</span>
                           {o.label}
                         </div>
                       ))
                   ) : (
-                    <div style={{ fontSize: 12, color: '#d1fae5' }}>Dogru cevap yok.</div>
+                    <div style={{ fontSize: 12, color: '#d1fae5' }}>Doğru cevap yok.</div>
                   )}
                 </div>
               </div>
@@ -2387,7 +2387,7 @@ function PreviewSelectionFlow({
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 8, color: '#fca5a5' }}>
-                  OGRNCININ YANLIS CEVAPLARI
+                  Öğrencinin yanlış cevapları
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {viewOptions.filter((o) => submittedSelection.includes(o.id) && !o.isCorrect)
@@ -2405,12 +2405,12 @@ function PreviewSelectionFlow({
                             gap: 8,
                           }}
                         >
-                          <span style={{ color: '#fca5a5' }}>âœ—</span>
+                          <span style={{ color: '#fca5a5' }}>×</span>
                           {o.label}
                         </div>
                       ))
                   ) : (
-                    <div style={{ fontSize: 12, color: '#fee2e2' }}>Yanlis cevap yok.</div>
+                    <div style={{ fontSize: 12, color: '#fee2e2' }}>Yanlış cevap yok.</div>
                   )}
                 </div>
               </div>
@@ -2427,7 +2427,7 @@ function PreviewSelectionFlow({
               }
               style={screenGhostBtn('answer')}
             >
-              {answerScreen.buttonText || 'Yeniden BaÅŸlat'}
+              {answerScreen.buttonText || 'Yeniden Başlat'}
             </button>
           </div>
         </div>
@@ -2505,9 +2505,9 @@ function PreviewSelectionFlow({
           )}
           <p style={{ fontSize: 13, opacity: 0.62, marginBottom: 20, lineHeight: 1.6 }}>
             {usesStageSelection
-              ? 'Sahnedeki kutucuklardan seÃ§im yapÄ±n.'
+              ? 'Sahnedeki kutucuklardan seçim yapın.'
               : playScreen.body ||
-                (multi ? 'Birden fazla seÃ§enek iÅŸaretleyebilirsiniz.' : 'Tek seÃ§enek seÃ§iniz.')}
+                (multi ? 'Birden fazla seçenek işaretleyebilirsiniz.' : 'Tek seçenek seçiniz.')}
           </p>
           {!usesStageSelection && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2584,9 +2584,9 @@ function PreviewSelectionFlow({
                           : ''}
                     </span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span>{o.label || 'SeÃ§enek'}</span>
+                      <span>{o.label || 'Seçenek'}</span>
                       <span style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>
-                        Secenek {idx + 1}
+                        Seçenek {idx + 1}
                       </span>
                     </div>
                   </button>
@@ -2614,12 +2614,12 @@ function PreviewSelectionFlow({
                   textTransform: 'uppercase',
                 }}
               >
-                Gelistirici Ipucu
+                Geliştirici İpucu
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(usesStageSelection
                   ? autoAnswer
-                  : viewOptions.filter((o) => o.isCorrect).map((o) => o.label || 'Dogru Secenek')
+                  : viewOptions.filter((o) => o.isCorrect).map((o) => o.label || 'Doğru Seçenek')
                 ).map((line, index) => (
                   <div
                     key={`${line}-${index}`}
@@ -2656,7 +2656,7 @@ function PreviewSelectionFlow({
               </div>
             ) : result ? (
               <button onClick={() => setPhase('result')} style={screenBtn('play')}>
-                {resultScreens.continueText || 'Sonucu GÃ¶r'} â†’
+                {resultScreens.continueText || 'Sonucu Gör'} →
               </button>
             ) : (
               <button
@@ -2694,11 +2694,11 @@ function PreviewSelectionFlow({
                     : 'default',
                 }}
               >
-                {settings.checkButtonText || 'Kontrol Et'} â†’
+                {settings.checkButtonText || 'Kontrol Et'} →
               </button>
             )}
             {usesStageSelection && !hasSelectionAnswerKey && (
-              <div style={{ fontSize: 12, color: '#fbbf24' }}>âš  Cevap anahtarÄ± okunamadÄ±.</div>
+              <div style={{ fontSize: 12, color: '#fbbf24' }}>! Cevap anahtarı okunamadı.</div>
             )}
           </div>
         </div>
@@ -2760,11 +2760,11 @@ function PreviewDragDropFlow({
   const theme = getPackageTheme(activity.buttonPackageId);
   const packageTitle =
     !packageScreen.title || /buton paketi/i.test(packageScreen.title)
-      ? 'Tema Paketi TanÄ±tÄ±mÄ±'
+      ? 'Tema Paketi Tanıtımı'
       : packageScreen.title;
   const packageBody =
     !packageScreen.body || /buton.*davran/i.test(packageScreen.body)
-      ? 'Etkinlikte kullanacaÄŸÄ±n tema paketini ve buton davranÄ±ÅŸlarÄ±nÄ± Ã¶nce incele.'
+      ? 'Etkinlikte kullanacağın tema paketini ve buton davranışlarını önce incele.'
       : packageScreen.body;
   const runtimePreviewTime = 0;
   const canvasObjects = getCanvasObjects(activity, activeLayerId, hiddenObjectIds).filter(
@@ -3329,7 +3329,7 @@ function PreviewDragDropFlow({
                   : 'none',
               }}
             >
-              {!isMatched && (dz.label || 'BÄ±rak')}
+              {!isMatched && (dz.label || 'Bırak')}
             </div>
           );
         })}
@@ -3384,7 +3384,7 @@ function PreviewDragDropFlow({
                   textOverflow: 'ellipsis',
                 }}
               >
-                {d.label || 'SÃ¼rÃ¼kle'}
+                {d.label || 'Sürükle'}
               </span>
             </div>
           );
@@ -3447,7 +3447,7 @@ function PreviewDragDropFlow({
                   textOverflow: 'ellipsis',
                 }}
               >
-                {drag.label || 'SÃ¼rÃ¼kle'}
+                {drag.label || 'Sürükle'}
               </span>
               {(isCheckCorrect || isCheckWrong) && (
                 <span
@@ -3465,7 +3465,7 @@ function PreviewDragDropFlow({
                     flexShrink: 0,
                   }}
                 >
-                  {isCheckCorrect ? 'âœ“' : 'âœ•'}
+                  {isCheckCorrect ? '✓' : '×'}
                 </span>
               )}
             </div>
@@ -3512,7 +3512,7 @@ function PreviewDragDropFlow({
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {drag.label || 'SÃ¼rÃ¼kle'}
+                  {drag.label || 'Sürükle'}
                 </span>
               </div>
             );
@@ -3535,7 +3535,7 @@ function PreviewDragDropFlow({
   const successGreen = theme.successTone || '#15803d';
   const dangerRed = theme.dangerTone || '#b91c1c';
   const shellHeight = '100%';
-  const packageBackText = packageScreen.backButtonText || 'Geri DÃ¶n';
+  const packageBackText = packageScreen.backButtonText || 'Geri Dön';
   const nextAfterIntroAuto =
     settings.showButtonPackageIntro !== false && packageScreen.enabled !== false
       ? 'package'
@@ -3746,7 +3746,7 @@ function PreviewDragDropFlow({
               boxShadow: 'none',
             }}
           >
-            â† {packageBackText}
+            ← {packageBackText}
           </button>
         </div>
         <ButtonPackageIntroDiagram pkgId={activity.buttonPackageId} config={packageScreen} />
@@ -3765,7 +3765,7 @@ function PreviewDragDropFlow({
             {packageBackText}
           </button>
           <button onClick={() => setPhase(nextAfterPackage)} style={screenBtn('package')}>
-            {packageScreen.buttonText || 'EtkinliÄŸe GeÃ§'}
+            {packageScreen.buttonText || 'Etkinliğe Geç'}
           </button>
         </div>
       </div>
@@ -3791,20 +3791,20 @@ function PreviewDragDropFlow({
         {
           id: 'guide',
           icon: '?',
-          label: settings.guideButtonText || 'TanÄ±tÄ±m',
+          label: settings.guideButtonText || 'Tanıtım',
           action: () => runDragDropAction(settings.guideButtonAction || 'package', 'package'),
         },
         {
           id: 'restart',
           icon: '\u21ba',
-          label: settings.restartFlowText || 'Yeniden BaÅŸlat',
+          label: settings.restartFlowText || 'Yeniden Başlat',
           action: () => runDragDropAction(settings.restartButtonAction || 'restart', 'restart'),
         },
         {
           id: 'sound',
           icon: audioMuted ? 'S' : 'A',
           label: audioMuted
-            ? settings.soundOnText || 'Sesi AÃ§'
+            ? settings.soundOnText || 'Sesi Aç'
             : settings.soundOffText || 'Sesi Kapat',
           action: () => setAudioMuted((value) => !value),
         },
@@ -3974,7 +3974,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.72)',
                   }}
                 >
-                  {settings.restartFlowText || 'Yeniden BaÅŸlat'}
+                  {settings.restartFlowText || 'Yeniden Başlat'}
                 </button>
               </>
             ) : (
@@ -3996,7 +3996,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.72)',
                   }}
                 >
-                  {settings.solutionButtonText || 'Ã‡Ã¶zÃ¼mÃ¼ GÃ¶ster'}
+                  {settings.solutionButtonText || 'Çözümü Göster'}
                 </button>
                 <button
                   onClick={() =>
@@ -4009,7 +4009,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.78)',
                   }}
                 >
-                  {settings.restartFlowText || 'Yeniden BaÅŸlat'}
+                  {settings.restartFlowText || 'Yeniden Başlat'}
                 </button>
               </>
             )}
@@ -4061,7 +4061,7 @@ function PreviewDragDropFlow({
               textTransform: 'uppercase',
             }}
           >
-            GeliÅŸtirici Ä°pucu
+            Geliştirici İpucu
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {autoAnswer.map((line, index) => (
@@ -4103,7 +4103,7 @@ function PreviewDragDropFlow({
               boxShadow: '0 14px 30px rgba(214,31,105,.28)',
             }}
           >
-            {settings.menuButtonText || 'â˜° MENÃœ'}
+            {settings.menuButtonText || '☰ MENÜ'}
           </button>
           {menuOpen && phase === 'play' && renderMenuPopup()}
         </div>
@@ -4172,7 +4172,7 @@ function PreviewDragDropFlow({
                   fontWeight: 900,
                 }}
               >
-                âœ“
+                ✓
               </span>
               {settings.checkButtonText || 'Kontrol Et'}
             </button>
@@ -4185,7 +4185,7 @@ function PreviewDragDropFlow({
   if (phase === 'intro') {
     return renderShell(
       'intro',
-      'KarÅŸÄ±lama',
+      'Karşılama',
       <div
         style={{
           height: '100%',
@@ -4232,11 +4232,11 @@ function PreviewDragDropFlow({
           />
           <div style={{ textAlign: 'center', color: '#0f172a', maxWidth: 780, margin: '0 auto' }}>
             <div style={{ fontSize: 34, fontWeight: 900, marginBottom: 10 }}>
-              {intro.title || activity.name || 'EtkinliÄŸe HoÅŸ Geldin'}
+              {intro.title || activity.name || 'Etkinliğe Hoş Geldin'}
             </div>
             <div style={{ fontSize: 15, lineHeight: 1.75, color: '#64748b', marginBottom: 30 }}>
               {intro.body ||
-                'HazÄ±r olduÄŸunda etkinliÄŸi baÅŸlatabilir veya Ã¶nce etkinlik tanÄ±tÄ±mÄ±nÄ± inceleyebilirsin.'}
+                'Hazır olduğunda etkinliği başlatabilir veya önce etkinlik tanıtımını inceleyebilirsin.'}
             </div>
             <div
               style={{
@@ -4262,7 +4262,7 @@ function PreviewDragDropFlow({
                   cursor: 'pointer',
                 }}
               >
-                ? {settings.guideButtonText || 'TanÄ±tÄ±m'}
+                ? {settings.guideButtonText || 'Tanıtım'}
               </button>
               <button
                 onClick={() => {
@@ -4282,7 +4282,7 @@ function PreviewDragDropFlow({
                   boxShadow: '0 18px 40px rgba(214,31,105,.28)',
                 }}
               >
-                {intro.buttonText || 'EtkinliÄŸi BaÅŸlat'}
+                {intro.buttonText || 'Etkinliği Başlat'}
               </button>
             </div>
           </div>
@@ -4292,13 +4292,13 @@ function PreviewDragDropFlow({
   }
 
   if (phase === 'package') {
-    return renderShell('intro', 'KÄ±lavuz', renderGuideScreen());
+    return renderShell('intro', 'Kılavuz', renderGuideScreen());
   }
 
   if (phase === 'answer') {
     return renderShell(
       'play',
-      'Ã‡Ã¶zÃ¼m',
+      'Çözüm',
       renderPlayLayout(
         true,
         false,
@@ -4317,7 +4317,7 @@ function PreviewDragDropFlow({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 800 }}>
-            {answerScreen.title || 'DoÄŸru Cevap'}: Ã¶ÄŸeler doÄŸru yerlerine yerleÅŸtirildi.
+            {answerScreen.title || 'Doğru Cevap'}: öğeler doğru yerlerine yerleştirildi.
           </div>
           {answerScreen.body ? (
             <div style={{ fontSize: 12, lineHeight: 1.6, opacity: 0.78 }}>{answerScreen.body}</div>
@@ -4334,7 +4334,7 @@ function PreviewDragDropFlow({
               onClick={() => runDragDropAction(settings.answerButtonAction || 'restart', 'restart')}
               style={screenGhostBtn('answer')}
             >
-              {answerScreen.buttonText || 'Yeniden BaÅŸlat'}
+              {answerScreen.buttonText || 'Yeniden Başlat'}
             </button>
           </div>
         </div>

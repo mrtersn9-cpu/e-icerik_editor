@@ -1,119 +1,57 @@
-// eslint-disable-next-line no-unused-vars
-function ProductLogo() {
+import {
+  Archive,
+  ChevronDown,
+  CircleHelp,
+  Database,
+  Download,
+  Expand,
+  FolderKanban,
+  LayoutGrid,
+  LogOut,
+  MessageSquareText,
+  Palette,
+  Redo2,
+  Settings,
+  Undo2,
+} from 'lucide-react';
+
+import styles from './EditorTopBar.module.css';
+
+function QuickAction({ icon: Icon, label, onClick, disabled = false, title }) {
   return (
-    <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <rect x="4" y="4" width="56" height="56" rx="14" fill="#1e293b" />
-      <rect x="12" y="12" width="18" height="18" rx="4" fill="#2563eb" />
-      <rect x="34" y="12" width="18" height="18" rx="4" fill="#3b82f6" />
-      <rect x="12" y="34" width="18" height="18" rx="4" fill="#60a5fa" />
-      <rect x="34" y="34" width="18" height="18" rx="4" fill="#f59e0b" />
-    </svg>
+    <button className={styles.quickAction} type="button" onClick={onClick} disabled={disabled} title={title || label}>
+      <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   );
 }
 
-function QuickAction({ icon, label, onClick, disabled = false, title }) {
+function TextAction({ icon: Icon, label, onClick, disabled = false, active = false, title }) {
   return (
     <button
+      className={`${styles.textAction} ${active ? styles.textActionActive : ''}`}
       type="button"
-      onClick={disabled ? undefined : onClick}
+      onClick={onClick}
       disabled={disabled}
       title={title || label}
-      style={{
-        width: 58,
-        height: 38,
-        border: '1px solid transparent',
-        borderRadius: 6,
-        background: 'transparent',
-        color: disabled ? 'rgba(226,232,240,.34)' : '#e8f3ff',
-        cursor: disabled ? 'default' : 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 2,
-        fontSize: 9,
-        fontWeight: 700,
-        lineHeight: 1.05,
-        opacity: disabled ? 0.48 : 1,
-      }}
     >
-      <span style={{ fontSize: 17, lineHeight: 1 }}>{icon}</span>
-      <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+      {Icon && <Icon size={14} aria-hidden="true" />}
+      <span>{label}</span>
     </button>
   );
 }
 
-function IconButton({ children, onClick, title }) {
+function IconAction({ icon: Icon, label, onClick }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      style={{
-        width: 30,
-        height: 30,
-        border: '1px solid transparent',
-        borderRadius: 999,
-        background: 'transparent',
-        color: '#dbeafe',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 18,
-        lineHeight: 1,
-      }}
-    >
-      {children}
+    <button className={styles.iconAction} type="button" onClick={onClick} title={label} aria-label={label}>
+      <Icon size={17} aria-hidden="true" />
     </button>
   );
 }
 
-function TopBarPillButton({ label, onClick, active = false }) {
+function Breadcrumb({ label, onClick, title }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        height: 28,
-        padding: '0 8px',
-        borderRadius: 7,
-        border: `1px solid ${active ? '#38bdf8' : 'rgba(148,163,184,.28)'}`,
-        background: active ? 'rgba(14,165,233,.18)' : 'rgba(255,255,255,.07)',
-        color: active ? '#e0f2fe' : '#cbd5e1',
-        fontSize: 10,
-        fontWeight: 850,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function TopBarCrumbButton({ label, onClick, title }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title || label}
-      style={{
-        height: 25,
-        padding: '0 7px',
-        borderRadius: 7,
-        border: '1px solid rgba(148,163,184,.26)',
-        background: 'rgba(255,255,255,.06)',
-        color: '#dbeafe',
-        fontSize: 10,
-        fontWeight: 850,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        maxWidth: 82,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}
-    >
+    <button className={styles.crumb} type="button" onClick={onClick} title={title || label}>
       {label}
     </button>
   );
@@ -133,13 +71,11 @@ export default function EditorTopBar({
   lastSaved,
   redo,
   selActivity,
-  selBook,
-  selPub,
   onBackToActivities,
   onBackToBooks,
   onBackToPublishers,
   setAnswerDrawerOpen,
-  setCanvasExpanded,
+  onToggleFullscreen,
   setDesignToolsOpen,
   setShowAdminManagement,
   setShowProjectManager,
@@ -147,264 +83,110 @@ export default function EditorTopBar({
   setStoryRibbonTab,
   undo,
 }) {
-  const projectName =
-    selBook?.name || currentProject?.name || selActivity?.name || selPub?.name || 'Proje';
-  const savedLabel = lastSaved ? 'Kaydedildi' : dbStatus === 'connected' ? 'Kaydedildi' : 'Yerel';
-  const savedColor = dbStatus === 'connected' || lastSaved ? '#22c55e' : '#94a3b8';
+  const isEditor = currentView === 'editor';
+  const projectName = currentProject?.name || 'Proje';
+  const savedLabel =
+    dbStatus === 'connected'
+      ? lastSaved
+        ? 'Kaydedildi'
+        : 'Hazır'
+      : dbStatus === 'reconnecting'
+        ? 'Yerel taslak'
+        : dbStatus === 'auth-required'
+          ? 'Oturum gerekli'
+          : 'Bağlantı bekleniyor';
+  const databaseLabel =
+    dbStatus === 'connected'
+      ? 'Veritabanı bağlı'
+      : dbStatus === 'reconnecting'
+        ? 'SQL kesildi'
+        : dbStatus === 'auth-required'
+          ? 'Oturum gerekli'
+          : 'Bağlanıyor';
+  const activeUserInitial =
+    String(activeUser?.name || activeUser?.id || '?').trim().charAt(0).toUpperCase() || '?';
 
   return (
-    <div
-      style={{
-        height: 44,
-        minHeight: 44,
-        background: 'linear-gradient(180deg,#07182a 0%,#06111f 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 10px 0 8px',
-        borderBottom: '1px solid rgba(148,163,184,.24)',
-        gap: 12,
-        flexShrink: 0,
-        boxShadow: '0 5px 18px rgba(0,0,0,.34)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <img src="/logo-light.svg" height={28} alt="E-İçerik Studio" style={{ display: 'block' }} />
+    <header className={styles.topbar}>
+      <div className={styles.brand}>
+        <img src="/logo-light.svg" height={25} alt="E-İçerik Studio" />
       </div>
 
-      <div style={{ width: 1, height: 24, background: 'rgba(226,232,240,.26)', flexShrink: 0 }} />
+      <div className={styles.divider} />
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          minWidth: 120,
-          maxWidth: 220,
-          overflow: 'hidden',
-        }}
-      >
-        <span
-          title={projectName}
-          style={{
-            fontSize: 12,
-            color: '#e2e8f0',
-            fontWeight: 750,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          Proje: {projectName}
-        </span>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            fontSize: 12,
-            fontWeight: 850,
-            color: savedColor,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span style={{ fontSize: 13 }}>●</span>
-          {savedLabel}
-        </span>
+      <div className={styles.project}>
+        <FolderKanban size={15} aria-hidden="true" />
+        <span title={projectName}>{projectName}</span>
+        <small>{isEditor ? 'Düzenleme' : 'Kütüphane'}</small>
       </div>
 
-      {currentView === 'editor' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            flexShrink: 0,
-            minWidth: 0,
-          }}
-        >
-          <TopBarCrumbButton
-            label="Yayınevi"
-            title="Yayınevi seçimine dön"
-            onClick={onBackToPublishers}
-          />
-          <TopBarCrumbButton label="Kitap" title="Kitap seçimine dön" onClick={onBackToBooks} />
-          <TopBarCrumbButton
-            label="Etkinlik"
-            title="Etkinlik listesine dön"
-            onClick={onBackToActivities}
-          />
+      {isEditor && (
+        <nav className={styles.breadcrumbs} aria-label="Kütüphane dönüşleri">
+          <Breadcrumb label="Yayınevi" title="Yayınevi seçimine dön" onClick={onBackToPublishers} />
+          <Breadcrumb label="Kitap" title="Kitap seçimine dön" onClick={onBackToBooks} />
+          <Breadcrumb label="Etkinlik" title="Etkinlik listesine dön" onClick={onBackToActivities} />
+        </nav>
+      )}
+
+      {isEditor && (
+        <div className={styles.editorActions}>
+          <QuickAction icon={Undo2} label="Geri Al" onClick={undo} disabled={!history?.past?.length} title="Geri Al (Ctrl+Z)" />
+          <QuickAction icon={Redo2} label="İleri Al" onClick={redo} disabled={!history?.future?.length} title="İleri Al (Ctrl+Y)" />
+          <QuickAction icon={Download} label="Dışa Aktar" onClick={handleExport} />
+          <QuickAction icon={LayoutGrid} label="Önizleme" onClick={handleOpenStorylinePreview} />
+          <QuickAction icon={Expand} label="Tam Ekran" onClick={onToggleFullscreen} />
         </div>
       )}
 
-      {currentView === 'editor' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            minWidth: 288,
-            justifyContent: 'center',
-          }}
-        >
-          <QuickAction
-            icon="↶"
-            label="Geri Al"
-            onClick={undo}
-            disabled={!history?.past?.length}
-            title="Geri Al (Ctrl+Z)"
-          />
-          <QuickAction
-            icon="↷"
-            label="İleri Al"
-            onClick={redo}
-            disabled={!history?.future?.length}
-            title="İleri Al (Ctrl+Y)"
-          />
-          <QuickAction icon="⇧" label="Dışa Aktar" onClick={handleExport} />
-          <QuickAction icon="◉" label="Önizleme" onClick={handleOpenStorylinePreview} />
-          <QuickAction icon="⛶" label="Tam Ekran" onClick={() => setCanvasExpanded(true)} />
-        </div>
-      )}
+      <input ref={importRef} type="file" accept=".json" onChange={handleImport} hidden />
 
-      <input
-        ref={importRef}
-        type="file"
-        accept=".json"
-        onChange={handleImport}
-        style={{ display: 'none' }}
-      />
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto', minWidth: 0 }}>
-        {currentView === 'editor' && (
-          <>
-            <TopBarPillButton label="Sürümler" onClick={() => setShowProjectManager(true)} />
-            <TopBarPillButton label="Yorumlar" onClick={() => setShowReviewThreads(true)} />
-            <TopBarPillButton label="Yönetim" onClick={() => setShowAdminManagement(true)} />
-          </>
-        )}
-
-        {currentView === 'editor' && (
-          <button
-            type="button"
+      <div className={styles.right}>
+        <TextAction icon={Archive} label="Sürümler" onClick={() => setShowProjectManager(true)} />
+        {isEditor && <TextAction icon={MessageSquareText} label="Yorumlar" onClick={() => setShowReviewThreads(true)} />}
+        {isEditor && (
+          <TextAction
+            label="Cevap"
             onClick={() => setAnswerDrawerOpen(true)}
             disabled={!selActivity}
+            active={!!selActivity}
             title="Cevap Kontrol Merkezi"
-            style={{
-              height: 30,
-              padding: '0 11px',
-              borderRadius: 9,
-              border: `1px solid ${selActivity ? '#38bdf8' : 'rgba(148,163,184,.3)'}`,
-              background: selActivity ? 'rgba(14,165,233,.2)' : 'rgba(255,255,255,.05)',
-              color: selActivity ? '#e0f2fe' : 'rgba(226,232,240,.45)',
-              fontSize: 11,
-              fontWeight: 900,
-              cursor: selActivity ? 'pointer' : 'default',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Cevap
-          </button>
+          />
         )}
-
-        {currentView === 'editor' && (
-          <button
-            type="button"
+        {isEditor && (
+          <TextAction
+            icon={Palette}
+            label="Tasarım"
             onClick={() => setDesignToolsOpen?.(true)}
             disabled={!selActivity}
             title="Tasarım üretim araçları"
-            style={{
-              height: 30,
-              padding: '0 11px',
-              borderRadius: 9,
-              border: `1px solid ${selActivity ? 'rgba(124,58,237,.72)' : 'rgba(148,163,184,.3)'}`,
-              background: selActivity ? 'rgba(124,58,237,.18)' : 'rgba(255,255,255,.05)',
-              color: selActivity ? '#ede9fe' : 'rgba(226,232,240,.45)',
-              fontSize: 11,
-              fontWeight: 900,
-              cursor: selActivity ? 'pointer' : 'default',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Tasarım
-          </button>
+          />
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-          <span
-            style={{
-              height: 22,
-              padding: '0 8px',
-              borderRadius: 999,
-              border: `1px solid ${
-                dbStatus === 'connected' ? 'rgba(34,197,94,.35)' : 'rgba(148,163,184,.28)'
-              }`,
-              background:
-                dbStatus === 'connected' ? 'rgba(34,197,94,.12)' : 'rgba(255,255,255,.05)',
-              color: dbStatus === 'connected' ? '#22c55e' : '#94a3b8',
-              display: 'inline-flex',
-              alignItems: 'center',
-              fontSize: 11,
-              fontWeight: 850,
-            }}
-          >
-            {dbStatus === 'connected' ? '● SQLite' : dbStatus === 'connecting' ? '⟳ DB' : '○ Lokal'}
-          </span>
-          {lastSaved && (
-            <span style={{ color: '#22c55e', fontSize: 11, fontWeight: 800 }}>
-              ✓ {lastSaved.toLocaleTimeString('tr-TR')}
-            </span>
-          )}
-        </div>
+        <span
+          className={`${styles.database} ${dbStatus === 'connected' ? styles.databaseReady : dbStatus === 'reconnecting' ? styles.databaseWarning : ''}`}
+          title={
+            dbStatus === 'reconnecting'
+              ? 'SQL bağlantısı kesildi. Değişiklikler bu cihazda tutuluyor ve bağlantı gelince yüklenecek.'
+              : savedLabel
+          }
+        >
+          <Database size={13} aria-hidden="true" />
+          <span>{databaseLabel}</span>
+        </span>
 
-        <IconButton title="Yardım" onClick={() => setStoryRibbonTab('help')}>
-          ?
-        </IconButton>
+        {lastSaved && <span className={styles.saved}>{lastSaved.toLocaleTimeString('tr-TR')}</span>}
 
-        <IconButton title="Yönetim" onClick={() => setShowAdminManagement(true)}>
-          ⚙
-        </IconButton>
+        <IconAction icon={CircleHelp} label="Yardım" onClick={() => setStoryRibbonTab('help')} />
+        <IconAction icon={Settings} label="Yönetim" onClick={() => setShowAdminManagement(true)} />
 
         {activeUser && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Kullanıcı değiştir"
-              style={{
-                width: 31,
-                height: 31,
-                borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,.24)',
-                background: 'linear-gradient(135deg,#7c3aed,#a78bfa)',
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-            >
-              {activeUser.name.charAt(0).toUpperCase()}
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Kullanıcı değiştir"
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: '#dbeafe',
-                fontSize: 16,
-                cursor: 'pointer',
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              ⌄
-            </button>
-          </div>
+          <button className={styles.user} type="button" onClick={handleLogout} title="Kullanıcı değiştir">
+            <span>{activeUserInitial}</span>
+            <ChevronDown size={14} aria-hidden="true" />
+            <LogOut className={styles.logoutIcon} size={14} aria-hidden="true" />
+          </button>
         )}
       </div>
-    </div>
+    </header>
   );
 }

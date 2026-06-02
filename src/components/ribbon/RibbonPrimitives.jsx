@@ -1,14 +1,29 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 
 import { workspaceChrome } from '../../features/editor-workspace/chromeTokens';
+import { EDITOR_THEME } from '../../theme';
 
 const toneColors = {
-  blue: '#1d4ed8',
-  green: '#16a34a',
-  amber: '#d97706',
-  slate: '#1f3657',
-  red: '#dc2626',
-  purple: '#7c3aed',
+  blue: EDITOR_THEME.objectTones.blue.strong,
+  green: EDITOR_THEME.objectTones.green.base,
+  amber: EDITOR_THEME.objectTones.amber.base,
+  slate: EDITOR_THEME.objectTones.slate.strong,
+  red: EDITOR_THEME.objectTones.red.base,
+  purple: EDITOR_THEME.objectTones.purple.base,
+};
+
+const ribbonUi = {
+  text: EDITOR_THEME.lightText,
+  muted: EDITOR_THEME.lightMuted,
+  disabledText: EDITOR_THEME.lightDisabledText,
+  activeBg: EDITOR_THEME.lightAccentSoft,
+  activeBorder: EDITOR_THEME.lightAccentBorder,
+  activeBorderStrong: EDITOR_THEME.lightAccent,
+  controlBorder: EDITOR_THEME.lightBorder,
+  controlBorderSoft: EDITOR_THEME.lightBorderSoft,
+  controlBg: EDITOR_THEME.lightPanel,
+  controlDisabledBg: EDITOR_THEME.lightBg,
+  popoverShadow: EDITOR_THEME.shadowLg,
 };
 
 const disabledStyle = {
@@ -574,12 +589,12 @@ export function RibbonGroup({ title, children, width = 'auto', grow = false }) {
         style={{
           height: 11,
           fontSize: 9,
-          color: '#6b7d96',
+          color: ribbonUi.muted,
           textAlign: 'center',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          fontWeight: 650,
+          fontWeight: EDITOR_THEME.weightNormal,
           lineHeight: '11px',
         }}
       >
@@ -632,9 +647,9 @@ export function RibbonFieldLabel({ children, width = 48 }) {
       style={{
         width,
         flexShrink: 0,
-        color: '#42526b',
+        color: ribbonUi.muted,
         fontSize: 10,
-        fontWeight: 650,
+        fontWeight: EDITOR_THEME.weightNormal,
         whiteSpace: 'nowrap',
       }}
     >
@@ -666,9 +681,9 @@ export function RibbonButton({
         minWidth: width,
         height: 58,
         padding: '4px 4px 3px',
-        border: active ? '1px solid #7aa9ff' : '1px solid transparent',
-        background: active ? '#edf4ff' : 'transparent',
-        color: disabled ? '#a8b6c9' : '#13233d',
+        border: active ? `1px solid ${ribbonUi.activeBorder}` : '1px solid transparent',
+        background: active ? ribbonUi.activeBg : 'transparent',
+        color: disabled ? ribbonUi.disabledText : ribbonUi.text,
         fontSize: 10,
         fontWeight: 700,
         cursor: disabled ? 'default' : 'pointer',
@@ -677,7 +692,7 @@ export function RibbonButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 4,
-        borderRadius: 5,
+        borderRadius: EDITOR_THEME.radiusSm,
         lineHeight: 1.05,
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -694,7 +709,7 @@ export function RibbonButton({
           flexShrink: 0,
         }}
       >
-        <RibbonIcon icon={icon} color={disabled ? '#b8c3d2' : color} size={21} />
+        <RibbonIcon icon={icon} color={disabled ? ribbonUi.disabledText : color} size={21} />
       </span>
       <span
         style={{
@@ -733,9 +748,9 @@ export function CompactRibbonButton({
         minWidth: width,
         height: 20,
         padding: '0 6px',
-        border: active ? '1px solid #8bb7ff' : '1px solid #dce6f3',
-        background: active ? '#edf4ff' : '#ffffff',
-        color: disabled ? '#a8b6c9' : '#1d2b43',
+        border: active ? `1px solid ${ribbonUi.activeBorder}` : `1px solid ${ribbonUi.controlBorderSoft}`,
+        background: active ? ribbonUi.activeBg : ribbonUi.controlBg,
+        color: disabled ? ribbonUi.disabledText : ribbonUi.text,
         fontSize: 9,
         fontWeight: 700,
         cursor: disabled ? 'default' : 'pointer',
@@ -743,7 +758,7 @@ export function CompactRibbonButton({
         alignItems: 'center',
         justifyContent: 'flex-start',
         gap: 4,
-        borderRadius: 5,
+        borderRadius: EDITOR_THEME.radiusSm,
         lineHeight: 1,
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -760,7 +775,7 @@ export function CompactRibbonButton({
           flexShrink: 0,
         }}
       >
-        <RibbonIcon icon={icon} color={disabled ? '#b8c3d2' : color} size={14} />
+        <RibbonIcon icon={icon} color={disabled ? ribbonUi.disabledText : color} size={14} />
       </span>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {label}
@@ -779,10 +794,10 @@ export function RibbonSelect({ value, onChange, options = [], disabled = false, 
         width,
         minWidth: width,
         height: 24,
-        border: '1px solid #cbd7e6',
-        borderRadius: 5,
-        background: disabled ? '#f6f8fb' : '#ffffff',
-        color: disabled ? '#9aa8ba' : '#172033',
+        border: `1px solid ${ribbonUi.controlBorder}`,
+        borderRadius: EDITOR_THEME.radiusSm,
+        background: disabled ? ribbonUi.controlDisabledBg : ribbonUi.controlBg,
+        color: disabled ? ribbonUi.disabledText : ribbonUi.text,
         fontSize: 10,
         fontWeight: 700,
         padding: '0 6px',
@@ -821,10 +836,10 @@ export function RibbonNumberInput({
         width,
         minWidth: width,
         height: 24,
-        border: '1px solid #cbd7e6',
-        borderRadius: 5,
-        background: disabled ? '#f6f8fb' : '#ffffff',
-        color: disabled ? '#9aa8ba' : '#172033',
+        border: `1px solid ${ribbonUi.controlBorder}`,
+        borderRadius: EDITOR_THEME.radiusSm,
+        background: disabled ? ribbonUi.controlDisabledBg : ribbonUi.controlBg,
+        color: disabled ? ribbonUi.disabledText : ribbonUi.text,
         fontSize: 10,
         fontWeight: 700,
         padding: '0 5px',
@@ -856,9 +871,9 @@ export function RibbonColorInput({ value, onChange, disabled = false, title }) {
         minWidth: 24,
         height: 24,
         padding: 1,
-        border: '1px solid #cbd7e6',
-        borderRadius: 5,
-        background: '#ffffff',
+        border: `1px solid ${ribbonUi.controlBorder}`,
+        borderRadius: EDITOR_THEME.radiusSm,
+        background: ribbonUi.controlBg,
         cursor: disabled ? 'default' : 'pointer',
         ...(disabled ? disabledStyle : null),
       }}
@@ -929,10 +944,10 @@ export function RibbonPopoverButton({
             overflowY: 'auto',
             overflowX: 'hidden',
             padding: 10,
-            border: '1px solid #cbd7e6',
-            borderRadius: 8,
-            background: '#ffffff',
-            boxShadow: '0 18px 42px rgba(15,23,42,.18)',
+            border: `1px solid ${ribbonUi.controlBorder}`,
+            borderRadius: EDITOR_THEME.radiusLg,
+            background: ribbonUi.controlBg,
+            boxShadow: ribbonUi.popoverShadow,
           }}
           onClick={(event) => {
             const target = event.target;
@@ -982,9 +997,9 @@ export function RibbonGalleryButton({
         minWidth: width,
         height,
         padding: 4,
-        border: active ? '1px solid #7aa9ff' : '1px solid #d8e2ef',
-        borderRadius: 5,
-        background: active ? '#edf4ff' : '#ffffff',
+        border: active ? `1px solid ${ribbonUi.activeBorder}` : `1px solid ${ribbonUi.controlBorderSoft}`,
+        borderRadius: EDITOR_THEME.radiusSm,
+        background: active ? ribbonUi.activeBg : ribbonUi.controlBg,
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.36 : 1,
         display: 'flex',
@@ -1009,7 +1024,7 @@ export function RibbonSwatch({ color, active = false, title, onClick }) {
         minWidth: 18,
         height: 18,
         borderRadius: 4,
-        border: active ? '2px solid #2563eb' : '1px solid #cbd5e1',
+        border: active ? `2px solid ${ribbonUi.activeBorderStrong}` : `1px solid ${ribbonUi.controlBorder}`,
         background: color,
         cursor: 'pointer',
       }}

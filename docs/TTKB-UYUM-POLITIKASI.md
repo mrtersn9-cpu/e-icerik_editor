@@ -38,6 +38,7 @@ Kod veya paket degistiren her ajan su kurallari uygular:
 - Ogrenciye gorunen herhangi bir metin eklenirse dil, anlatim, seviye, terim ve yazim kontrolu yapilir.
 - Yapay zeka ile uretilen metin/gorsel/video materyali kullaniliyorsa kaynak ve yapay zeka uretimi notu gerektirebilecek alanlar dikkate alinir.
 - Buton, ikon, popup, layer, menu, feedback, drag-drop ve tiklama davranislarinda ayni islev ayni gorsel dil ile verilir.
+- Ogrenciye gorunen buton yazilari tek satirda kalir; buton metninin alt satira dusmesi, kirpilmesi veya okunamaz hale gelmesi TTKB riski kabul edilir ve tema/paket uretiminde font boyutu ya da buton genisligi buna gore guvenli ayarlanir.
 - Dogru/yanlis/uyari/cozum geri bildirimlerinde yalniz renk kullanilmaz; metin ve semantik ikon da bulunur.
 - Correct ikonu `✓`, Incorrect ikonu `×`, uyari ikonu `!`, cozum ikonu `✎`, menu ikonu `☰`, ana sayfa ikonu `⌂`, yeniden baslat ikonu `↻` olur.
 - Popup acildiginda base layer etkilesimleri popup uzerine sizmaz; cursor, drag-drop, hover, click ve z-index davranisi layer hiyerarsisine uygun olur.

@@ -583,7 +583,7 @@ export function SlideStrip({
 
   const handleSelect = (slideId) => onUpdate(selectActivitySlide(activity, slideId));
   const handleAdd = () => {
-    const newSlide = createSlide(`Slider ${slides.length + 1}`, slides.length);
+    const newSlide = createSlide(`Sahne ${slides.length + 1}`, slides.length);
     onUpdate(
       selectActivitySlide(
         { ...activity, slides: [...slides, newSlide], currentSlideId: newSlide.id },
@@ -598,7 +598,7 @@ export function SlideStrip({
       {
         ...source,
         id: uid(),
-        name: `${source.name || 'Slider'} Kopya`,
+        name: `${source.name || 'Sahne'} Kopya`,
         sceneName: source.sceneName || source.name || 'Sahne',
       },
       slides.length
@@ -912,10 +912,10 @@ export function SlideStrip({
                 textTransform: 'uppercase',
               }}
             >
-              Scenes
+              Sahneler
             </div>
             <div style={{ fontSize: 11, color: EDITOR_THEME.shellMutedSoft, marginTop: 1 }}>
-              {slides.length} slide
+              {slides.length} sahne
             </div>
           </div>
           <button
@@ -932,7 +932,7 @@ export function SlideStrip({
               cursor: 'pointer',
             }}
           >
-            + Scene
+            + Sahne
           </button>
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>

@@ -67,7 +67,7 @@ export default function SceneRightPanel({ controller }) {
               value={activity.startSlideId || currentSlide.id || ''}
               options={slides.map((slide, index) => ({
                 value: slide.id,
-                label: `${index + 1}. ${slide.name || slide.sceneName || 'Slide'}`,
+                label: `${index + 1}. ${slide.name || slide.sceneName || 'Sahne'}`,
               }))}
               onChange={(value) => patchActivity({ startSlideId: value })}
             />
