@@ -908,6 +908,7 @@ export const SLIDE_MASTER_PRESETS = [
 
 export const SLIDE_STATE_KEYS = [
   'sceneName',
+  'sectionTitle',
   'sceneTemplateId',
   'sceneTemplatePresetId',
   'sceneTemplateVersion',

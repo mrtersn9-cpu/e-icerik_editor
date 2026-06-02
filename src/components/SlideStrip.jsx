@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 
 import { SLIDE_TRANSITION_OPTIONS } from '../constants';
 import { buildResolvedLayerNameMap } from '../logic/factories';
@@ -582,6 +582,17 @@ export function SlideStrip({
   const thumbHeight = Math.max(vertical ? 70 : 68, Math.round((vertical ? 74 : 78) * thumbZoom));
 
   const handleSelect = (slideId) => onUpdate(selectActivitySlide(activity, slideId));
+  const setSlideSection = (slideId, title) => {
+    const nextSlides = slides.map((slide) =>
+      slide.id === slideId ? { ...slide, sectionTitle: title } : slide
+    );
+    onUpdate(selectActivitySlide({ ...activity, slides: nextSlides, currentSlideId: slideId }, slideId));
+  };
+  const renameSection = (slideId, current) => {
+    const title = window.prompt('Bölüm başlığı (boş bırakırsanız kaldırılır):', current || '');
+    if (title === null) return;
+    setSlideSection(slideId, title.trim());
+  };
   const handleAdd = () => {
     const newSlide = createSlide(`Sahne ${slides.length + 1}`, slides.length);
     onUpdate(
@@ -683,16 +694,71 @@ export function SlideStrip({
               const slideSummary = getSlideProgressSummary(slide);
               const statusMeta = resolveWorkflowStatusMeta(slideSummary.status);
               return (
-                <div
-                  key={slide.id}
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                  }}
-                >
+                <Fragment key={slide.id}>
+                  {slide.sectionTitle ? (
+                    <div
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 6,
+                        margin: '6px 0 2px',
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(37,99,235,.12)',
+                        border: '1px solid rgba(37,99,235,.3)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => renameSection(slide.id, slide.sectionTitle)}
+                        title="Bölümü yeniden adlandır"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          textAlign: 'left',
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#1d4ed8',
+                          fontSize: 11,
+                          fontWeight: 900,
+                          textTransform: 'uppercase',
+                          letterSpacing: '.04em',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {slide.sectionTitle}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSlideSection(slide.id, '')}
+                        title="Bölümü kaldır"
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#64748b',
+                          fontSize: 13,
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                    }}
+                  >
                   {index > 0 && (
                     <div
                       style={{
@@ -859,7 +925,8 @@ export function SlideStrip({
                       />
                     </div>
                   )}
-                </div>
+                  </div>
+                </Fragment>
               );
             })}
           </div>

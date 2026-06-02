@@ -94,6 +94,13 @@ export default function GirisRibbon({ controller }) {
         <RibbonButton label="Bul / Değiştir" icon="search" onClick={() => setFindReplaceOpen(true)} tone="slate" width={78} />
       </RibbonGroup>
 
+      <RibbonGroup title="Çeviri" width={130}>
+        <RibbonStack>
+          <CompactRibbonButton label="Dışa Aktar" icon="export" onClick={commands.exportTranslation} width={108} />
+          <CompactRibbonButton label="İçe Aktar" icon="open" onClick={commands.importTranslation} width={108} />
+        </RibbonStack>
+      </RibbonGroup>
+
       <FindReplaceModal
         open={findReplaceOpen}
         onClose={() => setFindReplaceOpen(false)}

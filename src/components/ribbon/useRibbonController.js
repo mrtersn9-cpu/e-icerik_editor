@@ -875,6 +875,15 @@ export default function useRibbonController({
     },
     commands: {
       addSlide,
+      setSlideSection: () => {
+        if (!currentSlide || typeof window === 'undefined') return;
+        const title = window.prompt(
+          'Bölüm başlığı (boş bırakırsanız kaldırılır):',
+          currentSlide.sectionTitle || ''
+        );
+        if (title === null) return;
+        patchCurrentSlide({ sectionTitle: title.trim() });
+      },
       align: (mode) => activity && updateActivity(alignActivitySelection(activity, selectedIds, mode)),
       applyButtonPackage,
       applyButtonMotion,
@@ -1067,6 +1076,69 @@ export default function useRibbonController({
         styleClipboardRef.current = { ...(primaryObject.style || {}) };
         showToast?.('Biçim kopyalandı');
       },
+      exportTranslation: () => {
+        if (!activity || typeof document === 'undefined') return;
+        const seen = new Set();
+        const entries = [];
+        const collect = (objects) => {
+          (Array.isArray(objects) ? objects : []).forEach((object) => {
+            if (!object || seen.has(object.id)) return;
+            seen.add(object.id);
+            const entry = { id: object.id };
+            if (typeof object.label === 'string' && object.label.trim()) entry.label = object.label;
+            if (typeof object.text === 'string' && object.text.trim()) entry.text = object.text;
+            if (entry.label || entry.text) entries.push(entry);
+          });
+        };
+        collect(activity.objects);
+        (activity.slides || []).forEach((slide) => collect(slide.objects));
+        const payload = { activityId: activity.id, activityName: activity.name || activity.sceneName || '', entries };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `ceviri-${(activity.name || 'etkinlik').replace(/\s+/g, '-')}.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        showToast?.(`${entries.length} metin dışa aktarıldı`);
+      },
+      importTranslation: () =>
+        selectLocalFile('application/json,.json', async (file) => {
+          if (!activity) return;
+          let data;
+          try {
+            data = JSON.parse(await file.text());
+          } catch {
+            showToast?.('Geçersiz çeviri dosyası');
+            return;
+          }
+          const byId = {};
+          (Array.isArray(data?.entries) ? data.entries : []).forEach((entry) => {
+            if (entry && entry.id) byId[entry.id] = entry;
+          });
+          let count = 0;
+          const applyToObjects = (objects) =>
+            (Array.isArray(objects) ? objects : []).map((object) => {
+              const entry = object && byId[object.id];
+              if (!entry) return object;
+              let next = object;
+              if (typeof entry.label === 'string' && entry.label !== object.label) {
+                next = { ...next, label: entry.label };
+                count += 1;
+              }
+              if (typeof entry.text === 'string' && entry.text !== object.text) {
+                next = { ...next, text: entry.text };
+                count += 1;
+              }
+              return next;
+            });
+          updateActivity({
+            ...activity,
+            objects: applyToObjects(activity.objects),
+            slides: (activity.slides || []).map((slide) => ({ ...slide, objects: applyToObjects(slide.objects) })),
+          });
+          showToast?.(`${count} metin güncellendi`);
+        }),
       countObjectText: (search) => {
         if (!activity || !search) return 0;
         return (activity.objects || []).reduce((count, item) => {
