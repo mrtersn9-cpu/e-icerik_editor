@@ -871,6 +871,44 @@ function buildSessionPayload(row) {
   };
 }
 
+// Seviye 1 isbirligi (presence): kim online + hangi kitabi kim duzenliyor.
+// Mevcut user_sessions/book_locks tablolarindan okunur; sema degismez.
+function buildPresencePayload() {
+  cleanupExpiredSessions();
+  const users = db
+    .prepare(
+      `SELECT user_id, session_id, session_label, last_seen_at
+       FROM user_sessions ORDER BY last_seen_at DESC`
+    )
+    .all()
+    .map((row) => {
+      const u = resolveFixedUser(row.user_id);
+      return {
+        userId: row.user_id,
+        userName: u?.name || row.user_id,
+        sessionId: row.session_id,
+        lastSeenAt: row.last_seen_at,
+      };
+    });
+  const locks = db
+    .prepare(
+      `SELECT project_id, book_id, user_id, session_id, locked_at
+       FROM book_locks ORDER BY locked_at DESC`
+    )
+    .all()
+    .map((row) => {
+      const u = resolveFixedUser(row.user_id);
+      return {
+        projectId: row.project_id,
+        bookId: row.book_id,
+        userId: row.user_id,
+        userName: u?.name || row.user_id,
+        sessionId: row.session_id,
+      };
+    });
+  return { users, locks };
+}
+
 function claimUserSession(userId, sessionId, sessionLabel = "") {
   const cleanSessionId = String(sessionId || "").trim();
   if (!cleanSessionId) {
@@ -1623,6 +1661,7 @@ const server = http.createServer(async (req, res) => {
         session: touched.session,
         kickRequested,
         ...(kickRequested ? { waitSeconds: getKickWaitSeconds(kickRequest) } : {}),
+        presence: buildPresencePayload(),
       });
       return;
     }

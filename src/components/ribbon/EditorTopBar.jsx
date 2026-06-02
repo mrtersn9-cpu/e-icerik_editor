@@ -15,6 +15,8 @@ import {
   Undo2,
 } from 'lucide-react';
 
+import PresenceBar from '../../features/presence/PresenceBar';
+
 import styles from './EditorTopBar.module.css';
 
 function QuickAction({ icon: Icon, label, onClick, disabled = false, title }) {
@@ -76,6 +78,8 @@ export default function EditorTopBar({
   onBackToPublishers,
   setAnswerDrawerOpen,
   onToggleFullscreen,
+  onlineUsers = [],
+  currentBookEditor = null,
   setDesignToolsOpen,
   setShowAdminManagement,
   setShowProjectManager,
@@ -141,6 +145,9 @@ export default function EditorTopBar({
       <input ref={importRef} type="file" accept=".json" onChange={handleImport} hidden />
 
       <div className={styles.right}>
+        {(onlineUsers.length > 0 || currentBookEditor) && (
+          <PresenceBar onlineUsers={onlineUsers} currentBookEditor={isEditor ? currentBookEditor : null} />
+        )}
         <TextAction icon={Archive} label="Sürümler" onClick={() => setShowProjectManager(true)} />
         {isEditor && <TextAction icon={MessageSquareText} label="Yorumlar" onClick={() => setShowReviewThreads(true)} />}
         {isEditor && (

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import PresenceBar from '../features/presence/PresenceBar';
 import WorkspaceStageCanvas from '../logic/StageCanvas';
 
 import styles from './MobileEditorShell.module.css';
@@ -61,6 +62,7 @@ export default function MobileEditorShell({
     onVersions,
     onBackToLibrary,
     onLogout,
+    onlineUsers = [],
   } = topBar;
 
   const selectedIds = canvasProps.selectedIds;
@@ -108,6 +110,9 @@ export default function MobileEditorShell({
           <strong>{selActivity?.name || currentProject?.name || 'Etkinlik'}</strong>
           <small>Düzenleme</small>
         </div>
+        {onlineUsers.length > 0 && (
+          <PresenceBar onlineUsers={onlineUsers} compact />
+        )}
         <button
           type="button"
           className={styles.topbarBtn}

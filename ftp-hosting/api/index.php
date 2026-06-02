@@ -593,7 +593,46 @@ try {
         $pdo->prepare('UPDATE user_sessions SET last_seen_at = NOW() WHERE user_id = :uid AND session_id = :sid')
             ->execute([':uid' => $userId, ':sid' => $sessionId]);
 
-        send_json(200, ['ok' => true, 'kickRequested' => $kickRequested]);
+        // Seviye 1 isbirligi (presence): online kullanicilar + aktif kitap
+        // kilitleri. Mevcut tablolardan okunur; sema degismez. Yalniz son 3 dk
+        // icinde gorulen (canli) oturumlar ve onlarin tuttugu kilitler doner.
+        $presenceUsers = [];
+        $usrStmt = $pdo->query(
+            "SELECT user_id, session_id, last_seen_at FROM user_sessions
+             WHERE last_seen_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)
+             ORDER BY last_seen_at DESC"
+        );
+        foreach ($usrStmt as $r) {
+            $presenceUsers[] = [
+                'userId'     => $r['user_id'],
+                'userName'   => get_user_display_name($config, $r['user_id']),
+                'sessionId'  => $r['session_id'],
+                'lastSeenAt' => $r['last_seen_at'],
+            ];
+        }
+        $presenceLocks = [];
+        $lockStmt = $pdo->query(
+            "SELECT bl.project_id, bl.book_id, bl.user_id, bl.user_name, bl.session_id
+             FROM book_locks bl
+             JOIN user_sessions us ON us.session_id = bl.session_id
+             WHERE us.last_seen_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)
+             ORDER BY bl.locked_at DESC"
+        );
+        foreach ($lockStmt as $r) {
+            $presenceLocks[] = [
+                'projectId' => $r['project_id'],
+                'bookId'    => $r['book_id'],
+                'userId'    => $r['user_id'],
+                'userName'  => $r['user_name'] ?: get_user_display_name($config, $r['user_id']),
+                'sessionId' => $r['session_id'],
+            ];
+        }
+
+        send_json(200, [
+            'ok' => true,
+            'kickRequested' => $kickRequested,
+            'presence' => ['users' => $presenceUsers, 'locks' => $presenceLocks],
+        ]);
     }
 
     if ($path === '/auth/logout' && $method === 'POST') {

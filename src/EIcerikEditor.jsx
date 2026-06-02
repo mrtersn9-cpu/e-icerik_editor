@@ -38,6 +38,8 @@ import {
 import TimelineDock from './components/TimelineDock';
 import { Inp, SelectInp, Btn, ShapePreviewIcon } from './components/ui';
 import LoginScreen from './features/auth/LoginScreen';
+import PresenceBar from './features/presence/PresenceBar';
+import usePresence from './features/presence/usePresence';
 import ActivityMapPanel, { LayerManager } from './features/editor-workspace/left/ActivityMapPanel';
 import ContextRightPanel from './features/editor-workspace/right/ContextRightPanel';
 import EditorWorkspaceShell from './features/editor-workspace/EditorWorkspaceShell';
@@ -5146,6 +5148,8 @@ export default function EIcerikEditor() {
   const [kickCountdown, setKickCountdown] = useState(30);
   const [, setBookLockInfo] = useState(null);
   const [bookLockWarning, setBookLockWarning] = useState('');
+  // Seviye 1 isbirligi: heartbeat'ten gelen presence (online kullanicilar + kilitler)
+  const [presence, setPresence] = useState({ users: [], locks: [] });
   const [history, setHistory] = useState(() =>
     readStoredEditorHistory(readStoredAuth()?.userId, INITIAL_STATE)
   );
@@ -5282,6 +5286,12 @@ export default function EIcerikEditor() {
     null;
   const activeUserId = authState?.userId || '';
   const activeSessionId = authState?.sessionId || '';
+  const { onlineUsers, currentBookEditor } = usePresence({
+    presence,
+    currentUserId: activeUserId,
+    activeBookId: present.selBookId,
+    onNotify: showToast,
+  });
   const isRemoteMutationLocked =
     isRemoteWorkspaceMutationLocked(activeUserId, dbStatus) &&
     !hasLoadedRemoteWorkspaceRef.current;
@@ -6199,6 +6209,12 @@ export default function EIcerikEditor() {
           body: JSON.stringify({ userId: activeUserId, sessionId: activeSessionId }),
         });
         heartbeatFailCountRef.current = 0;
+        if (result?.presence) {
+          setPresence({
+            users: Array.isArray(result.presence.users) ? result.presence.users : [],
+            locks: Array.isArray(result.presence.locks) ? result.presence.locks : [],
+          });
+        }
         if (result?.kickRequested) setKickRequested(true);
       } catch (error) {
         if (cancelled) return;
@@ -6229,10 +6245,38 @@ export default function EIcerikEditor() {
       }
     };
 
-    const timer = window.setInterval(heartbeat, 8000);
+    // Uyarlanabilir aralik: sekme onplandayken 8 sn, arka planda 25 sn.
+    // Boylece presence canli kalir ama bos/arka plan sekmeler paylasimli
+    // hosting'i gereksiz yormaz. Self-scheduling timeout, yavas internette
+    // heartbeat'lerin ust uste binmesini de onler.
+    let timer = null;
+    const ACTIVE_MS = 8000;
+    const IDLE_MS = 25000;
+    const scheduleNext = () => {
+      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      timer = window.setTimeout(tick, hidden ? IDLE_MS : ACTIVE_MS);
+    };
+    const tick = async () => {
+      await heartbeat();
+      if (!cancelled) scheduleNext();
+    };
+    const onVisibility = () => {
+      // Sekme tekrar gorununce hemen taze heartbeat (presence guncel kalsin).
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !cancelled) {
+        if (timer) window.clearTimeout(timer);
+        tick();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    scheduleNext();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer) window.clearTimeout(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
     };
   }, [
     activeSessionId,
@@ -7948,6 +7992,8 @@ export default function EIcerikEditor() {
         }
         setAnswerDrawerOpen={setAnswerDrawerOpen}
         onToggleFullscreen={toggleNativeFullscreen}
+        onlineUsers={onlineUsers}
+        currentBookEditor={currentBookEditor}
         setDesignToolsOpen={setShowDesignTools}
         setShowAdminManagement={setShowAdminManagement}
         setShowProjectManager={setShowProjectManager}
@@ -8467,6 +8513,7 @@ export default function EIcerikEditor() {
                 { mode: 'push' }
               ),
             onLogout: handleLogout,
+            onlineUsers,
           }}
           canvasProps={{
             activity: selActivity,
