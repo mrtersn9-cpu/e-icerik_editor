@@ -87,7 +87,6 @@ import {
   HANDLE_CURSOR,
   DEFAULT_ACTIVITY_SETTINGS,
   DEFAULT_LMS_CONFIG,
-  VARIABLE_TYPES,
   TRIGGER_ACTION_OPTIONS,
   TRIGGER_WHEN_OPTIONS,
   TRIGGER_OPERATOR_OPTIONS,
@@ -149,6 +148,13 @@ import {
   getCanvasObjects,
   getCorrectDragMatches,
 } from './logic/activityHelpers';
+import { getDragDropAssignments } from './logic/activityScoring';
+import {
+  getVariableTypeLabel,
+  formatVariableValue,
+  buildVariableUsageCountMap,
+  buildBuiltInVariableRows,
+} from './logic/variableHelpers';
 import {
   getPresetToneColors,
   getReadyButtonTone,
@@ -203,7 +209,6 @@ import {
   createLayer,
   createDefaultSlideLayers,
   ensureSlideDefaultLayers,
-  createObject,
   createShapeObject,
   createButtonPresetObject,
   normalizeVectorPoint,
@@ -238,9 +243,7 @@ import {
   getDragDropSettings,
   getDragDropAnimationPreset,
   getDragDropScopeKey,
-  areDragDropScopesCompatible,
   isDragReusable,
-  getDropCapacityLimit,
   getDragDropPairKey,
   getDragDropPairsFromMatches,
   buildDragDropMatchMapFromPairs,
@@ -279,12 +282,9 @@ import {
 } from './logic/activityRestyle';
 import useEditorStore from './store/useEditorStore';
 import {
-  normalizePdfText,
-  sanitizePdfText,
   detectPdfDraftKind,
   extractPdfDragTerms,
   extractPdfAnswerTerms,
-  extractPdfQuestionAnchors,
   buildStoryboardConfig,
 } from './pdfParser';
 import {
@@ -302,8 +302,6 @@ import {
   inferPdfSelectionAnchors,
   shouldUsePdfBottomOrigin,
   getPdfStageRectForLines,
-  getPdfQuestionAnchors,
-  getPdfDragPoolRect,
   detectCanvasContentBounds,
   mapPdfLinesToStage,
   paintPdfCleanupRect,
@@ -318,8 +316,6 @@ import {
   stripTrailingCheckMark,
   inferPdfTableChoiceColumns,
   findPdfAnchorLineForText,
-  buildPdfSelectionLayoutFromStoryboard,
-  detectPdfSelectionLayout,
 } from './logic/pdfUtils';
 import {
   getActivityContentLanguage,
@@ -502,422 +498,20 @@ function syncAnswerPlacementObjects(activity) {
 
 
 
-function getVariableTypeLabel(type = 'text') {
-  return VARIABLE_TYPES.find((item) => item.value === type)?.label || type;
-}
-
-function formatVariableValue(value, type = 'text') {
-  if (type === 'boolean') return value ? 'True' : 'False';
-  if (type === 'number') return Number.isFinite(Number(value)) ? String(Number(value)) : '0';
-  return String(value ?? '');
-}
-
-function resolveColorPickerValue(value, fallback = '#111111') {
-  const match = String(value || '').match(/#[0-9a-fA-F]{6}/);
-  return match ? match[0] : fallback;
-}
-
-function buildVariableUsageCountMap(activities = []) {
-  return (activities || []).reduce((counts, activity) => {
-    getActivitySlides(activity).forEach((slide) => {
-      (slide.triggers || []).forEach((trigger) => {
-        if (
-          ['DegiskenAta', 'DegiskenArttir', 'DegiskenAzalt'].includes(trigger?.action) &&
-          trigger?.value
-        ) {
-          counts[trigger.value] = (counts[trigger.value] || 0) + 1;
-        }
-        (trigger?.conditions || []).forEach((condition) => {
-          if (condition?.sourceType === 'variable' && condition?.sourceId) {
-            counts[condition.sourceId] = (counts[condition.sourceId] || 0) + 1;
-          }
-        });
-      });
-    });
-    return counts;
-  }, {});
-}
-
-function buildBuiltInVariableRows({ activity = {}, projectName = '', bookName = '' } = {}) {
-  const slides = getActivitySlides(activity);
-  const currentSlideIndex =
-    Math.max(
-      0,
-      slides.findIndex((slide) => slide.id === activity?.currentSlideId)
-    ) + 1;
-  return [
-    {
-      id: 'builtin.project',
-      name: 'Project.Title',
-      type: 'text',
-      value: projectName || 'İsimsiz Proje',
-      useCount: 0,
-    },
-    {
-      id: 'builtin.book',
-      name: 'Book.Title',
-      type: 'text',
-      value: bookName || 'İsimsiz Kitap',
-      useCount: 0,
-    },
-    {
-      id: 'builtin.activity',
-      name: 'Activity.Name',
-      type: 'text',
-      value: activity?.name || 'İsimsiz Etkinlik',
-      useCount: 0,
-    },
-    {
-      id: 'builtin.scene',
-      name: 'Scene.Name',
-      type: 'text',
-      value: activity?.sceneName || 'İsimsiz Sahne',
-      useCount: 0,
-    },
-    {
-      id: 'builtin.slideIndex',
-      name: 'Slide.Index',
-      type: 'number',
-      value: currentSlideIndex,
-      useCount: 0,
-    },
-    {
-      id: 'builtin.slideCount',
-      name: 'Slide.Count',
-      type: 'number',
-      value: slides.length,
-      useCount: 0,
-    },
-    {
-      id: 'builtin.layerCount',
-      name: 'Layer.Count',
-      type: 'number',
-      value: getActivityLayers(activity).length,
-      useCount: 0,
-    },
-    {
-      id: 'builtin.objectCount',
-      name: 'Object.Count',
-      type: 'number',
-      value: Array.isArray(activity?.objects) ? activity.objects.length : 0,
-      useCount: 0,
-    },
-  ];
-}
+// NOT: Degisken paneli yardimcilari (getVariableTypeLabel, formatVariableValue,
+// resolveColorPickerValue, buildVariableUsageCountMap, buildBuiltInVariableRows)
+// ./logic/variableHelpers modulune tasindi.
 
 
 
 const AUTO_LAYER_NAME_PRESETS = ['menu', 'explanation', 'normal', 'Correct', 'Incorrect', 'cevap'];
 
 
-// eslint-disable-next-line no-unused-vars -- Legacy PDF import object factory retained for dormant import flow.
-function createPdfImageObject(imageUrl, pageWidth, pageHeight, label = 'PDF Zemin') {
-  const object = createObject('image');
-  return {
-    ...object,
-    x: 0,
-    y: 0,
-    width: pageWidth,
-    height: pageHeight,
-    imageData: imageUrl,
-    label,
-    isPdfBackground: true,
-    locked: true,
-    zIndex: 0,
-    style: {
-      ...object.style,
-      background: 'transparent',
-      borderColor: 'transparent',
-    },
-  };
-}
-
-function createPdfMaskObject(x, y, width, height) {
-  const object = createObject('shape');
-  return {
-    ...object,
-    x,
-    y,
-    width,
-    height,
-    label: '',
-    isPdfMask: true,
-    locked: true,
-    zIndex: 30,
-    style: {
-      ...object.style,
-      background: '#ffffff',
-      borderColor: '#ffffff',
-      borderRadius: 8,
-      color: 'transparent',
-    },
-  };
-}
-
-function createPdfDropzoneObject(text, x, y, width, height, index) {
-  const object = createObject('dropzone');
-  return {
-    ...object,
-    x,
-    y,
-    width,
-    height,
-    label: `Bosluk ${index + 1}`,
-    group: text,
-    locked: false,
-    zIndex: 40 + index,
-    style: {
-      ...upgradeDragDropStyle('dropzone', object.style),
-      borderRadius: 12,
-    },
-  };
-}
-
-function createPdfDraggableObject(text, x, y, width, height, index) {
-  const object = createObject('draggable');
-  return {
-    ...object,
-    x,
-    y,
-    width,
-    height,
-    label: text,
-    group: text,
-    zIndex: 60 + index,
-    style: {
-      ...upgradeDragDropStyle('draggable', object.style),
-      borderRadius: 16,
-    },
-  };
-}
-
-function createPdfSelectionObject(
-  questionId,
-  choice,
-  x,
-  y,
-  width,
-  height,
-  index,
-  isCorrect = null,
-  displayLabel = null,
-  layoutMode = ''
-) {
-  const object = createObject('button');
-  // D/Y (doğru/yanlış) mode: label shows "D" or "Y"
-  // single-check mode: label shows checkbox symbol
-  const isBinary = choice === 'd' || choice === 'y';
-  const isTableChoice = layoutMode === 'table-choice';
-  const label = isBinary
-    ? choice === 'd'
-      ? 'D'
-      : 'Y'
-    : isTableChoice
-      ? sanitizePdfText(displayLabel || choice || '')
-      : '☐';
-  const bg = isBinary
-    ? choice === 'd'
-      ? '#dcfce7'
-      : '#fef2f2'
-    : isTableChoice
-      ? '#eff6ff'
-      : '#f8faff';
-  const border = isBinary
-    ? choice === 'd'
-      ? '#16a34a'
-      : '#dc2626'
-    : isTableChoice
-      ? '#2563eb'
-      : '#6366f1';
-  const color = isBinary
-    ? choice === 'd'
-      ? '#15803d'
-      : '#b91c1c'
-    : isTableChoice
-      ? '#1d4ed8'
-      : '#4338ca';
-  return {
-    ...object,
-    x,
-    y,
-    width,
-    height,
-    label,
-    selectionQuestionId: questionId,
-    selectionChoice: choice,
-    selectionCorrect: typeof isCorrect === 'boolean' ? isCorrect : null,
-    locked: false,
-    zIndex: 48 + index,
-    style: {
-      ...object.style,
-      background: bg,
-      borderColor: border,
-      color,
-      borderRadius: isBinary ? 6 : 4,
-      fontSize: isBinary ? 14 : isTableChoice ? 12 : 22,
-      fontWeight: 700,
-    },
-  };
-}
-
-// eslint-disable-next-line no-unused-vars -- Legacy PDF selection object builder retained for dormant import flow.
-function buildPdfSelectionObjects(draft, page) {
-  const detectedLayout = detectPdfSelectionLayout(page);
-  const storyboardLayout = buildPdfSelectionLayoutFromStoryboard(draft, page);
-  const detectedCount = detectedLayout?.anchors?.length || 0;
-  const storyboardCount = storyboardLayout?.anchors?.length || 0;
-  const layout =
-    storyboardCount > detectedCount ? storyboardLayout : detectedLayout || storyboardLayout;
-  if (!layout) return { objects: [], slots: [], masks: [], layout: null };
-
-  const objects = [];
-  const slots = [];
-  const masks = [];
-  const width = page.width || 1920;
-  const height = page.height || 1080;
-
-  // White mask covering each column strip so original PDF tick marks are hidden in editor
-  const columnHeight = clamp(
-    (layout.anchors[layout.anchors.length - 1]?.stageY || 0) +
-      layout.rowHeight -
-      Math.max(0, layout.anchors[0]?.stageY || 0) +
-      layout.rowHeight * 0.22,
-    layout.rowHeight,
-    height
-  );
-  const columnTop = clamp(
-    Math.max(0, (layout.anchors[0]?.stageY || 0) - layout.rowHeight * 0.18),
-    0,
-    height
-  );
-  layout.columns.forEach((column) => {
-    const extraW = layout.mode === 'single-check' ? column.width * 0.45 : column.width * 0.12;
-    const rx = clamp(column.left - extraW * 0.35, 0, width);
-    masks.push(
-      createPdfMaskObject(rx, columnTop, Math.min(width - rx, column.width + extraW), columnHeight)
-    );
-  });
-
-  layout.anchors.forEach((anchor, index) => {
-    const questionId = `pdf-q-${index + 1}`;
-    const top = clamp(anchor.stageY - layout.rowHeight * 0.18, 0, height - layout.rowHeight);
-    const correctChoice = layout.answers[questionId] || null;
-    const correctColumn = layout.columns.find((column) => column.key === correctChoice) || null;
-    slots.push({ id: questionId, correctChoice, correctLabel: correctColumn?.label || null });
-    layout.columns.forEach((column, columnIndex) => {
-      objects.push(
-        createPdfSelectionObject(
-          questionId,
-          column.key,
-          column.left,
-          top,
-          column.width,
-          layout.rowHeight,
-          index * Math.max(1, layout.columns.length) + columnIndex,
-          correctChoice === column.key ? true : correctChoice ? false : null,
-          column.label || column.key,
-          layout.mode
-        )
-      );
-    });
-  });
-
-  return { objects, slots, masks, layout };
-}
-
-// eslint-disable-next-line no-unused-vars -- Legacy PDF mask hook retained for dormant import flow.
-function applyPdfCleaningMasks(kind, page) {
-  if (kind === 'drag-drop') {
-    return [];
-  }
-  // selection masks are built inside buildPdfSelectionObjects, nothing extra needed here
-  return [];
-}
-
-// eslint-disable-next-line no-unused-vars -- Legacy PDF drag-drop object builder retained for dormant import flow.
-function buildPdfDragDropObjects(draft, page) {
-  const lines = Array.isArray(page.lines) ? page.lines : [];
-  const terms = (draft.draggableTerms || []).map((term) => sanitizePdfText(term)).filter(Boolean);
-  const answers = (draft.answerTerms || []).map((term) => sanitizePdfText(term)).filter(Boolean);
-  const anchors = getPdfQuestionAnchors(page).length
-    ? getPdfQuestionAnchors(page)
-    : extractPdfQuestionAnchors(lines, page.height || 768);
-  const preferredDropTerms =
-    answers.length >= Math.min(terms.length, anchors.length) ? answers : terms;
-  const dropTerms = preferredDropTerms.slice(0, anchors.length);
-  if (!terms.length || !anchors.length || !dropTerms.length) return { objects: [], matches: {} };
-
-  const width = page.width || 1365;
-  const height = page.height || 768;
-  const poolRect = getPdfDragPoolRect(page);
-  const dragGap = 10;
-  const dragHeight = clamp(Math.round(height * 0.045), 34, 46);
-  const objects = [];
-  const matches = {};
-  const dropzones = [];
-
-  dropTerms.forEach((answer, index) => {
-    const anchor = anchors[index];
-    if (!anchor) return;
-    const dropHeight = clamp(Math.round(height * 0.043), 32, 42);
-    const dropWidth = clamp(
-      Math.max(220, Math.round(answer.length * 10.5)),
-      220,
-      Math.round(width * 0.28)
-    );
-    const preferredX = anchor.x + (anchor.width || 0) + 12;
-    const minX = Math.max(110, width * 0.16);
-    const maxX = Math.max(minX, poolRect ? poolRect.x - dropWidth - 24 : width * 0.55);
-    const targetX = clamp(preferredX, minX, maxX);
-    const preferredY = anchor.stageY;
-    const minY = Math.max(24, anchor.stageY - 4);
-    const maxY = Math.max(minY, anchor.stageY + anchor.height);
-
-    const dropzone = createPdfDropzoneObject(
-      answer,
-      targetX,
-      clamp(preferredY, minY, maxY),
-      dropWidth,
-      dropHeight,
-      index
-    );
-    objects.push(dropzone);
-    dropzones.push(dropzone);
-  });
-
-  const longTerms = terms.some((term) => term.length > 24);
-  const columns = poolRect && !longTerms && terms.length >= 6 ? 2 : 1;
-  const dragWidth = poolRect
-    ? clamp(
-        Math.round(columns === 1 ? poolRect.width - 18 : (poolRect.width - 24 - dragGap) / 2),
-        200,
-        420
-      )
-    : clamp(Math.round(width * 0.18), 180, 320);
-  const dragStartX = poolRect ? poolRect.x + 9 : width * 0.72;
-  const dragStartY = poolRect ? poolRect.y + 8 : height * 0.24;
-
-  terms.forEach((term, index) => {
-    const column = columns === 1 ? 0 : index % columns;
-    const row = columns === 1 ? index : Math.floor(index / columns);
-    const x = poolRect
-      ? dragStartX + column * (dragWidth + dragGap)
-      : width * (0.72 + column * 0.12);
-    const y = poolRect
-      ? dragStartY + row * (dragHeight + 8)
-      : height * 0.24 + row * (dragHeight + 12);
-
-    const draggable = createPdfDraggableObject(term, x, y, dragWidth, dragHeight, index);
-    objects.push(draggable);
-
-    const dropzone = dropzones.find((item) => item.group === term) || dropzones[index] || null;
-    if (dropzone) matches[draggable.id] = dropzone.id;
-  });
-
-  return { objects, matches };
-}
-
-/* ── Transition CSS keyframe builder ── */
+// NOT: PDF içe aktarma nesne fabrikaları (createPdfImageObject, createPdfMaskObject,
+// createPdfDropzoneObject, createPdfDraggableObject, createPdfSelectionObject,
+// buildPdfSelectionObjects, applyPdfCleaningMasks, buildPdfDragDropObjects) tek bir
+// kaynak olarak './logic/pdfObjectFactory' modülüne taşındı. Bu dosyadaki kopyaları
+// uyuyan (dormant) içe aktarma akışına ait olduğu ve burada çağrılmadığı için silindi.
 
 
 
@@ -1555,190 +1149,9 @@ function StorylineScormPlayerPreview({
   );
 }
 
-function getDragDropAssignments(activity) {
-  const canvasObjects = getCanvasObjects(activity);
-  const drags = canvasObjects.filter((o) => o.type === 'draggable');
-  const drops = canvasObjects.filter((o) => o.type === 'dropzone');
-  const usedDropCounts = {};
-  const pairs = [];
-
-  drags.forEach((drag, index) => {
-    const scopeFiltered = drops.filter((drop) => areDragDropScopesCompatible(activity, drag, drop));
-    if (!scopeFiltered.length) return;
-
-    const sameGroup = drag.group
-      ? scopeFiltered.filter(
-          (drop) => normalizePdfText(drop.group || '') === normalizePdfText(drag.group || '')
-        )
-      : [];
-    const sameLabel = drag.label
-      ? scopeFiltered.filter(
-          (drop) => normalizePdfText(drop.label || '') === normalizePdfText(drag.label || '')
-        )
-      : [];
-    const basePool = sameGroup.length ? sameGroup : sameLabel.length ? sameLabel : scopeFiltered;
-    const reusable = isDragReusable(activity, drag);
-    const acceptedDropIds = [];
-
-    basePool.forEach((drop, candidateIndex) => {
-      const capacity = getDropCapacityLimit(activity, drop);
-      const currentCount = usedDropCounts[drop.id] || 0;
-      const canUseDrop = capacity === 0 || currentCount < capacity;
-      const isFallbackCandidate = !sameGroup.length && !sameLabel.length;
-      if (!canUseDrop) return;
-      if (!reusable && candidateIndex > 0) return;
-      if (reusable && isFallbackCandidate && candidateIndex > 0) return;
-      acceptedDropIds.push(drop.id);
-      usedDropCounts[drop.id] = currentCount + 1;
-    });
-
-    if (!acceptedDropIds.length) {
-      const fallback = scopeFiltered[index] || scopeFiltered[0];
-      if (!fallback) return;
-      const capacity = getDropCapacityLimit(activity, fallback);
-      const currentCount = usedDropCounts[fallback.id] || 0;
-      if (capacity !== 0 && currentCount >= capacity) return;
-      acceptedDropIds.push(fallback.id);
-      usedDropCounts[fallback.id] = currentCount + 1;
-    }
-
-    acceptedDropIds.forEach((dropId) => {
-      const drop = drops.find((item) => item.id === dropId);
-      if (drop) pairs.push({ drag, drop });
-    });
-  });
-
-  return pairs;
-}
-
-
-
-
-
-
-
-
-
-
-
-function getAutoAnswerSummary(activity) {
-  if (activity.type === 'drag-drop' || activity.type === 'mixed') {
-    const dragById = Object.fromEntries(
-      getCanvasObjects(activity)
-        .filter((item) => item.type === 'draggable')
-        .map((item) => [item.id, item])
-    );
-    const dropById = Object.fromEntries(
-      getCanvasObjects(activity)
-        .filter((item) => item.type === 'dropzone')
-        .map((item) => [item.id, item])
-    );
-    const pairs = getDragDropPairsFromMatches(getCorrectDragMatches(activity)).map(
-      ({ dragId, dropId }) =>
-        `${dragById[dragId]?.label || 'Surukle'} → ${dropById[dropId]?.label || 'Birak'}`
-    );
-    return pairs.length ? pairs : ['Dogru eslesme henuz olusmadi.'];
-  }
-  const selectedOptionLabels = (activity.mcOptions || [])
-    .filter((o) => o.isCorrect)
-    .map((o) => o.label || 'Secenek');
-  if (selectedOptionLabels.length) return [selectedOptionLabels.join(', ')];
-  if (Array.isArray(activity.selectionSlots) && activity.selectionSlots.length) {
-    const labels = activity.selectionSlots.map((slot, index) => {
-      if (!slot?.correctChoice) return `${index + 1}. soru: anahtar okunamadi`;
-      return `${index + 1}. soru: ${slot.correctLabel || String(slot.correctChoice).toUpperCase()}`;
-    });
-    return labels.length ? labels : ['Dogru secenek henuz tanimlanmadi.'];
-  }
-  return ['Dogru secenek henuz tanimlanmadi.'];
-}
-
-function getCorrectSelectionIds(activity) {
-  return (activity.mcOptions || []).filter((o) => o.isCorrect).map((o) => o.id);
-}
-
-// ─── Scoring Engines for New Question Types ────────────────────────────────────
-
-function scoreSequence(activity, userOrder) {
-  const correct = (activity.sequenceItems || []).map((i) => i.id);
-  if (!correct.length) return { success: false, score: 0, total: 0, detail: [] };
-  const detail = correct.map((id, idx) => ({ id, correct: userOrder[idx] === id }));
-  const score = detail.filter((d) => d.correct).length;
-  return { success: score === correct.length, score, total: correct.length, detail };
-}
-
-function scoreMatching(activity, userPairs) {
-  const correct = (activity.matchingPairs || []).map((p) => ({ left: p.left, right: p.right }));
-  if (!correct.length) return { success: false, score: 0, total: 0, detail: [] };
-  const detail = correct.map((cp) => {
-    const match = (userPairs || []).find((up) => up.left === cp.left);
-    return {
-      left: cp.left,
-      expected: cp.right,
-      given: match?.right || '',
-      correct: match?.right === cp.right,
-    };
-  });
-  const score = detail.filter((d) => d.correct).length;
-  return { success: score === correct.length, score, total: correct.length, detail };
-}
-
-function scoreTextEntry(activity, userText) {
-  const accepted = (activity.textEntryAcceptedAnswers || []).filter(Boolean);
-  if (!accepted.length) return { success: false, score: 0, total: 1 };
-  const caseSensitive = !!activity.textEntryCaseSensitive;
-  const normalize = (s) => (caseSensitive ? s.trim() : s.trim().toLowerCase());
-  const match = accepted.some((a) => normalize(a) === normalize(userText || ''));
-  return { success: match, score: match ? 1 : 0, total: 1 };
-}
-
-function scoreNumeric(activity, userValue) {
-  const correct = activity.numericCorrectValue ?? null;
-  if (correct === null) return { success: false, score: 0, total: 1 };
-  const tolerance = activity.numericTolerance ?? 0;
-  const val = parseFloat(userValue);
-  if (isNaN(val)) return { success: false, score: 0, total: 1 };
-  const match = Math.abs(val - correct) <= tolerance;
-  return { success: match, score: match ? 1 : 0, total: 1 };
-}
-
-function scoreFillBlank(activity, userBlanks) {
-  const blanks = activity.fillBlankAnswers || [];
-  if (!blanks.length) return { success: false, score: 0, total: 0, detail: [] };
-  const detail = blanks.map((blank, idx) => {
-    const accepted = blank.acceptedValues || [];
-    const user = (userBlanks || [])[idx] || '';
-    const caseSensitive = !!blank.caseSensitive;
-    const normalize = (s) => (caseSensitive ? s.trim() : s.trim().toLowerCase());
-    const correct = accepted.some((a) => normalize(a) === normalize(user));
-    return { blankIndex: idx, correct, given: user };
-  });
-  const score = detail.filter((d) => d.correct).length;
-  return { success: score === blanks.length, score, total: blanks.length, detail };
-}
-
-function scoreSurvey() {
-  return { success: true, score: 0, total: 0, isSurvey: true };
-}
-
-function scoreActivity(activity, userResponse) {
-  switch (activity.type) {
-    case 'sequence':
-      return scoreSequence(activity, userResponse.order || []);
-    case 'matching':
-      return scoreMatching(activity, userResponse.pairs || []);
-    case 'text-entry':
-      return scoreTextEntry(activity, userResponse.text || '');
-    case 'numeric':
-      return scoreNumeric(activity, userResponse.value);
-    case 'fill-blank':
-      return scoreFillBlank(activity, userResponse.blanks || []);
-    case 'survey':
-      return scoreSurvey();
-    default:
-      return null;
-  }
-}
+// NOT: Etkinlik puanlama motorlari (getDragDropAssignments, getAutoAnswerSummary,
+// getCorrectSelectionIds, scoreSequence, scoreMatching, scoreTextEntry, scoreNumeric,
+// scoreFillBlank, scoreSurvey, scoreActivity) ./logic/activityScoring modulune tasindi.
 
 // eslint-disable-next-line no-unused-vars -- Reserved for auto-layout of matched drag items.
 function layoutDragPositionsForMatches(activity, matches = {}) {

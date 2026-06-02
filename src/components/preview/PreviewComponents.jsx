@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 import { DEFAULT_ACTIVITY_SETTINGS } from '../../constants';
+import { getAutoAnswerSummary, getCorrectSelectionIds } from '../../logic/activityScoring';
 import { ButtonPackageIntroDiagram } from '../../logic/buttonStyling';
 import {
   getCorrectDragMatches,
@@ -13,8 +14,6 @@ import {
   isDragReusable,
   evaluateDragDropPlacements,
   createDragDropPlacement,
-  getAutoAnswerSummary,
-  getCorrectSelectionIds,
 } from '../../logic/dragDrop';
 import {
   resolvePreviewFlowTarget,
