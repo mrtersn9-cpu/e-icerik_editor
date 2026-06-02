@@ -261,6 +261,18 @@ export default function BicimRibbon({ controller }) {
         </RibbonGroup>
       )}
 
+      {object?.type === 'shape' && (
+        <RibbonGroup title="Düğümler" width={130}>
+          <CompactRibbonButton
+            label={object.shapeKind === 'customPath' ? 'Düğümler Aktif' : 'Düğümleri Düzenle'}
+            icon="border"
+            onClick={commands.convertToEditablePoints}
+            active={object.shapeKind === 'customPath'}
+            width={112}
+          />
+        </RibbonGroup>
+      )}
+
       {object?.type === 'image' && (
         <RibbonGroup title="Görsel" width={236}>
           <RibbonPopoverButton label="Filtre" icon="image" width={96} disabled={disabled}>

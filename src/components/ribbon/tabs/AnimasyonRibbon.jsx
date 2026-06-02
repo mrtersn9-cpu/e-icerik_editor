@@ -111,10 +111,31 @@ export default function AnimasyonRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Hareket Yolu" width={160}>
+      <RibbonGroup title="Hareket Yolu" width={216}>
         <RibbonRow>
-          <RibbonButton label="Doğrusal" icon="pathLine" onClick={() => commands.updateSelectedTimeline({ direction: 'right' })} disabled={!can.selection} tone="slate" width={62} />
-          <RibbonButton label="Kavis" icon="pathCurve" onClick={() => commands.updateSelectedTimeline({ direction: 'up' })} disabled={!can.selection} tone="slate" width={58} />
+          <RibbonButton label="Sağa" icon="pathLine" onClick={() => commands.applyMotionPath('right')} disabled={!can.selection} tone="slate" width={54} />
+          <RibbonButton label="Yay" icon="pathCurve" onClick={() => commands.applyMotionPath('arc')} disabled={!can.selection} tone="slate" width={50} />
+          <RibbonPopoverButton label="Diğer" icon="more" width={62} variant="large" tone="slate" disabled={!can.selection}>
+            <RibbonStack>
+              {[
+                ['left', 'Sola'],
+                ['up', 'Yukarı'],
+                ['down', 'Aşağı'],
+                ['diagonal', 'Çapraz'],
+                ['zigzag', 'Zikzak'],
+                ['bounce', 'Sıçra'],
+                ['circle', 'Daire'],
+              ].map(([id, label]) => (
+                <CompactRibbonButton
+                  key={id}
+                  label={label}
+                  icon="pathCurve"
+                  onClick={() => commands.applyMotionPath(id)}
+                  width={120}
+                />
+              ))}
+            </RibbonStack>
+          </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
 

@@ -1076,6 +1076,25 @@ export default function useRibbonController({
         styleClipboardRef.current = { ...(primaryObject.style || {}) };
         showToast?.('Biçim kopyalandı');
       },
+      convertToEditablePoints: () => {
+        if (!primaryObject || primaryObject.type !== 'shape') return;
+        const kind = primaryObject.shapeKind || 'roundedRect';
+        let points;
+        if (kind === 'triangle') {
+          points = [{ x: 50, y: 4 }, { x: 96, y: 96 }, { x: 4, y: 96 }];
+        } else if (kind === 'diamond') {
+          points = [{ x: 50, y: 2 }, { x: 98, y: 50 }, { x: 50, y: 98 }, { x: 2, y: 50 }];
+        } else if (kind === 'ellipse') {
+          points = Array.from({ length: 8 }, (_, i) => {
+            const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+            return { x: 50 + 48 * Math.cos(angle), y: 50 + 48 * Math.sin(angle) };
+          });
+        } else {
+          points = [{ x: 2, y: 2 }, { x: 98, y: 2 }, { x: 98, y: 98 }, { x: 2, y: 98 }];
+        }
+        patchObject({ shapeKind: 'customPath', showShapeLabel: false, vectorPoints: points });
+        showToast?.('Düğümler düzenlenebilir — tutamaçları sürükleyin');
+      },
       exportTranslation: () => {
         if (!activity || typeof document === 'undefined') return;
         const seen = new Set();
@@ -1210,6 +1229,54 @@ export default function useRibbonController({
       undo: history?.undo,
       ungroupSelection,
       updateSelectedTimeline,
+      applyMotionPath: (pathId) => {
+        if (!selectedTimelineItem) return;
+        const duration = Math.max(0.2, Number(selectedTimelineItem.duration) || 4);
+        const kf = (time, x, y) => ({
+          id: uid(),
+          name: 'Kare',
+          time: Number(time.toFixed(2)),
+          x: Math.round(x),
+          y: Math.round(y),
+          scale: 1,
+          opacity: 1,
+        });
+        let frames;
+        switch (pathId) {
+          case 'left':
+            frames = [kf(0, 0, 0), kf(duration, -320, 0)];
+            break;
+          case 'up':
+            frames = [kf(0, 0, 0), kf(duration, 0, -220)];
+            break;
+          case 'down':
+            frames = [kf(0, 0, 0), kf(duration, 0, 220)];
+            break;
+          case 'diagonal':
+            frames = [kf(0, 0, 0), kf(duration, 300, 220)];
+            break;
+          case 'arc':
+            frames = [kf(0, 0, 0), kf(duration * 0.5, 160, -170), kf(duration, 320, 0)];
+            break;
+          case 'zigzag':
+            frames = [kf(0, 0, 0), kf(duration * 0.25, 80, -70), kf(duration * 0.5, 160, 0), kf(duration * 0.75, 240, -70), kf(duration, 320, 0)];
+            break;
+          case 'bounce':
+            frames = [kf(0, 0, 0), kf(duration * 0.3, 90, -130), kf(duration * 0.5, 160, 0), kf(duration * 0.72, 240, -70), kf(duration, 320, 0)];
+            break;
+          case 'circle':
+            frames = Array.from({ length: 9 }, (_, i) => {
+              const angle = (i / 8) * Math.PI * 2;
+              return kf((duration * i) / 8, 130 * Math.sin(angle), 130 * (Math.cos(angle) - 1));
+            });
+            break;
+          case 'right':
+          default:
+            frames = [kf(0, 0, 0), kf(duration, 320, 0)];
+        }
+        updateSelectedTimeline({ keyframes: frames });
+        showToast?.('Hareket yolu uygulandı');
+      },
       zoomBy: (delta) => setZoom((value) => (typeof value === 'number' ? clamp(value + delta, 0.2, 3) : 1 + delta)),
     },
     currentContentLanguage: getActivityContentLanguage(activity || {}),
