@@ -50,6 +50,7 @@ import EditorWorkspaceShell from './features/editor-workspace/EditorWorkspaceShe
 import EditorScenesPanel from './features/editor-workspace/EditorScenesPanel';
 import ButtonPackageIntroDiagram from './features/editor-workspace/ButtonPackageIntroDiagram';
 import useWorkspaceChromeController from './features/editor-workspace/useWorkspaceChromeController';
+import useLayoutResize from './features/editor-workspace/useLayoutResize';
 import CanvasWorkspaceCenter from './features/editor-workspace/CanvasWorkspaceCenter';
 import DesignToolsDialog from './features/editor-workspace/DesignToolsDialog';
 import TextStudioWorkspace from './features/text-studio/TextStudioWorkspace';
@@ -1426,7 +1427,6 @@ export default function EIcerikEditor() {
   const heartbeatFailCountRef = useRef(0);
   const remoteSavePendingRef = useRef(false);
   const offlineDraftPendingRef = useRef(false);
-  const resizeSessionRef = useRef(null);
   const toastIdRef = useRef(0);
   const adminSessionTokenRef = useRef('');
   const objectClipboardRef = useRef(null);
@@ -2153,49 +2153,6 @@ export default function EIcerikEditor() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [activeUserId, dbStatus, persistCurrentStateLocal]);
 
-
-  useEffect(() => {
-    const handlePointerMove = (e) => {
-      const session = resizeSessionRef.current;
-      if (!session) return;
-      if (session.type === 'timeline') {
-        setTimelineHeight(clamp(session.startValue + (session.startY - e.clientY), 180, 460));
-      } else if (session.type === 'right-panel') {
-        setRightPanelWidth(
-          clamp(
-            session.startValue + (session.startX - e.clientX),
-            PANEL_LIMITS.right.min,
-            PANEL_LIMITS.right.max
-          )
-        );
-      } else if (session.type === 'left-panel') {
-        setLeftPanelWidth(
-          clamp(
-            session.startValue + (e.clientX - session.startX),
-            PANEL_LIMITS.left.min,
-            PANEL_LIMITS.left.max
-          )
-        );
-      }
-    };
-
-    const handlePointerUp = () => {
-      if (!resizeSessionRef.current) return;
-      resizeSessionRef.current = null;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-  }, [setLeftPanelWidth, setRightPanelWidth, setTimelineHeight]);
-
   useEffect(() => {
     let cancelled = false;
     remoteReadyRef.current = false;
@@ -2830,45 +2787,8 @@ export default function EIcerikEditor() {
     setPendingResume(null);
   }, [activeUserId, setActiveTab, setNavigationRouteState, writeBrowserRoute]);
 
-  const startLayoutResize = useCallback(
-    (type, e) => {
-      e.preventDefault();
-      resizeSessionRef.current = {
-        type,
-        startX: e.clientX,
-        startY: e.clientY,
-        startValue:
-          type === 'timeline'
-            ? timelineHeight
-            : type === 'right-panel'
-              ? rightPanelWidth
-              : leftPanelWidth,
-      };
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = type === 'timeline' ? 'row-resize' : 'col-resize';
-    },
-    [leftPanelWidth, rightPanelWidth, timelineHeight]
-  );
-
-  const resetLayout = useCallback(() => {
-    setPanelScale(1);
-    setZoom('fit');
-    setTimelineHeight(220);
-    setTimelineCurrentTime(0);
-    setTimelinePlaying(false);
-    setIsSlidePanelCollapsed(false);
-    setLeftPanelWidth(PANEL_LIMITS.left.default);
-    setRightPanelWidth(PANEL_LIMITS.right.default);
-  }, [
-    setIsSlidePanelCollapsed,
-    setLeftPanelWidth,
-    setPanelScale,
-    setRightPanelWidth,
-    setTimelineCurrentTime,
-    setTimelineHeight,
-    setTimelinePlaying,
-    setZoom,
-  ]);
+  // Panel/zaman çizelgesi yeniden boyutlandırma mantığı useLayoutResize hook'una taşındı.
+  const { startLayoutResize, resetLayout } = useLayoutResize();
 
   const updateActivity = useCallback(
     (updated) => {
