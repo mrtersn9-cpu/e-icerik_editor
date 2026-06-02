@@ -185,7 +185,15 @@ function checkCourseCompletion() {
     SCORM.set("cmi.core.session_time", SCORM.sessionTime());
     SCORM.set("cmi.core.lesson_status", lessonStatus);
     SCORM.commit();
-    complete.classList.add("show");
+    // Otomatik "Tamamlandı" ekranı yalnızca typed etkinliklerde (fill-blank, mixed,
+    // puzzle, hotspot, sequence) anlamlıdır: orada tüm sorular gerçekten çözülmüştür.
+    // Typed olmayan (selection/storyline akışı) etkinliklerde "tüm sahneleri gezmek"
+    // tamamlama anlamına gelmez; bu yüzden her render'da ekran açılmasını engelliyoruz.
+    // SCORM durumu yukarıda yine bildirildi; "Tamamlandı" ekranı yalnızca açık bir
+    // "Tamamla" aksiyonuyla (finishCourse) açılır.
+    if (hasTyped) {
+      complete.classList.add("show");
+    }
   }
 }
 function typedEvaluate(current) {
