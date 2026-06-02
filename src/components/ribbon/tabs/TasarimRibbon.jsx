@@ -1,3 +1,6 @@
+import { useState } from 'react';
+
+import SlideMasterModal from '../../SlideMasterModal';
 import {
   CompactRibbonButton,
   RibbonColorInput,
@@ -22,6 +25,7 @@ const backgroundGradients = [
 
 export default function TasarimRibbon({ controller }) {
   const { activity, commands, galleries } = controller;
+  const [masterEditorOpen, setMasterEditorOpen] = useState(false);
 
   return (
     <>
@@ -74,6 +78,7 @@ export default function TasarimRibbon({ controller }) {
               <CompactRibbonButton label="Düzeni Uygula" icon="components" onClick={commands.applyMasterLayoutObjects} width={150} />
             </RibbonStack>
           </RibbonPopoverButton>
+          <CompactRibbonButton label="Master Editörü" icon="template" onClick={() => setMasterEditorOpen(true)} width={142} />
         </RibbonStack>
       </RibbonGroup>
 
@@ -147,6 +152,15 @@ export default function TasarimRibbon({ controller }) {
           </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
+
+      <SlideMasterModal
+        open={masterEditorOpen}
+        onClose={() => setMasterEditorOpen(false)}
+        masters={galleries.slideMasters}
+        currentId={activity?.slideMasterId || 'blank'}
+        onApply={(id) => commands.applySlideMaster(id)}
+        onInsertLayout={(id) => commands.applyMasterLayout(id)}
+      />
     </>
   );
 }

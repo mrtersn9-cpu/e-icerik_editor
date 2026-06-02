@@ -174,9 +174,10 @@ export function LayerManager({ activity, onSelectionChange, onUpdateActivity }) 
   const deleteLayer = (layerId) => {
     if (layerId === 'base' || layers.length <= 1) return;
     const nextLayers = layers.filter((layer) => layer.id !== layerId);
-    const nextObjects = objects.map((object) =>
-      (object.layerId || 'base') === layerId ? { ...object, layerId: 'base' } : object
-    );
+    // Katman silinince içindeki nesneler de silinir (Storyline davranışı).
+    // Eskiden base'e taşınıyordu; bu yüzden silinen katmanın dim (karartma)
+    // şekli ve içeriği base'e düşüp sahnede kalıyor / sahneyi karartıyordu.
+    const nextObjects = objects.filter((object) => (object.layerId || 'base') !== layerId);
     const nextTriggers = (activity.triggers || []).map((trigger) =>
       trigger.action === 'KatmanaGec' && trigger.value === layerId
         ? { ...trigger, value: 'base' }

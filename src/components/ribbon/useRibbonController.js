@@ -580,6 +580,38 @@ export default function useRibbonController({
     updateActivity({ ...activity, objects: [...currentObjects, ...newObjects] });
   }, [activity, updateActivity]);
 
+  // Bir master'ı uygula + yerleşim nesnelerini tek updateActivity'de ekle (race olmadan).
+  const applyMasterLayout = useCallback(
+    (presetId) => {
+      if (!activity) return;
+      const withMaster = applyMasterPresetToActivity(activity, presetId);
+      const descriptors = buildMasterLayoutDescriptors(
+        presetId,
+        withMaster.stageWidth || 1920,
+        withMaster.stageHeight || 1080
+      );
+      const currentObjects = Array.isArray(withMaster.objects) ? withMaster.objects : [];
+      const newObjects = descriptors.map((descriptor, index) => ({
+        id: uid(),
+        type: descriptor.type,
+        x: descriptor.x,
+        y: descriptor.y,
+        width: descriptor.width,
+        height: descriptor.height,
+        rotation: 0,
+        label: descriptor.label,
+        locked: false,
+        visible: true,
+        zIndex: currentObjects.length + index + 1,
+        layerId: 'base',
+        style: { ...descriptor.style },
+        masterRole: descriptor.role,
+      }));
+      updateActivity({ ...withMaster, objects: [...currentObjects, ...newObjects] });
+    },
+    [activity, updateActivity]
+  );
+
   const applySceneTemplate = useCallback(
     (templateId) => {
       if (!activity || !currentSlide) return;
@@ -888,6 +920,7 @@ export default function useRibbonController({
       applyButtonPackage,
       applyButtonMotion,
       applyMasterLayoutObjects,
+      applyMasterLayout,
       applySceneTemplate,
       applySlideMaster,
       applyTextPreset: (preset) => {
