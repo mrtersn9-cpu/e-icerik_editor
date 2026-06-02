@@ -156,6 +156,32 @@ export const OBJ_PRESETS = {
       borderRadius: 20,
     },
   },
+  table: {
+    w: 420,
+    h: 160,
+    label: 'Tablo',
+    style: {
+      fontSize: 14,
+      color: '#1f2937',
+      background: '#ffffff',
+      borderColor: '#cbd5e1',
+      borderStyle: 'solid',
+      borderRadius: 8,
+    },
+  },
+  chart: {
+    w: 360,
+    h: 240,
+    label: 'Grafik',
+    style: {
+      fontSize: 12,
+      color: '#1f2937',
+      background: '#ffffff',
+      borderColor: '#e2e8f0',
+      borderStyle: 'solid',
+      borderRadius: 10,
+    },
+  },
   'puzzle-cell': {
     w: 36,
     h: 36,

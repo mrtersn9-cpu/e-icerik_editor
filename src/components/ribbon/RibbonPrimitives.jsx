@@ -308,6 +308,37 @@ const icons = {
       <circle {...iconStroke} cx="8.5" cy="8.5" r="1" />
     </>
   ),
+  user: (
+    <>
+      <circle {...iconStroke} cx="12" cy="8" r="4" />
+      <path {...iconStroke} d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  table: (
+    <>
+      <rect {...iconStroke} x="4" y="5" width="16" height="14" rx="1.5" />
+      <path {...iconStroke} d="M4 10h16M4 14.5h16M9.5 5v14M14.5 5v14" />
+    </>
+  ),
+  chart: (
+    <>
+      <path {...iconStroke} d="M4 20V4M4 20h16" />
+      <rect {...iconStroke} x="7.5" y="12" width="3" height="5" />
+      <rect {...iconStroke} x="13.5" y="8" width="3" height="9" />
+    </>
+  ),
+  brush: (
+    <>
+      <path {...iconStroke} d="M14 4 20 10 12 18H8v-4z" />
+      <path {...iconStroke} d="M6 16c-1.5 .5-2 2-2 4 2 0 3.5-.5 4-2" />
+    </>
+  ),
+  search: (
+    <>
+      <circle {...iconStroke} cx="11" cy="11" r="6" />
+      <path {...iconStroke} d="m20 20-3.5-3.5" />
+    </>
+  ),
   components: (
     <>
       <rect {...iconStroke} x="4" y="4" width="6" height="6" />

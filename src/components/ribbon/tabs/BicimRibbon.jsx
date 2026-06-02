@@ -1,3 +1,15 @@
+import { useState } from 'react';
+
+import { CHART_TYPES } from '../../../utils/chartSvg';
+import {
+  tableAddColumn,
+  tableAddRow,
+  tableRemoveColumn,
+  tableRemoveRow,
+  tableToggleHeader,
+} from '../../../utils/tableHtml';
+import ChartEditorModal from '../../ChartEditorModal';
+import TableEditorModal from '../../TableEditorModal';
 import { ShapePreviewIcon } from '../../ui';
 import {
   CompactRibbonButton,
@@ -11,13 +23,26 @@ import {
   RibbonStack,
 } from '../RibbonPrimitives';
 
+// Efekt ön ayarları — editör/runtime paritesi için boxShadow tabanlı (gölge, parlama, bevel).
+const EFFECT_PRESETS = [
+  { label: 'Efekt Yok', patch: { boxShadow: 'none' } },
+  { label: 'Yumuşak Gölge', patch: { boxShadow: '0 12px 28px rgba(15,23,42,.20)' } },
+  { label: 'Güçlü Gölge', patch: { boxShadow: '0 22px 44px rgba(15,23,42,.34)' } },
+  { label: 'Mavi Parlama', patch: { boxShadow: '0 0 18px rgba(37,99,235,.7)' } },
+  { label: 'Yeşil Parlama', patch: { boxShadow: '0 0 18px rgba(22,163,74,.7)' } },
+  { label: 'Bevel', patch: { boxShadow: 'inset 0 2px 0 rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.22), 0 6px 14px rgba(0,0,0,.18)' } },
+];
+
 export default function BicimRibbon({ controller }) {
   const { commands, object, can, galleries } = controller;
   const disabled = !can.selection;
+  const [tableEditorOpen, setTableEditorOpen] = useState(false);
+  const [chartEditorOpen, setChartEditorOpen] = useState(false);
+  const patchTableData = (nextTableData) => commands.patchObject({ tableData: nextTableData });
 
   return (
     <>
-      <RibbonGroup title="Metin" width={292}>
+      <RibbonGroup title="Metin" width={368}>
         <RibbonStack>
           <RibbonRow>
             <RibbonSelect
@@ -51,6 +76,22 @@ export default function BicimRibbon({ controller }) {
                 <CompactRibbonButton label="Sağ" icon="alignRight" onClick={() => commands.setObjectStyle({ textAlign: 'right' })} width={78} />
                 <CompactRibbonButton label="Yasla" icon="J" onClick={() => commands.setObjectStyle({ textAlign: 'justify' })} width={78} />
               </RibbonMenuGrid>
+            </RibbonPopoverButton>
+            <RibbonPopoverButton label="Aralık" icon="note" width={72} disabled={disabled}>
+              <RibbonStack>
+                <div style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>Satır Aralığı</div>
+                <RibbonRow>
+                  {[1, 1.2, 1.5, 1.8, 2].map((value) => (
+                    <CompactRibbonButton key={value} label={`${value}`} icon="note" onClick={() => commands.setObjectStyle({ lineHeight: value })} width={48} />
+                  ))}
+                </RibbonRow>
+                <div style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>Harf Aralığı</div>
+                <RibbonRow>
+                  {[0, 0.5, 1, 2, 3].map((value) => (
+                    <CompactRibbonButton key={value} label={`${value}`} icon="note" onClick={() => commands.setObjectStyle({ letterSpacing: value ? `${value}px` : '0' })} width={48} />
+                  ))}
+                </RibbonRow>
+              </RibbonStack>
             </RibbonPopoverButton>
           </RibbonRow>
         </RibbonStack>
@@ -135,6 +176,22 @@ export default function BicimRibbon({ controller }) {
         </RibbonStack>
       </RibbonGroup>
 
+      <RibbonGroup title="Efektler" width={120}>
+        <RibbonPopoverButton label="Efektler" icon="shadow" width={96} disabled={disabled}>
+          <RibbonMenuGrid columns="repeat(2, 124px)">
+            {EFFECT_PRESETS.map((effect) => (
+              <CompactRibbonButton
+                key={effect.label}
+                label={effect.label}
+                icon="shadow"
+                onClick={() => commands.setObjectStyle(effect.patch)}
+                width={118}
+              />
+            ))}
+          </RibbonMenuGrid>
+        </RibbonPopoverButton>
+      </RibbonGroup>
+
       <RibbonGroup title="Sırala ve Hizala" width={230}>
         <RibbonStack>
           <RibbonRow>
@@ -193,6 +250,58 @@ export default function BicimRibbon({ controller }) {
           </RibbonStack>
         </RibbonGroup>
       )}
+
+      {object?.type === 'table' && (
+        <RibbonGroup title="Tablo" width={236}>
+          <RibbonStack>
+            <RibbonRow>
+              <CompactRibbonButton label="+ Satır" icon="table" onClick={() => patchTableData(tableAddRow(object.tableData))} width={70} />
+              <CompactRibbonButton label="− Satır" icon="table" onClick={() => patchTableData(tableRemoveRow(object.tableData))} width={70} />
+              <CompactRibbonButton label="+ Sütun" icon="table" onClick={() => patchTableData(tableAddColumn(object.tableData))} width={70} />
+            </RibbonRow>
+            <RibbonRow>
+              <CompactRibbonButton label="− Sütun" icon="table" onClick={() => patchTableData(tableRemoveColumn(object.tableData))} width={70} />
+              <CompactRibbonButton label="Başlık" icon="table" onClick={() => patchTableData(tableToggleHeader(object.tableData))} width={70} />
+              <CompactRibbonButton label="Düzenle" icon="text" onClick={() => setTableEditorOpen(true)} width={70} />
+            </RibbonRow>
+          </RibbonStack>
+        </RibbonGroup>
+      )}
+
+      {object?.type === 'chart' && (
+        <RibbonGroup title="Grafik" width={236}>
+          <RibbonStack>
+            <RibbonRow>
+              {CHART_TYPES.map((type) => (
+                <CompactRibbonButton
+                  key={type.value}
+                  label={type.label}
+                  icon="chart"
+                  onClick={() => commands.patchObject({ chartType: type.value })}
+                  active={(object.chartType || 'bar') === type.value}
+                  width={70}
+                />
+              ))}
+            </RibbonRow>
+            <CompactRibbonButton label="Veri Düzenle" icon="text" onClick={() => setChartEditorOpen(true)} width={150} />
+          </RibbonStack>
+        </RibbonGroup>
+      )}
+
+      <TableEditorModal
+        open={tableEditorOpen && object?.type === 'table'}
+        onClose={() => setTableEditorOpen(false)}
+        tableData={object?.tableData}
+        onChange={patchTableData}
+      />
+
+      <ChartEditorModal
+        open={chartEditorOpen && object?.type === 'chart'}
+        onClose={() => setChartEditorOpen(false)}
+        chartType={object?.chartType}
+        chartData={object?.chartData}
+        onChange={(patch) => commands.patchObject(patch)}
+      />
     </>
   );
 }

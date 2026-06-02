@@ -87,4 +87,6 @@ export {
   STOCK_ASSET_ITEMS,
 } from './characterConstants';
 
+export { SYMBOL_CATEGORIES, SYMBOL_ITEMS } from './symbolCatalog';
+
 export { FIXED_EDITOR_USERS } from './fixedData';

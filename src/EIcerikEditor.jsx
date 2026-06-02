@@ -20,6 +20,9 @@ import BranchingDiagramModal from './components/BranchingDiagramModal';
 import RuntimeVideoElement from './components/editor/RuntimeVideoElement';
 import GlossaryEditorModal from './components/GlossaryEditorModal';
 import IconPickerModal from './components/IconPickerModal';
+import ContentLibraryModal from './components/ContentLibraryModal';
+import CharacterPickerModal from './components/CharacterPickerModal';
+import SymbolPickerModal from './components/SymbolPickerModal';
 import ProjectVersionManagerModal from './components/ProjectVersionManagerModal';
 import ReviewThreadsModal from './components/ReviewThreadsModal';
 import EditorTopBar from './components/ribbon/EditorTopBar';
@@ -111,10 +114,6 @@ import {
   SLIDE_MASTER_PRESETS,
   PLAYER_SKIN_PRESETS,
   CAPTION_LANGUAGE_OPTIONS,
-  CHARACTER_LIBRARY,
-  CHARACTER_CATEGORIES,
-  CONTENT_LIBRARY_CATEGORIES,
-  STOCK_ASSET_ITEMS,
   ANSWER_LAYER_STYLE_PRESETS,
   GRADE_GROUPS,
   BUTTON_PACKAGE_MOTION_PRESETS,
@@ -1394,6 +1393,12 @@ export default function EIcerikEditor() {
   const [showGlossaryEditor, setShowGlossaryEditor] = useState(false);
   // İkon Seçici: { onSelect } veya null. onSelect, seçilen { iconName, iconSvg } ile çağrılır.
   const [iconPicker, setIconPicker] = useState(null);
+  // İçerik Kütüphanesi: { onSelect } veya null. onSelect, seçilen stok öğesi ile çağrılır.
+  const [contentLibrary, setContentLibrary] = useState(null);
+  // Karakter Seçici: { onSelect } veya null. onSelect, { kind: 'emoji'|'upload', ... } ile çağrılır.
+  const [characterPicker, setCharacterPicker] = useState(null);
+  // Sembol Seçici: { onSelect } veya null. onSelect, seçilen sembol öğesi ile çağrılır.
+  const [symbolPicker, setSymbolPicker] = useState(null);
   const [showDesignTools, setShowDesignTools] = useState(false);
   const [showAdminManagement, setShowAdminManagement] = useState(false);
   const [adminSessionToken, setAdminSessionTokenState] = useState('');
@@ -3710,6 +3715,9 @@ export default function EIcerikEditor() {
     setShowGlossaryEditor,
     setShowVariablesManager,
     openIconPicker: (onSelect) => setIconPicker({ onSelect }),
+    openContentLibrary: (onSelect) => setContentLibrary({ onSelect }),
+    openCharacterPicker: (onSelect) => setCharacterPicker({ onSelect }),
+    openSymbolPicker: (onSelect) => setSymbolPicker({ onSelect }),
     setStoryRibbonTab,
     setZoom,
     setTimelineDockOpen,
@@ -4256,6 +4264,36 @@ export default function EIcerikEditor() {
           const callback = iconPicker?.onSelect;
           setIconPicker(null);
           callback?.(selection);
+        }}
+      />
+
+      <ContentLibraryModal
+        open={!!contentLibrary}
+        onClose={() => setContentLibrary(null)}
+        onSelect={(item) => {
+          const callback = contentLibrary?.onSelect;
+          setContentLibrary(null);
+          callback?.(item);
+        }}
+      />
+
+      <CharacterPickerModal
+        open={!!characterPicker}
+        onClose={() => setCharacterPicker(null)}
+        onSelect={(result) => {
+          const callback = characterPicker?.onSelect;
+          setCharacterPicker(null);
+          callback?.(result);
+        }}
+      />
+
+      <SymbolPickerModal
+        open={!!symbolPicker}
+        onClose={() => setSymbolPicker(null)}
+        onSelect={(item) => {
+          const callback = symbolPicker?.onSelect;
+          setSymbolPicker(null);
+          callback?.(item);
         }}
       />
 

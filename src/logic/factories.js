@@ -11,7 +11,9 @@ import {
   DEFAULT_ACTIVITY_SETTINGS,
   ACCESSIBILITY_DEFAULTS,
 } from '../constants';
+import { createDefaultChartData } from '../utils/chartSvg';
 import { uid, clamp } from '../utils/editorHelpers'; // eslint-disable-line
+import { createDefaultTableData } from '../utils/tableHtml';
 
 const AUTO_LAYER_NAME_PRESETS = ['menu', 'explanation', 'normal', 'Correct', 'Incorrect', 'cevap'];
 
@@ -249,6 +251,9 @@ function createObject(type = 'text') {
     autoPlay: type === 'audio',
     muted: type === 'video',
     loop: false,
+    tableData: type === 'table' ? createDefaultTableData() : undefined,
+    chartType: type === 'chart' ? 'bar' : undefined,
+    chartData: type === 'chart' ? createDefaultChartData() : undefined,
     style: { ...preset.style },
     stateStyles: {},
     // Accessibility

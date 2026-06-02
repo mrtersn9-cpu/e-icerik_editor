@@ -373,6 +373,84 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(html).toContain('Basla');
   });
 
+  test('renders table objects as html tables in export html', () => {
+    const renderer = loadRuntimeRenderer();
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      objects: [
+        {
+          id: 'table-1',
+          type: 'table',
+          x: 40,
+          y: 50,
+          width: 420,
+          height: 160,
+          tableData: {
+            headerRow: true,
+            rows: [
+              ['Ad', 'Soyad'],
+              ['Ali', 'Veli'],
+            ],
+          },
+          style: { borderColor: '#cbd5e1', color: '#1f2937', fontSize: 14 },
+        },
+      ],
+    };
+    const state = {
+      activeLayerId: 'base',
+      hidden: {},
+      objectStates: {},
+      dragPositions: {},
+      dropAssignments: {},
+      variables: {},
+    };
+
+    const objects = renderer.storylineRendererVisibleObjects({ slide, state });
+    const html = renderer.storylineRendererObjectHtml(objects[0], { slide, state });
+
+    expect(html).toContain('<table');
+    expect(html).toContain('<th');
+    expect(html).toContain('Ad');
+    expect(html).toContain('Veli');
+  });
+
+  test('renders chart objects as inline svg in export html', () => {
+    const renderer = loadRuntimeRenderer();
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      objects: [
+        {
+          id: 'chart-1',
+          type: 'chart',
+          chartType: 'bar',
+          x: 40,
+          y: 50,
+          width: 360,
+          height: 240,
+          chartData: { labels: ['A', 'B'], values: [10, 20], colors: [] },
+          style: {},
+        },
+      ],
+    };
+    const state = {
+      activeLayerId: 'base',
+      hidden: {},
+      objectStates: {},
+      dragPositions: {},
+      dropAssignments: {},
+      variables: {},
+    };
+
+    const objects = renderer.storylineRendererVisibleObjects({ slide, state });
+    const html = renderer.storylineRendererObjectHtml(objects[0], { slide, state });
+
+    expect(html).toContain('<svg');
+    expect(html).toContain('<rect');
+    expect(html).toContain('>A<');
+  });
+
   test('renders icon objects and button icons as inline svg in export html', () => {
     const renderer = loadRuntimeRenderer();
     const iconSvg =

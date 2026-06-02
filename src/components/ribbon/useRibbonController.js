@@ -119,6 +119,9 @@ export default function useRibbonController({
   setShowGlossaryEditor,
   setShowVariablesManager,
   openIconPicker,
+  openContentLibrary,
+  openCharacterPicker,
+  openSymbolPicker,
   showBaseLayer,
   onShowBaseLayerChange,
   setTimelineDockOpen,
@@ -145,6 +148,7 @@ export default function useRibbonController({
   );
   const view = activity?.viewOptions || {};
   const animationClipboardRef = useRef(null);
+  const styleClipboardRef = useRef(null);
   const localSlideClipboardRef = useRef(null);
   const slideClipboardRef = externalSlideClipboardRef || localSlideClipboardRef;
 
@@ -947,6 +951,60 @@ export default function useRibbonController({
           })
         ),
       openIconPicker: (onSelect) => openIconPicker?.(onSelect),
+      insertSymbol: () =>
+        openSymbolPicker?.((item) => {
+          if (!item) return;
+          insertObject('text', {
+            label: item.name || 'Sembol',
+            text: item.char,
+            fontSize: 48,
+            textAlign: 'center',
+            background: 'transparent',
+            width: 80,
+            height: 80,
+          });
+        }),
+      insertCharacter: () =>
+        openCharacterPicker?.((result) => {
+          if (!result) return;
+          if (result.kind === 'upload') {
+            insertImage();
+            return;
+          }
+          // emoji karakter → büyük metin nesnesi
+          insertObject('text', {
+            label: result.name || 'Karakter',
+            text: result.value,
+            fontSize: 96,
+            background: 'transparent',
+            width: 140,
+            height: 160,
+          });
+        }),
+      openContentLibrary: () =>
+        openContentLibrary?.((item) => {
+          if (!item) return;
+          if (item.type === 'background') {
+            patchActivity({ backgroundColor: item.value });
+            return;
+          }
+          if (item.type === 'shape') {
+            const shapeKindMap = { circle: 'ellipse', hexagon: 'hexagon', star: 'star5' };
+            insertShape(shapeKindMap[item.value] || 'roundedRect');
+            return;
+          }
+          if (item.type === 'button') {
+            insertObject('button', { label: item.name, style: item.value });
+            return;
+          }
+          // text: ikon / işaretçi / ok glyph'i → metin nesnesi
+          insertObject('text', {
+            label: item.name,
+            text: item.value,
+            fontSize: item.category === 'markers' ? 40 : 48,
+            background: 'transparent',
+          });
+        }),
       insertImage,
       insertLabel: () => insertObject('text', { label: 'Etiket', text: 'Etiket', fontSize: 18, fontWeight: 800, background: '#eff6ff', borderColor: '#93c5fd', borderRadius: 999 }),
       insertObject,
@@ -1004,6 +1062,41 @@ export default function useRibbonController({
       sendBack: () => canvasRef.current?.sendBack?.(),
       setDragAnimationPreset,
       setObjectStyle,
+      copyObjectStyle: () => {
+        if (!primaryObject) return;
+        styleClipboardRef.current = { ...(primaryObject.style || {}) };
+        showToast?.('Biçim kopyalandı');
+      },
+      countObjectText: (search) => {
+        if (!activity || !search) return 0;
+        return (activity.objects || []).reduce((count, item) => {
+          const fields = [item.label, item.text].filter((v) => typeof v === 'string');
+          return count + fields.reduce((c, value) => c + value.split(search).length - 1, 0);
+        }, 0);
+      },
+      replaceObjectText: (search, replace) => {
+        if (!activity || !search) return 0;
+        let count = 0;
+        const objects = (activity.objects || []).map((item) => {
+          let next = item;
+          ['label', 'text'].forEach((key) => {
+            if (typeof next[key] === 'string' && next[key].includes(search)) {
+              count += next[key].split(search).length - 1;
+              next = { ...next, [key]: next[key].split(search).join(replace) };
+            }
+          });
+          return next;
+        });
+        if (count) updateActivity({ ...activity, objects });
+        return count;
+      },
+      pasteObjectStyle: () => {
+        if (!styleClipboardRef.current) {
+          showToast?.('Önce bir nesnenin biçimini kopyalayın');
+          return;
+        }
+        setObjectStyle(styleClipboardRef.current);
+      },
       setRibbonTab: (tab) => {
         setStoryRibbonTab(tab);
         if (['scene', 'design', 'transitions', 'view'].includes(tab)) {

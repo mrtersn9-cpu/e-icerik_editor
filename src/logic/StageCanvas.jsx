@@ -59,6 +59,8 @@ import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
 import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
 import { upgradeDragDropStyle } from './factories';
 import { ShapePreviewIcon } from '../components/ui';
+import { buildTableHtml } from '../utils/tableHtml';
+import { buildChartSvg } from '../utils/chartSvg';
 import WidgetHost from '../widgets/WidgetHost';
 import { buildWidgetIframeSrc } from '../widgets/WidgetRegistry';
 import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
@@ -1506,6 +1508,8 @@ const StageCanvas = forwardRef(function StageCanvas(
                     overflow: usesShapeSvg ? 'visible' : 'hidden',
                     textShadow: st.textShadow || 'none',
                     textDecoration: st.textDecoration || 'none',
+                    lineHeight: st.lineHeight || undefined,
+                    letterSpacing: st.letterSpacing || undefined,
                     opacity: isOtherLayerObj
                       ? 1
                       : isTimelineActive
@@ -1546,6 +1550,23 @@ const StageCanvas = forwardRef(function StageCanvas(
                         color: st.color || '#111',
                       }}
                       dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(o.iconSvg) }}
+                    />
+                  ) : o.type === 'table' ? (
+                    <div
+                      style={{
+                        pointerEvents: 'none',
+                        width: '100%',
+                        height: '100%',
+                        overflow: 'hidden',
+                      }}
+                      dangerouslySetInnerHTML={{
+                        __html: buildTableHtml(o, { fontSize: (st.fontSize || 14) * scale }),
+                      }}
+                    />
+                  ) : o.type === 'chart' ? (
+                    <div
+                      style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
+                      dangerouslySetInnerHTML={{ __html: buildChartSvg(o) }}
                     />
                   ) : o.type === 'video' && o.mediaUrl ? (
                     <video

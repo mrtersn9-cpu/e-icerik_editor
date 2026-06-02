@@ -1,3 +1,6 @@
+import { useState } from 'react';
+
+import FindReplaceModal from '../../FindReplaceModal';
 import {
   CompactRibbonButton,
   RibbonButton,
@@ -10,6 +13,7 @@ import {
 
 export default function GirisRibbon({ controller }) {
   const { commands, can, view } = controller;
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false);
 
   return (
     <>
@@ -22,13 +26,17 @@ export default function GirisRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Pano" width={178}>
+      <RibbonGroup title="Pano" width={262}>
         <RibbonRow>
           <RibbonButton label="Yapıştır" icon="clipboard" onClick={commands.paste} tone="amber" />
           <RibbonStack>
             <CompactRibbonButton label="Kes" icon="cut" onClick={commands.cut} disabled={!can.selection} />
             <CompactRibbonButton label="Kopyala" icon="copy" onClick={commands.copy} disabled={!can.selection} />
             <CompactRibbonButton label="Sil" icon="trash" onClick={commands.deleteSelection} disabled={!can.selection} tone="red" />
+          </RibbonStack>
+          <RibbonStack>
+            <CompactRibbonButton label="Biçim Kopyala" icon="brush" onClick={commands.copyObjectStyle} disabled={!can.selection} width={102} />
+            <CompactRibbonButton label="Biçim Yapıştır" icon="brush" onClick={commands.pasteObjectStyle} disabled={!can.selection} width={102} />
           </RibbonStack>
         </RibbonRow>
       </RibbonGroup>
@@ -81,6 +89,17 @@ export default function GirisRibbon({ controller }) {
           </RibbonPopoverButton>
         </RibbonRow>
       </RibbonGroup>
+
+      <RibbonGroup title="Düzenle" width={96}>
+        <RibbonButton label="Bul / Değiştir" icon="search" onClick={() => setFindReplaceOpen(true)} tone="slate" width={78} />
+      </RibbonGroup>
+
+      <FindReplaceModal
+        open={findReplaceOpen}
+        onClose={() => setFindReplaceOpen(false)}
+        onCount={commands.countObjectText}
+        onReplace={commands.replaceObjectText}
+      />
     </>
   );
 }
