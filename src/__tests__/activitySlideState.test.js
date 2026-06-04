@@ -1,6 +1,84 @@
-import { materializeActivitySlide, pasteActivitySlide } from '../logic/activityHelpers';
+import { patchActivity } from '../features/cevap/cevapActions';
+import {
+  commitMaterializedActivity,
+  materializeActivitySlide,
+  pasteActivitySlide,
+} from '../logic/activityHelpers';
+import { normalizeActivity } from '../logic/stateNormalizer';
 
 describe('materializeActivitySlide', () => {
+  test('answer panel item patches update the active slide immediately', () => {
+    const activity = {
+      id: 'act-answer-panel',
+      type: 'matching',
+      currentSlideId: 'slide-1',
+      matchingPairs: [],
+      slides: [{ id: 'slide-1', name: 'Soru', matchingPairs: [], objects: [] }],
+    };
+    const nextPairs = [{ id: 'pair-1', left: 'Left', right: 'Right' }];
+    let updated = null;
+
+    patchActivity(activity, (next) => {
+      updated = next;
+    }, { matchingPairs: nextPairs });
+
+    expect(updated.matchingPairs).toEqual(nextPairs);
+    expect(updated.slides[0].matchingPairs).toEqual(nextPairs);
+  });
+
+  test('commits typed answer item changes to the active slide', () => {
+    const activity = {
+      id: 'act-sequence',
+      type: 'sequence',
+      currentSlideId: 'slide-1',
+      sequenceItems: [
+        { id: 'step-1', label: 'First', order: 1 },
+        { id: 'step-2', label: 'Second', order: 2 },
+      ],
+      sequenceShuffle: false,
+      slides: [
+        {
+          id: 'slide-1',
+          name: 'Soru',
+          sequenceItems: [{ id: 'old-step', label: 'Old', order: 1 }],
+          sequenceShuffle: true,
+          objects: [],
+        },
+      ],
+    };
+
+    const committed = commitMaterializedActivity(activity);
+
+    expect(committed.slides[0].sequenceItems).toEqual(activity.sequenceItems);
+    expect(committed.slides[0].sequenceShuffle).toBe(false);
+    expect(materializeActivitySlide(committed, 'slide-1')).toMatchObject({
+      sequenceItems: activity.sequenceItems,
+      sequenceShuffle: false,
+    });
+  });
+
+  test('keeps root typed answer data when loading a legacy slide without those fields', () => {
+    const activity = {
+      id: 'act-matching',
+      type: 'matching',
+      currentSlideId: 'slide-1',
+      matchingPairs: [{ id: 'pair-1', left: 'A', right: 'B' }],
+      matchingShuffle: false,
+      slides: [
+        {
+          id: 'slide-1',
+          name: 'Soru',
+          objects: [],
+        },
+      ],
+    };
+
+    const normalized = normalizeActivity(activity);
+
+    expect(normalized.matchingPairs).toEqual(activity.matchingPairs);
+    expect(normalized.matchingShuffle).toBe(false);
+  });
+
   test('keeps answer-control fields on the active slide', () => {
     const activity = {
       id: 'act1',

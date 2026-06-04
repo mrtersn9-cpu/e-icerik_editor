@@ -110,7 +110,11 @@ function normalizeSlideTriggersForScene(triggers = [], objects = [], layers = []
 
 function pickSlideState(source = {}) {
   source = source && typeof source === 'object' ? source : {};
-  return Object.fromEntries(SLIDE_STATE_KEYS.map((key) => [key, source[key]]));
+  return Object.fromEntries(
+    SLIDE_STATE_KEYS.filter(
+      (key) => Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined
+    ).map((key) => [key, source[key]])
+  );
 }
 
 function normalizeSlide(slide = {}, index = 0) {

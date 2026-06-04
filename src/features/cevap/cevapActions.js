@@ -1,17 +1,11 @@
+import { SLIDE_STATE_KEYS } from '../../constants';
 import { uid } from '../../utils/editorHelpers';
 
 export function patchActivity(activity, onUpdate, patch) {
   if (!activity || !onUpdate) return;
   const next = { ...activity, ...patch };
   // SLIDE_STATE_KEYS icerigini root ve slide arasinda senkronize tut
-  const slideKeys = new Set([
-    'sceneName','sceneTemplateId','sceneTemplatePresetId','sceneTemplateVersion',
-    'stageWidth','stageHeight','backgroundColor','svgMarkup','svgName','layers',
-    'activeLayerId','nextActivityId','objects','selectedObjectId','timeline',
-    'triggers','audioUrl','audioName','audioAutoPlay','audioLoop','dragDropMode',
-    'dragDropSettings','dragDropMatches','mcOptions','selectionSlots','selectionUi',
-    'slideTransitionEffect','slideTransitionDirection','slideTransitionDuration',
-  ]);
+  const slideKeys = new Set(SLIDE_STATE_KEYS);
   const slidePatch = {};
   Object.keys(patch).forEach((key) => {
     if (slideKeys.has(key)) slidePatch[key] = patch[key];
@@ -247,4 +241,3 @@ export function changeActivityAnswerType(activity, onUpdate, nextType) {
 
   patchActivity(activity, onUpdate, basePatch);
 }
-
