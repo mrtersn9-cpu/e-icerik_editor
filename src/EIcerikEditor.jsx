@@ -52,6 +52,7 @@ import ButtonPackageIntroDiagram from './features/editor-workspace/ButtonPackage
 import useWorkspaceChromeController from './features/editor-workspace/useWorkspaceChromeController';
 import useLayoutResize from './features/editor-workspace/useLayoutResize';
 import useEditorPresenceHeartbeat from './features/auth/useEditorPresenceHeartbeat';
+import useBookLock from './features/navigation/useBookLock';
 import CanvasWorkspaceCenter from './features/editor-workspace/CanvasWorkspaceCenter';
 import DesignToolsDialog from './features/editor-workspace/DesignToolsDialog';
 import TextStudioWorkspace from './features/text-studio/TextStudioWorkspace';
@@ -398,7 +399,6 @@ initAIWorker().catch(() => {});
 const EDUCATION_BUTTON_ICON_SIZE_LARGE = 30;
 const REMOTE_STATUS_REQUEST_TIMEOUT_MS = 15000;
 const REMOTE_SAVE_REQUEST_TIMEOUT_MS = 30000;
-const BOOK_LOCK_REQUEST_TIMEOUT_MS = 12000;
 
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
@@ -1846,51 +1846,14 @@ export default function EIcerikEditor() {
     }
   }, []);
 
-  const releaseBookLock = useCallback(
-    async (projectId, bookId) => {
-      const resolvedProjectId = String(projectId || '').trim();
-      const resolvedBookId = String(bookId || '').trim();
-      if (!resolvedProjectId || !resolvedBookId || !activeUserId || !activeSessionId) return;
-      try {
-        await apiRequest(`/projects/${resolvedProjectId}/books/${resolvedBookId}/unlock`, {
-          method: 'POST',
-          timeoutMs: BOOK_LOCK_REQUEST_TIMEOUT_MS,
-        });
-      } catch {}
-      setBookLockInfo((current) =>
-        current?.projectId === resolvedProjectId && current?.bookId === resolvedBookId
-          ? null
-          : current
-      );
-    },
-    [activeSessionId, activeUserId]
-  );
-
-  const acquireBookLock = useCallback(
-    async (projectId, bookId) => {
-      const resolvedProjectId = String(projectId || '').trim();
-      const resolvedBookId = String(bookId || '').trim();
-      if (!resolvedProjectId || !resolvedBookId) return false;
-      try {
-        const response = await apiRequest(
-          `/projects/${resolvedProjectId}/books/${resolvedBookId}/lock`,
-          { method: 'POST', timeoutMs: BOOK_LOCK_REQUEST_TIMEOUT_MS }
-        );
-        setBookLockInfo(response?.lock || { projectId: resolvedProjectId, bookId: resolvedBookId });
-        setBookLockWarning('');
-        return true;
-      } catch (error) {
-        if (error?.code === 'BOOK_LOCKED') {
-          const message = formatBookLockMessage(error.lock, error.message || 'Bu kitap kilitli.');
-          setBookLockWarning(message);
-          showToast(message, 'warning');
-          return false;
-        }
-        throw error;
-      }
-    },
-    [showToast]
-  );
+  // Kitap kilidi alma/bırakma mantığı useBookLock hook'una taşındı.
+  const { acquireBookLock, releaseBookLock } = useBookLock({
+    activeUserId,
+    activeSessionId,
+    setBookLockInfo,
+    setBookLockWarning,
+    showToast,
+  });
 
   // Keyboard shortcuts
   useEffect(() => {
