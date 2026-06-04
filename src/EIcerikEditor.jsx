@@ -53,6 +53,7 @@ import useWorkspaceChromeController from './features/editor-workspace/useWorkspa
 import useLayoutResize from './features/editor-workspace/useLayoutResize';
 import useEditorPresenceHeartbeat from './features/auth/useEditorPresenceHeartbeat';
 import useBookLock from './features/navigation/useBookLock';
+import useWorkspaceData from './features/workspace/useWorkspaceData';
 import CanvasWorkspaceCenter from './features/editor-workspace/CanvasWorkspaceCenter';
 import DesignToolsDialog from './features/editor-workspace/DesignToolsDialog';
 import TextStudioWorkspace from './features/text-studio/TextStudioWorkspace';
@@ -1780,24 +1781,14 @@ export default function EIcerikEditor() {
     [isRemoteMutationLocked, showToast]
   );
 
-  const syncWorkspaceMeta = useCallback(
-    (workspace) => {
-      if (!workspace) return;
-      const nextCurrentProject = workspace.currentProject || null;
-      setWorkspaceInfo({
-        currentProject: nextCurrentProject,
-        projects: Array.isArray(workspace.projects) ? workspace.projects : [],
-        versions: Array.isArray(workspace.versions) ? workspace.versions : [],
-      });
-      setProjectNameDraft((prev) => {
-        if (nextCurrentProject?.id && nextCurrentProject.id === currentProjectId) {
-          return prev || nextCurrentProject.name || '';
-        }
-        return nextCurrentProject?.name || '';
-      });
-    },
-    [currentProjectId]
-  );
+  // Workspace meta verisi yardımcıları (syncWorkspaceMeta + mergeWorkspaceProjectData)
+  // useWorkspaceData hook'una taşındı. loadWorkspaceState ve sync effect'leri
+  // (normalizeState/writeBrowserRoute'a bağlı) monolitte kalır.
+  const { syncWorkspaceMeta, mergeWorkspaceProjectData } = useWorkspaceData({
+    currentProjectId,
+    setWorkspaceInfo,
+    setProjectNameDraft,
+  });
 
   const loadWorkspaceState = useCallback(
     (workspace, { beginAtPublisherRoot = false, navigationOverride = null } = {}) => {
@@ -1826,25 +1817,6 @@ export default function EIcerikEditor() {
     },
     [setActiveTab, setTimelineCurrentTime, setTimelinePlaying, syncWorkspaceMeta, writeBrowserRoute]
   );
-
-  const mergeWorkspaceProjectData = useCallback((payload) => {
-    setWorkspaceInfo((info) => ({
-      currentProject: payload.currentProject || info.currentProject,
-      projects: Array.isArray(payload.projects)
-        ? payload.projects
-        : payload.currentProject
-          ? info.projects.map((project) =>
-              project.id === payload.currentProject.id
-                ? { ...project, ...payload.currentProject }
-                : project
-            )
-          : info.projects,
-      versions: Array.isArray(payload.versions) ? payload.versions : info.versions,
-    }));
-    if (payload.currentProject?.name) {
-      setProjectNameDraft(payload.currentProject.name);
-    }
-  }, []);
 
   // Kitap kilidi alma/bırakma mantığı useBookLock hook'una taşındı.
   const { acquireBookLock, releaseBookLock } = useBookLock({
