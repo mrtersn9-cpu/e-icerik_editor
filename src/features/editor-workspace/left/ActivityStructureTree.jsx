@@ -78,7 +78,14 @@ export default function ActivityStructureTree({
       <SectionHeader
         title="Sahneler"
         action={
-          <div style={{ display: 'inline-flex', gap: 3 }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              gap: 3,
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+            }}
+          >
             <IconButton icon="add" label="Yeni sahne" onClick={onAddSlide} />
             <IconButton icon="copy" label="Sahne çoğalt" onClick={onDuplicateSlide} />
             <IconButton icon="copy" label="Sahneyi kopyala" onClick={onCopySlide} />

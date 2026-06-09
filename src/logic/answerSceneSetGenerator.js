@@ -143,7 +143,7 @@ function getSemanticIcon(iconObject = {}, labelObject = {}) {
     action.includes('restart')
   )
     return '↻';
-  if (labelKey.includes('ses') || action.includes('mute')) return iconObject.soundOffIcon || '🔊';
+  if (labelKey.includes('ses') || action.includes('mute')) return iconObject.soundOffIcon || '🔊︎';
   if (labelKey.includes('cozum') || labelKey.includes('cevap') || action.includes('answer'))
     return '✎';
   if (labelKey.includes('tamamla') || labelKey.includes('kontrol') || action.includes('complete'))
@@ -563,7 +563,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
         kind: 'menu',
         icon: themeIcons.menu || '☰',
         label: menuLabel,
-        tone: 'info',
+        tone: 'theme',
         x: u(72),
         y,
         labelWidth: u(146),
@@ -579,7 +579,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
         kind: 'check',
         icon: themeIcons.complete || '✓',
         label: checkLabel,
-        tone: 'success',
+        tone: 'theme',
         x: Math.max(u(24), stageWidth - totalWidth - u(60)),
         y: Math.max(u(24, 'y'), y - Math.round(height * 0.16)),
         labelWidth,
@@ -798,7 +798,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
       {
         icon: themeIcons.guide || '?',
         label: tx.activityIntro,
-        tone: 'info',
+        tone: 'theme',
         trigger: introSlideId ? { action: 'SliderGec', value: introSlideId } : null,
         runtimeAction: introSlideId ? '' : 'help',
       },
@@ -806,24 +806,24 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
         icon: themeIcons.restart || '↻',
         label: tx.restart,
         runtimeAction: 'restart',
-        tone: 'warning',
+        tone: 'danger',
         // restart base layer'a döner; navigasyon tetikleyicisi yok.
         trigger: null,
       },
       {
-        icon: '🔊',
+        icon: '🔊︎',
         label: tx.soundOff,
         runtimeAction: 'toggle-mute',
-        tone: 'neutral',
+        tone: 'theme',
         soundOnLabel: tx.soundOn,
         soundOffLabel: tx.soundOff,
-        soundOnIcon: '🔇',
-        soundOffIcon: '🔊',
+        soundOnIcon: '🔇︎',
+        soundOffIcon: '🔊︎',
       },
       {
         icon: themeIcons.home || '⌂',
         label: tx.home,
-        tone: 'primary',
+        tone: 'theme',
         trigger: launchSlideId ? { action: 'SliderGec', value: launchSlideId } : null,
         runtimeAction: launchSlideId ? '' : 'home',
       },
@@ -846,8 +846,8 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
       if (item.runtimeAction === 'toggle-mute') {
         Object.assign(iconBg, {
           dynamicSoundIcon: true,
-          soundOnIcon: item.soundOnIcon || '🔇',
-          soundOffIcon: item.soundOffIcon || '🔊',
+          soundOnIcon: item.soundOnIcon || '🔇︎',
+          soundOffIcon: item.soundOffIcon || '🔊︎',
         });
       }
       const labelButton = pushButton(layerId, item.label, rowLabelX, rowY, rowLabelW, u(58, 'y'), {

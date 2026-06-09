@@ -114,7 +114,7 @@ function ThemePreview({ preset }) {
   );
 }
 
-function ReadyButtonPreview({ preset }) {
+function ReadyButtonPreview({ preset, themeColor }) {
   const toneMap = {
     danger: '#ef4444',
     info: '#06b6d4',
@@ -123,7 +123,10 @@ function ReadyButtonPreview({ preset }) {
     success: '#16a34a',
     warning: '#f59e0b',
   };
-  const tone = toneMap[preset?.tone] || inspectorChrome.blue;
+  const tone =
+    preset?.tone === 'theme'
+      ? themeColor || inspectorChrome.blue
+      : toneMap[preset?.tone] || inspectorChrome.blue;
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center', minWidth: 0 }}>
       <span
@@ -435,12 +438,15 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
                         ? '#16a34a'
                         : preset.tone === 'danger'
                           ? '#ef4444'
-                          : preset.tone === 'warning'
-                            ? '#f59e0b'
+                          : preset.tone === 'theme'
+                            ? answerPresetColors(currentAnswerPreset)[0] || inspectorChrome.blue
                             : inspectorChrome.blue
                     }
                   >
-                    <ReadyButtonPreview preset={preset} />
+                    <ReadyButtonPreview
+                      preset={preset}
+                      themeColor={answerPresetColors(currentAnswerPreset)[0]}
+                    />
                     <div style={{ color: '#64748b', fontSize: 9.5, fontWeight: 760, marginTop: 5 }}>
                       {preset.runtimeAction || preset.trigger?.action || 'Hazır görev butonu'}
                     </div>

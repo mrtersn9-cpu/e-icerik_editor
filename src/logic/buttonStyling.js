@@ -7,6 +7,7 @@ import {
 import {
   contrastSafeButtonStyle,
   cssColorWithAlpha,
+  parseCssColorSamples,
 } from '../editor-logic/colorUtils';
 import { normalizeRuntimeActionLabel } from '../utils/storylineRuntime';
 
@@ -14,6 +15,36 @@ import { normalizeLayerNameKey } from './factories';
 
 const DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID = ANSWER_LAYER_STYLE_PRESETS[0]?.id || 'aurora-glass';
 const SCENE_TEMPLATE_BUTTON_INTRO_ID = 'button-intro';
+
+function clampColorChannel(value) {
+  return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+function rgbToHex([r, g, b] = [0, 0, 0]) {
+  return `#${[r, g, b].map((channel) => clampColorChannel(channel).toString(16).padStart(2, '0')).join('')}`;
+}
+// factor > 0 → beyaza doğru aç, factor < 0 → siyaha doğru koyulaştır
+function shadeRgb([r, g, b] = [0, 0, 0], factor = 0) {
+  return factor >= 0
+    ? [r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor]
+    : [r * (1 + factor), g * (1 + factor), b * (1 + factor)];
+}
+// 'theme' tonu: butonun rengini temanın kendi vurgu gradyanından (accentGradient) türetir.
+// Böylece her tema kendi tek rengini verir; "bir mavi bir yeşil" karmaşası olmaz.
+function deriveThemeToneColors(preset = {}) {
+  const samples = parseCssColorSamples(preset?.accentGradient || '');
+  if (!samples.length) return null;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const mid = samples[Math.floor((samples.length - 1) / 2)] || first;
+  return {
+    top: rgbToHex(shadeRgb(first, 0.22)),
+    mid: rgbToHex(mid),
+    bottom: rgbToHex(last),
+    dark: rgbToHex(shadeRgb(last, -0.34)),
+    light: rgbToHex(shadeRgb(first, 0.48)),
+    text: preset?.accentText || '#ffffff',
+  };
+}
 
 function getAnswerLayerStylePresetById(presetId = '') {
   return (
@@ -91,6 +122,12 @@ function getPresetToneColors(preset = {}, tone = 'accent') {
       text: preset?.titleColor || '#0f172a',
     },
   };
+  // 'theme' kadar 'accent' ve 'primary' tonları da temanın accentGradient'inden türetilir.
+  // (Aksi halde bunlar sabit maviye düşüp tema değişiminde mavi kalıyordu — örn. ikon daireleri.)
+  if (toneKey === 'theme' || toneKey === 'accent' || toneKey === 'primary') {
+    const themeColors = deriveThemeToneColors(preset);
+    if (themeColors) return themeColors;
+  }
   const colors = { ...(family[toneKey] || family.accent) };
   if (id === 'sunset-card') {
     if (toneKey === 'success')
@@ -364,14 +401,7 @@ function getPresetButtonShapeStyle(preset = {}, tone = 'accent') {
             light: '#fff4e6',
             text: '#7c2d12',
           }
-        : {
-            top: '#ffd166',
-            mid: '#fb923c',
-            bottom: '#c2410c',
-            dark: '#8a2b07',
-            light: '#ffedd5',
-            text: '#ffffff',
-          }
+        : toneColor
     );
   }
   if (id === 'mint-board') {
@@ -418,14 +448,7 @@ function getPresetButtonShapeStyle(preset = {}, tone = 'accent') {
             light: '#f7fee7',
             text: '#365314',
           }
-        : {
-            top: '#d9ff65',
-            mid: '#65c914',
-            bottom: '#247506',
-            dark: '#1d5d05',
-            light: '#f7fee7',
-            text: '#ffffff',
-          }
+        : toneColor
     );
   }
   if (id === 'slate-minimal') {
@@ -474,14 +497,7 @@ function getPresetButtonShapeStyle(preset = {}, tone = 'accent') {
               light: '#efffd6',
               text: '#ffffff',
             }
-          : {
-              top: '#7ee7ff',
-              mid: '#2bb3ff',
-              bottom: '#2563eb',
-              dark: '#1d4ed8',
-              light: '#ffffff',
-              text: '#ffffff',
-            }
+          : toneColor
     );
   }
   if (id === 'kids-sticker') {
@@ -513,8 +529,7 @@ function getReadyButtonTone(object = {}) {
   if (object.readyButtonTone) return object.readyButtonTone;
   const labelKey = normalizeRuntimeActionLabel(object.label || object.text || '');
   const action = String(object.runtimeAction || '');
-  if (object.isCheckButton || labelKey.includes('kontrolet') || labelKey === 'check')
-    return 'success';
+  // Sabit yeşil: yalnızca "Çözümü Göster" ve "Tamamla"
   if (
     action === 'show-answer' ||
     labelKey.includes('cozumugoster') ||
@@ -529,24 +544,42 @@ function getReadyButtonTone(object = {}) {
     labelKey.includes('closeactivity')
   )
     return 'success';
+  // Sabit kırmızı: "Yeniden Başlat" / "Tekrarla"
   if (
     action === 'restart' ||
     labelKey.includes('yenidenbaslat') ||
     labelKey.includes('restart') ||
-    labelKey.includes('retry')
+    labelKey.includes('retry') ||
+    labelKey.includes('tekrar')
   )
     return 'danger';
-  if (action === 'toggle-mute' || labelKey.includes('sesikapat') || labelKey.includes('mute'))
-    return 'neutral';
-  if (action === 'toggle-play-pause' || labelKey.includes('playpause')) return 'warning';
-  if (labelKey.includes('menu')) return 'info';
+  // Geri kalan tüm hazır/kontrol butonları (Kontrol Et, Menü, Geri/İleri, Play/Pause,
+  // Ses, Ana Sayfa, Tanıtım/Yardım, Başlat) → tema rengi
   if (
+    object.isCheckButton ||
+    labelKey.includes('kontrolet') ||
+    labelKey === 'check' ||
+    action === 'toggle-mute' ||
+    labelKey.includes('sesikapat') ||
+    labelKey.includes('mute') ||
+    action === 'toggle-play-pause' ||
+    labelKey.includes('playpause') ||
+    labelKey.includes('menu') ||
     labelKey.includes('geri') ||
     labelKey.includes('ileri') ||
     labelKey.includes('back') ||
-    labelKey.includes('next')
+    labelKey.includes('next') ||
+    action === 'home' ||
+    labelKey.includes('anasayfa') ||
+    labelKey.includes('home') ||
+    action === 'help' ||
+    action === 'show-help' ||
+    labelKey.includes('tanitim') ||
+    labelKey.includes('intro') ||
+    labelKey.includes('baslat') ||
+    labelKey.includes('start')
   )
-    return 'primary';
+    return 'theme';
   return '';
 }
 
@@ -593,7 +626,7 @@ function getPlayPauseButtonPatch(object = {}) {
   const width = Number(object.width) || 124;
   const height = Number(object.height) || 92;
   return {
-    label: '▶\n❚❚',
+    label: '▶',
     width: width > height * 1.8 || width < 96 ? 124 : Math.min(width, 152),
     height: Math.max(height, 92),
   };
@@ -663,20 +696,37 @@ function restyleReadyButtonsForPreset(
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
   const motion = stylePreset?.motion || {};
-  return (objects || []).map((object) => {
-    if (!shouldRestyleReadyButton(object)) return object;
-    const tone = getReadyButtonTone(object);
+  const list = objects || [];
+  const byId = new Map(list.map((item) => [item?.id, item]));
+  return list.map((object) => {
+    if (object?.type !== 'button') return object;
+    // Doğrudan algılanan ton; yoksa bağlı (linkedActionTargetId) etiket-yarısından türet.
+    // Böylece glif label'lı ikon DAİRELERİ de tema değişiminde eş renge döner (önceden
+    // getReadyButtonTone='' olduğu için atlanıp eski tema renginde kalıyordu).
+    let tone = getReadyButtonTone(object);
+    if (!tone) {
+      const linkedId = object.linkedActionTargetId;
+      const linked = linkedId && linkedId !== object.id ? byId.get(linkedId) : null;
+      if (linked && linked !== object) tone = getReadyButtonTone(linked);
+    }
+    if (!tone) return object;
     const playPausePatch = isPlayPauseReadyButton(object) ? getPlayPauseButtonPatch(object) : {};
+    const built = buildReadyButtonStyle(stylePreset, tone, { ...object, ...playPausePatch });
+    // Yuvarlak ikon dairelerinin (kare-ish) şeklini koru — yalnızca rengi güncelle.
+    // Geniş etiket pill'leri yeni temanın köşe yarıçapını alır.
+    const prevRadius = Number(object.style?.borderRadius);
+    const w = Number(object.width) || 0;
+    const h = Number(object.height) || 0;
+    const keepRound =
+      Number.isFinite(prevRadius) && prevRadius >= 100 && w > 0 && h > 0 && Math.abs(w - h) <= h * 0.6;
     return {
       ...object,
       readyButtonTone: tone,
       ...playPausePatch,
       style: {
         ...(object.style || {}),
-        ...buildReadyButtonStyle(stylePreset, tone, {
-          ...object,
-          ...playPausePatch,
-        }),
+        ...built,
+        ...(keepRound ? { borderRadius: prevRadius } : {}),
       },
       ...(motion ? { buttonMotion: { ...motion } } : {}),
     };
@@ -720,18 +770,19 @@ function getAnswerLayerChromeForPreset(preset = {}, layerKey = 'normal') {
 function getLayerActionButtonStyle(preset = {}, tone = 'primary', fallback = {}) {
   const colors = getPresetToneColors(preset, tone);
   const shapeStyle = getPresetButtonShapeStyle(preset, tone);
+  // 'theme' (ve tabloda olmayan tonlar) için sabit palete düşme; getPresetToneColors'tan
+  // gelen tema-türevli `colors` kullanılsın ki tema rengi korunsun (mavi'ye zorlamayalım).
   const strong = {
     success: { top: '#9afc55', mid: '#22c55e', bottom: '#15803d', dark: '#166534' },
     danger: { top: '#ff6b7a', mid: '#ef233c', bottom: '#9f1239', dark: '#7f102a' },
     warning: { top: '#ffd166', mid: '#fb923c', bottom: '#c2410c', dark: '#8a2b07' },
     info: { top: '#67e8f9', mid: '#06b6d4', bottom: '#0e7490', dark: '#155e75' },
-    primary: { top: '#7ee7ff', mid: '#2bb3ff', bottom: '#2563eb', dark: '#1d4ed8' },
     neutral: { top: '#7dd3fc', mid: '#0ea5e9', bottom: '#0369a1', dark: '#075985' },
-  }[tone] || { top: '#7ee7ff', mid: '#2bb3ff', bottom: '#2563eb', dark: '#1d4ed8' };
-  const top = strong.top || colors.top || fallback.background || '#38bdf8';
-  const mid = strong.mid || colors.mid || top;
-  const bottom = strong.bottom || colors.bottom || colors.dark || mid;
-  const dark = strong.dark || colors.dark || bottom;
+  }[tone] || null;
+  const top = strong?.top || colors.top || fallback.background || '#38bdf8';
+  const mid = strong?.mid || colors.mid || top;
+  const bottom = strong?.bottom || colors.bottom || colors.dark || mid;
+  const dark = strong?.dark || colors.dark || bottom;
   const textColor = tone === 'soft' ? preset?.titleColor || '#0f172a' : '#ffffff';
   return contrastSafeButtonStyle({
     background: `linear-gradient(180deg,rgba(255,255,255,.66) 0%,rgba(255,255,255,.16) 34%,rgba(255,255,255,0) 35%), linear-gradient(180deg,${top} 0%,${mid} 54%,${bottom} 100%)`,

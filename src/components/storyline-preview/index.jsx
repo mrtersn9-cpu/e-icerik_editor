@@ -500,13 +500,13 @@ function getDemoButtonDisplayLabel(obj = {}, objectStates = {}, fallbackLabel = 
     const label = active
       ? obj.soundOnLabel || 'SESİ AÇ'
       : obj.soundOffLabel || fallbackLabel || 'SESİ KAPAT';
-    const icon = active ? obj.soundOnIcon || '🔇' : obj.soundOffIcon || '🔊';
+    const icon = active ? obj.soundOnIcon || '🔇︎' : obj.soundOffIcon || '🔊︎';
     if (String(obj.soundIconMode || '') === 'icon-only') return icon;
     if (String(obj.soundIconMode || '') === 'external') return label;
     return `${icon ? `${icon}  ` : ''}${label}`;
   }
   if (demoAction === 'toggle-play-pause') {
-    const icon = active ? obj.pauseIcon || '⏸⏸' : obj.playIcon || '▶';
+    const icon = active ? obj.pauseIcon || '❚❚' : obj.playIcon || '▶';
     return icon;
   }
   return fallbackLabel;
@@ -535,7 +535,11 @@ function RuntimeObjectLayer({
 }) {
   const sourceObjects = includeAllLayers
     ? (activity?.objects || []).filter(
-        (obj) => !hiddenObjectIds?.has?.(obj.id) && !obj?.isPdfMask && !obj?.isPdfBackground
+        (obj) =>
+          !hiddenObjectIds?.has?.(obj.id) &&
+          !obj?.isPdfMask &&
+          !obj?.isPdfBackground &&
+          !obj?.isStageBackground
       )
     : getCanvasObjects(activity, activeLayerId, hiddenObjectIds);
   const objects = sourceObjects
@@ -3651,7 +3655,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     (activeLayerId === 'base' ? 'Base Layer' : 'Katman');
   const previewPdfBackgroundObject =
     (previewActivity.objects || [])
-      .filter((item) => item?.isPdfBackground && item?.imageData)
+      .filter((item) => (item?.isPdfBackground || item?.isStageBackground) && item?.imageData)
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))[0] || null;
   const rawStageBackground = String(previewActivity.backgroundColor || '')
     .trim()
@@ -3665,7 +3669,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       : previewActivity.backgroundColor;
   const runtimeHiddenObjectIds = new Set(hiddenObjectIds);
   (previewActivity.objects || []).forEach((item) => {
-    if (item?.isPdfBackground) runtimeHiddenObjectIds.add(item.id);
+    if (item?.isPdfBackground || item?.isStageBackground) runtimeHiddenObjectIds.add(item.id);
   });
 
   return (

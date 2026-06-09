@@ -240,7 +240,9 @@ function buildLayerNameMap(layers = [], activity = {}) {
 function hasRenderableObjects(objects) {
   return (
     Array.isArray(objects) &&
-    objects.some((object) => !object?.isPdfMask && !object?.isPdfBackground)
+    objects.some(
+      (object) => !object?.isPdfMask && !object?.isPdfBackground && !object?.isStageBackground
+    )
   );
 }
 
@@ -299,7 +301,7 @@ export function getStorylinePreviewRenderData({
 
   const objects = mergedPreviewObjects
     .filter((obj) => !hiddenObjectIds?.has?.(obj.id))
-    .filter((obj) => !obj?.isPdfMask && !obj?.isPdfBackground)
+    .filter((obj) => !obj?.isPdfMask && !obj?.isPdfBackground && !obj?.isStageBackground)
     .filter((obj) => {
       const objectLayerId = obj.layerId || 'base';
       if (

@@ -11,6 +11,7 @@ import {
   MessageSquareText,
   Palette,
   Redo2,
+  Save,
   Settings,
   Undo2,
 } from 'lucide-react';
@@ -71,6 +72,8 @@ export default function EditorTopBar({
   history,
   importRef,
   lastSaved,
+  onManualSave,
+  manualSaving = false,
   redo,
   selActivity,
   onBackToActivities,
@@ -136,6 +139,15 @@ export default function EditorTopBar({
         <div className={styles.editorActions}>
           <QuickAction icon={Undo2} label="Geri Al" onClick={undo} disabled={!history?.past?.length} title="Geri Al (Ctrl+Z)" />
           <QuickAction icon={Redo2} label="İleri Al" onClick={redo} disabled={!history?.future?.length} title="İleri Al (Ctrl+Y)" />
+          {onManualSave && (
+            <QuickAction
+              icon={Save}
+              label={manualSaving ? 'Kaydediliyor…' : 'Kaydet'}
+              onClick={onManualSave}
+              disabled={manualSaving}
+              title="Kaydet (veritabanına)"
+            />
+          )}
           <QuickAction icon={Download} label="Dışa Aktar" onClick={handleExport} />
           <QuickAction icon={LayoutGrid} label="Önizleme" onClick={handleOpenStorylinePreview} />
           <QuickAction icon={Expand} label="Tam Ekran" onClick={onToggleFullscreen} />

@@ -65,6 +65,7 @@ import WidgetHost from '../widgets/WidgetHost';
 import { buildWidgetIframeSrc } from '../widgets/WidgetRegistry';
 import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
 import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
+import ObjectContextMenu from './ObjectContextMenu';
 
 // Yeni eklenen nesneye verilecek zIndex: mevcut tüm nesnelerin en üstündekinin
 // bir fazlası. Sayım (length) yerine gerçek en yüksek zIndex baz alınır; böylece
@@ -93,6 +94,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     showChrome = true,
     objectClipboardRef = null,
     touchMode = false,
+    onPickIcon = null,
   },
   ref
 ) {
@@ -120,6 +122,11 @@ const StageCanvas = forwardRef(function StageCanvas(
   const [selectedVectorAnchor, setSelectedVectorAnchor] = useState({ objectId: null, indices: [] });
   const [viewportSize, setViewportSize] = useState({ width: 1280, height: 760 });
   const [interactionDraft, setInteractionDraft] = useState(null);
+  // Çift tıkla satıriçi metin düzenlemesi: düzenlenen ögenin id'si
+  const [editingObjectId, setEditingObjectId] = useState(null);
+  const editTextareaRef = useRef(null);
+  // Sağ tık bağlam menüsü: { x, y, objectId } (objectId null → boş zemine tıklandı)
+  const [contextMenu, setContextMenu] = useState(null);
 
   useEffect(() => {
     if (!interactionDraftRef.current) latestRef.current = activity;
@@ -197,7 +204,16 @@ const StageCanvas = forwardRef(function StageCanvas(
   const hasSvg = !!canvasActivity.svgMarkup;
   const hasObjects = objects.length > 0;
   const pdfBackgroundObject = useMemo(
-    () => objects.find((object) => object?.isPdfBackground && object?.imageData) || null,
+    () =>
+      objects.find(
+        (object) => (object?.isPdfBackground || object?.isStageBackground) && object?.imageData
+      ) || null,
+    [objects]
+  );
+  // Kullanıcının sağ tıkla "Zemin yap" dediği öge (PDF zemininden ayrı tutulur ki
+  // boş zemine sağ tıkta yalnızca bunu "Zemini kaldır" ile geri alabilelim).
+  const stageBackgroundObject = useMemo(
+    () => objects.find((object) => object?.isStageBackground && object?.imageData) || null,
     [objects]
   );
   const renderObjects = useMemo(
@@ -237,11 +253,14 @@ const StageCanvas = forwardRef(function StageCanvas(
   }, [currentLayerId, isFullStageDarkBackdrop, overlayLayerActive, renderObjects]);
 
   const baseScale = useMemo(() => {
+    // Fit'te sahnenin etrafında bir miktar gri pasteboard kalsın ki ögeler sahne
+    // dışına park edilebilsin (sahne, kullanılabilir alanın ~%90'ına sığdırılır).
+    const FIT_MARGIN = 0.9;
     return getFitScale(
       canvasActivity.stageWidth || 1920,
       canvasActivity.stageHeight || 1080,
-      viewportSize.width - 12,
-      viewportSize.height - 36
+      (viewportSize.width - 12) * FIT_MARGIN,
+      (viewportSize.height - 36) * FIT_MARGIN
     );
   }, [
     canvasActivity.stageWidth,
@@ -282,9 +301,13 @@ const StageCanvas = forwardRef(function StageCanvas(
       const sw = latestRef.current.stageWidth || 1920;
       const sh = latestRef.current.stageHeight || 1080;
       const sc = zoomRef.current === 'fit' ? baseScale : Number(zoomRef.current) || baseScale;
+      // Sahne dışı (gri pasteboard) yerleştirmeye izin ver: koordinatı sahne kenarında
+      // değil, cömert bir pasteboard sınırında kelepçele (öge gri alana taşınabilsin).
+      const padX = sw * 0.75;
+      const padY = sh * 0.75;
       return {
-        x: Math.min(Math.max((cx - r.left) / sc, 0), sw),
-        y: Math.min(Math.max((cy - r.top) / sc, 0), sh),
+        x: Math.min(Math.max((cx - r.left) / sc, -padX), sw + padX),
+        y: Math.min(Math.max((cy - r.top) / sc, -padY), sh + padY),
       };
     },
     [baseScale]
@@ -303,6 +326,21 @@ const StageCanvas = forwardRef(function StageCanvas(
     () => (zoomRef.current === 'fit' ? baseScale : Number(zoomRef.current) || baseScale),
     [baseScale]
   );
+  // Canvas ile etkileşince sahne dışındaki bayat odağı (slayt/katman satırı, panel
+  // input'u) bırak. Aksi halde o eleman odakta kalıp klavye kısayollarını (özellikle
+  // Delete) yakalayarak yanlış hedefi (slaytı/katmanı) siliyordu.
+  const blurOffStageFocus = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== document.body &&
+      typeof active.blur === 'function' &&
+      !stageRef.current?.contains(active)
+    ) {
+      active.blur();
+    }
+  }, []);
   useMobileCanvasGestures({
     enabled: touchMode,
     viewportRef,
@@ -568,7 +606,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     onUpdate({
       ...a,
       objects: (a.objects || []).map((o) =>
-        o.id === id ? { ...o, zIndex: (a.objects || []).length + 1 } : o
+        o.id === id ? { ...o, zIndex: nextTopZIndex(a.objects) } : o
       ),
     });
   }, [onUpdate]);
@@ -598,6 +636,105 @@ const StageCanvas = forwardRef(function StageCanvas(
           targetIds.has(o.id) && !o.locked ? { ...o, x: o.x + dx, y: o.y + dy } : o
         ),
       });
+    },
+    [onUpdate]
+  );
+
+  // Sağ tıkta ögeyi tekil seç (bağlam menüsü eylemleri seçili ögeye göre çalışır)
+  const selectObjectById = useCallback(
+    (id) => {
+      const a = latestRef.current;
+      if (!(a.objects || []).some((o) => o.id === id)) return;
+      blurOffStageFocus();
+      const next = { ...a, selectedObjectId: id };
+      latestRef.current = next;
+      onUpdate(next);
+      onSelectionChange(new Set([id]));
+    },
+    [onUpdate, onSelectionChange, blurOffStageFocus]
+  );
+
+  // Çift tık satıriçi düzenleme sonucu metni ögeye yaz
+  const commitInlineEdit = useCallback(
+    (id, value) => {
+      setEditingObjectId(null);
+      if (value === undefined || value === null) return;
+      const next = String(value);
+      patchObj(id, { label: next, text: next });
+    },
+    [patchObj]
+  );
+
+  // Düzenleme açıkken sahnenin/bir başka ögenin pointerdown'ı preventDefault yaptığından
+  // textarea blur olmayabiliyor. Capture aşamasında dışarı tıklamayı yakalayıp düzenlemeden çık.
+  useEffect(() => {
+    if (!editingObjectId) return undefined;
+    const onDocPointerDown = (event) => {
+      const ta = editTextareaRef.current;
+      if (ta && (event.target === ta || ta.contains(event.target))) return;
+      commitInlineEdit(editingObjectId, ta ? ta.value : undefined);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+  }, [editingObjectId, commitInlineEdit]);
+
+  // Dosya gezgininden sürüklenen resim/SVG'leri imleç noktasına taşınabilir öge olarak ekle
+  const handleStageDrop = useCallback(
+    (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) return;
+      // Dosya bırakıldıysa tarayıcının dosyayı açıp uygulamadan çıkmasını her durumda engelle
+      event.preventDefault();
+      const imageFiles = files.filter(
+        (file) => file.type?.startsWith('image/') || /\.svg$/i.test(file.name || '')
+      );
+      if (!imageFiles.length) return;
+      const point = toStage(event.clientX, event.clientY);
+      // Birden çok dosya tek seferde okunup TEK onUpdate ile eklenir; aksi halde
+      // FileReader'ın async'liği latestRef'i bayatlatıp ilk dosyaları kaybettirir.
+      Promise.all(imageFiles.map((file) => fileToDataUrl(file))).then((dataUrls) => {
+        const a = latestRef.current;
+        const objs = a.objects || [];
+        const sw = Number(a.stageWidth) || 1920;
+        const sh = Number(a.stageHeight) || 1080;
+        const created = [];
+        dataUrls.forEach((dataUrl, index) => {
+          if (!dataUrl) return;
+          const o = createObject('image');
+          o.imageData = dataUrl;
+          o.label = (imageFiles[index].name || 'Görsel').replace(/\.[^.]+$/, '');
+          o.zIndex = nextTopZIndex([...objs, ...created]);
+          o.layerId = a.activeLayerId || 'base';
+          const w = Number(o.width) || 0;
+          const h = Number(o.height) || 0;
+          // Sahne sınırları içinde tut (overflow:hidden nedeniyle dışarı taşan öge kaybolur)
+          o.x = clamp(Math.round(point.x + index * 24 - w / 2), 0, Math.max(0, sw - w));
+          o.y = clamp(Math.round(point.y + index * 24 - h / 2), 0, Math.max(0, sh - h));
+          created.push(o);
+        });
+        if (!created.length) return;
+        const nextObjects = [...objs, ...created];
+        onUpdate({
+          ...a,
+          objects: nextObjects,
+          selectedObjectId: created[created.length - 1].id,
+          timeline: syncTimelineWithObjects({ ...a, objects: nextObjects }),
+        });
+        onSelectionChange(new Set(created.map((o) => o.id)));
+      });
+    },
+    [toStage, onUpdate, onSelectionChange]
+  );
+
+  // "Zemin Yap": hedefi tek aktif kullanıcı-zemini yap, diğerlerinin bayrağını temizle
+  const setStageBackground = useCallback(
+    (id) => {
+      const a = latestRef.current;
+      const objs = (a.objects || []).map((o) => {
+        if (o.id === id) return { ...o, isStageBackground: true };
+        return o.isStageBackground ? { ...o, isStageBackground: false } : o;
+      });
+      onUpdate({ ...a, objects: objs });
     },
     [onUpdate]
   );
@@ -632,8 +769,13 @@ const StageCanvas = forwardRef(function StageCanvas(
   );
 
   const startInteract = (e, objId, mode, handle = '') => {
+    // Sağ/orta tık taşıma başlatmasın — bağlam menüsü (onContextMenu) devreye girsin
+    if (typeof e.button === 'number' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    // Sahne dışındaki bayat odağı (slayt/katman satırı) bırak: aksi halde o satır
+    // odakta kalıp Delete'i yakalayarak nesne yerine SLAYTI/KATMANI siliyordu.
+    blurOffStageFocus();
     e.currentTarget?.setPointerCapture?.(e.pointerId);
     const a = latestRef.current;
     const obj = (a.objects || []).find((o) => o.id === objId);
@@ -706,14 +848,18 @@ const StageCanvas = forwardRef(function StageCanvas(
       const MIN = 30;
 
       if (mode === 'move') {
+        // Sahne dışı (gri pasteboard) yerleştirmeye izin ver: ögeyi sahne içine
+        // kilitlemek yerine cömert bir pasteboard sınırında tut.
+        const padX = sw * 0.75;
+        const padY = sh * 0.75;
         const snap = dragSnapshotRef.current || {};
         const updatedObjects = (curr.objects || []).map((o) => {
           if (!snap[o.id]) return o;
           const s = snap[o.id];
           const moved = {
             ...o,
-            x: Math.min(Math.max(s.x + dx, 0), Math.max(0, sw - o.width)),
-            y: Math.min(Math.max(s.y + dy, 0), Math.max(0, sh - o.height)),
+            x: Math.min(Math.max(s.x + dx, -padX), sw + padX),
+            y: Math.min(Math.max(s.y + dy, -padY), sh + padY),
           };
           return o.generatedBy === 'answer-placement'
             ? { ...moved, answerPlacementManual: true, disableDrag: false, locked: false }
@@ -781,6 +927,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     if (e.button !== 0 || canvasTool !== 'select') return;
     e.preventDefault();
     e.stopPropagation();
+    blurOffStageFocus();
     e.currentTarget?.setPointerCapture?.(e.pointerId);
     const r = stageRef.current.getBoundingClientRect();
     const x0 = e.clientX - r.left,
@@ -1032,7 +1179,7 @@ const StageCanvas = forwardRef(function StageCanvas(
         cursor: canvasTool === 'pan' ? 'grab' : canvasTool === 'zoom' ? 'zoom-in' : 'default',
         background: 'linear-gradient(180deg,#dbe5f0,#cfd9e6)',
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'center',
         padding: 6,
         // Mobil: tek-parmak native kaydırmaya izin ver, pinch-zoom'u biz yönetiriz.
@@ -1163,14 +1310,29 @@ const StageCanvas = forwardRef(function StageCanvas(
         <div
           ref={stageRef}
           onPointerDown={startRubber}
+          onDragOver={(event) => {
+            if (Array.from(event.dataTransfer?.types || []).includes('Files')) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }
+          }}
+          onDrop={handleStageDrop}
+          onContextMenu={(event) => {
+            // Boş zemine sağ tık (öge sarmalayıcıları event'i durdurur)
+            event.preventDefault();
+            setContextMenu({ x: event.clientX, y: event.clientY, objectId: null });
+          }}
           style={{
             width: vw,
             height: vh,
             position: 'relative',
             background: canvasActivity.backgroundColor || '#fff',
             border: '1px solid rgba(148,163,184,.45)',
-            borderRadius: 18,
-            overflow: 'hidden',
+            borderRadius: 0,
+            // Editörde sahne dışına (gri pasteboard) park edilen ögeler görünür olsun.
+            // Çalışma anı/çıktı ayrı renderer (storylineRendererCore) ile yine kırpılır;
+            // yani sahne dışı ögeler yayında görünmez.
+            overflow: 'visible',
             cursor: 'crosshair',
             boxShadow: '0 24px 50px rgba(15,23,42,.16)',
             touchAction: 'none',
@@ -1496,7 +1658,32 @@ const StageCanvas = forwardRef(function StageCanvas(
                 <div
                   key={o.id}
                   onPointerDown={
-                    isOtherLayerObj ? undefined : (e) => startInteract(e, o.id, 'move')
+                    isOtherLayerObj || editingObjectId === o.id
+                      ? undefined
+                      : (e) => startInteract(e, o.id, 'move')
+                  }
+                  onDoubleClick={
+                    isOtherLayerObj || isEditorLocked
+                      ? undefined
+                      : (e) => {
+                          if (['button', 'text', 'shape'].includes(o.type) && !o.iconSvg) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            selectObjectById(o.id);
+                            setEditingObjectId(o.id);
+                          }
+                        }
+                  }
+                  onContextMenu={
+                    isOtherLayerObj
+                      ? undefined
+                      : (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          // Çoklu seçimi koru: tıklanan öge seçili değilse tekile indir
+                          if (!selectedIds.has(o.id)) selectObjectById(o.id);
+                          setContextMenu({ x: e.clientX, y: e.clientY, objectId: o.id });
+                        }
                   }
                   style={{
                     position: 'absolute',
@@ -1553,7 +1740,48 @@ const StageCanvas = forwardRef(function StageCanvas(
                     boxShadow: st.boxShadow || 'none',
                   }}
                 >
-                  {o.selectionQuestionId ? (
+                  {editingObjectId === o.id ? (
+                    <textarea
+                      autoFocus
+                      ref={editTextareaRef}
+                      defaultValue={o.label || o.text || ''}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => commitInlineEdit(o.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          commitInlineEdit(o.id, e.currentTarget.value);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setEditingObjectId(null);
+                        }
+                      }}
+                      // Ögenin mevcut görünümünü koru: şeffaf zemin + aynı yazı stili
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        boxSizing: 'border-box',
+                        border: 'none',
+                        outline: 'none',
+                        resize: 'none',
+                        background: 'transparent',
+                        color: st.color || '#111',
+                        fontSize: (st.fontSize || 13) * scale,
+                        fontWeight: st.fontWeight || 600,
+                        fontFamily: 'inherit',
+                        lineHeight: st.lineHeight || 1.2,
+                        letterSpacing: st.letterSpacing || undefined,
+                        textAlign: st.textAlign || 'center',
+                        textShadow: st.textShadow || 'none',
+                        caretColor: st.color || '#111',
+                        padding: '0 6px',
+                        overflow: 'hidden',
+                      }}
+                    />
+                  ) : o.selectionQuestionId ? (
                     <span
                       style={{
                         pointerEvents: 'none',
@@ -2241,6 +2469,131 @@ const StageCanvas = forwardRef(function StageCanvas(
           onChange={loadSVG}
           style={{ display: 'none' }}
         />
+        {contextMenu &&
+          (() => {
+            const target = contextMenu.objectId
+              ? objects.find((o) => o.id === contextMenu.objectId)
+              : null;
+            const items = [];
+            if (target) {
+              const isImageLike = !!target.imageData;
+              // iconSvg taşıyan ögeler (insertIcon) düzenlenebilir metin içermez
+              const isTextLike =
+                ['button', 'text', 'shape'].includes(target.type) && !target.iconSvg;
+              if (isTextLike) {
+                items.push({
+                  label: 'Metni Düzenle',
+                  onClick: () => setEditingObjectId(target.id),
+                });
+              }
+              if (target.type === 'button') {
+                const labelText = String(target.label || target.text || '').trim();
+                // Dinamik butonlarda (mute/play-pause) 'only' yapma — dinamik ikon korunmalı
+                const isDynamicButton =
+                  target.runtimeAction === 'toggle-mute' ||
+                  target.runtimeAction === 'toggle-play-pause' ||
+                  target.sceneTemplateDemoAction === 'toggle-mute' ||
+                  target.sceneTemplateDemoAction === 'toggle-play-pause' ||
+                  !!target.dynamicSoundIcon;
+                const isReadyIconHalf =
+                  !isDynamicButton &&
+                  (String(target.sceneTemplateSlotId || '').endsWith('-icon') ||
+                    String(target.soundIconMode || '') === 'icon-only' ||
+                    (!!target.readyButtonPresetId &&
+                      labelText.length <= 3 &&
+                      !/[\p{L}\p{N}]/u.test(labelText)));
+                items.push({
+                  label: target.icon?.svg ? 'İkonu Değiştir' : 'İkon Ekle',
+                  disabled: !onPickIcon,
+                  onClick: () =>
+                    onPickIcon?.((selection) =>
+                      patchObj(target.id, {
+                        icon: { name: selection.iconName, svg: selection.iconSvg },
+                        iconPosition: isReadyIconHalf
+                          ? 'only'
+                          : target.iconPosition && target.iconPosition !== 'none'
+                            ? target.iconPosition
+                            : 'left',
+                      })
+                    ),
+                });
+              }
+              if (isImageLike) {
+                items.push(
+                  target.isStageBackground
+                    ? {
+                        label: 'Zemini Kaldır',
+                        onClick: () => patchObj(target.id, { isStageBackground: false }),
+                      }
+                    : {
+                        label: 'Zemin Yap',
+                        onClick: () => setStageBackground(target.id),
+                      }
+                );
+                items.push({
+                  label: 'Sahneye Sığdır',
+                  onClick: () =>
+                    patchObj(target.id, {
+                      x: 0,
+                      y: 0,
+                      width: canvasActivity.stageWidth || 1920,
+                      height: canvasActivity.stageHeight || 1080,
+                    }),
+                });
+              }
+              if (items.length) items.push({ separator: true });
+              items.push({ label: 'Çoğalt', onClick: duplicateSelected });
+              items.push({ label: 'Öne Getir', onClick: bringFront });
+              items.push({ label: 'Arkaya Gönder', onClick: sendBack });
+              items.push({
+                label: target.locked ? 'Kilidi Aç' : 'Kilitle',
+                onClick: () => patchObj(target.id, { locked: !target.locked }),
+              });
+              items.push({
+                label: target.visible === false ? 'Göster' : 'Gizle',
+                onClick: () => patchObj(target.id, { visible: target.visible === false }),
+              });
+              items.push({ separator: true });
+              items.push({ label: 'Sil', danger: true, onClick: deleteSelected });
+            } else {
+              if (stageBackgroundObject) {
+                items.push({
+                  label: 'Zemini Kaldır',
+                  onClick: () =>
+                    patchObj(stageBackgroundObject.id, { isStageBackground: false }),
+                });
+              }
+              if ((objects || []).some((o) => o.visible === false)) {
+                items.push({
+                  label: 'Gizli Ögeleri Göster',
+                  onClick: () => {
+                    const a = latestRef.current;
+                    onUpdate({
+                      ...a,
+                      objects: (a.objects || []).map((o) =>
+                        o.visible === false ? { ...o, visible: true } : o
+                      ),
+                    });
+                  },
+                });
+              }
+              items.push({
+                label: 'Yapıştır',
+                disabled: !(
+                  clipboardRef.current && (clipboardRef.current.objects || []).length
+                ),
+                onClick: () => pasteClipboard(),
+              });
+            }
+            return (
+              <ObjectContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                items={items}
+                onClose={() => setContextMenu(null)}
+              />
+            );
+          })()}
       </div>
     </div>
   );

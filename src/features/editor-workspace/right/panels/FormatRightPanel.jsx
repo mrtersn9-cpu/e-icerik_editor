@@ -629,16 +629,37 @@ export function FormatRightPanelContent({ controller }) {
               actions={[
                 {
                   label: object.icon?.svg ? 'İkonu Değiştir' : 'İkon Seç',
-                  onClick: () =>
+                  onClick: () => {
+                    // Hazır buton ikon-yarısında (label'ı tek glif) yeni ikon eskisinin
+                    // YERİNE geçmeli: iconPosition'ı 'only' yapıp glifi gizleriz.
+                    const labelText = String(object.label || object.text || '').trim();
+                    // Mute/Play-Pause gibi dinamik (state'e göre ikon/etiket değiştiren)
+                    // butonlarda 'only' YAPMA: aksi halde çalışma anında dinamik
+                    // ses/oynat-duraklat geri bildirimi (🔊︎/🔇︎) kaybolur.
+                    const isDynamicButton =
+                      object.runtimeAction === 'toggle-mute' ||
+                      object.runtimeAction === 'toggle-play-pause' ||
+                      object.sceneTemplateDemoAction === 'toggle-mute' ||
+                      object.sceneTemplateDemoAction === 'toggle-play-pause' ||
+                      !!object.dynamicSoundIcon;
+                    const isReadyIconHalf =
+                      !isDynamicButton &&
+                      (String(object.sceneTemplateSlotId || '').endsWith('-icon') ||
+                        String(object.soundIconMode || '') === 'icon-only' ||
+                        (!!object.readyButtonPresetId &&
+                          labelText.length <= 3 &&
+                          !/[\p{L}\p{N}]/u.test(labelText)));
                     commands.openIconPicker?.((selection) =>
                       patchObject({
                         icon: { name: selection.iconName, svg: selection.iconSvg },
-                        iconPosition:
-                          object.iconPosition && object.iconPosition !== 'none'
+                        iconPosition: isReadyIconHalf
+                          ? 'only'
+                          : object.iconPosition && object.iconPosition !== 'none'
                             ? object.iconPosition
                             : 'left',
                       })
-                    ),
+                    );
+                  },
                 },
                 ...(object.icon?.svg
                   ? [

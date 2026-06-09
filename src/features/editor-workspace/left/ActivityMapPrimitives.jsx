@@ -161,6 +161,9 @@ export function SectionHeader({ action, count, title }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 8,
+        rowGap: 6,
+        // Dar panelde başlık + buton sırası sığmazsa butonlar alt satıra sarsın (kırpılmasın)
+        flexWrap: 'wrap',
         minHeight: 28,
       }}
     >

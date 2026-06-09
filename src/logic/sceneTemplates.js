@@ -310,8 +310,8 @@ function buildButtonIntroSceneTemplateObjects(
             sceneTemplateDemoAction: 'toggle-mute',
             soundOnLabel: tx.soundOn,
             soundOffLabel: tx.soundOff,
-            soundOnIcon: '🔇',
-            soundOffIcon: '🔊',
+            soundOnIcon: '🔇︎',
+            soundOffIcon: '🔊︎',
             soundIconMode: 'icon-only',
           }
         : {}),
@@ -343,8 +343,8 @@ function buildButtonIntroSceneTemplateObjects(
               sceneTemplateDemoAction: 'toggle-mute',
               soundOnLabel: tx.soundOn,
               soundOffLabel: tx.soundOff,
-              soundOnIcon: '🔇',
-              soundOffIcon: '🔊',
+              soundOnIcon: '🔇︎',
+              soundOffIcon: '🔊︎',
               soundIconMode: 'external',
             }
           : {}),
@@ -474,17 +474,17 @@ function buildButtonIntroSceneTemplateObjects(
       icon: themeIcons.guide || '?',
       label: tx.guideLabel,
       note: tx.guideNote,
-      tone: 'info',
+      tone: 'theme',
       action: 'show-help',
     },
     {
       icon: themeIcons.restart || '↻',
       label: tx.restart,
       note: tx.restartNote,
-      tone: 'warning',
+      tone: 'danger',
       action: 'restart',
     },
-    { icon: '🔊', label: tx.soundOff, note: tx.muteNote, tone: 'neutral', action: 'toggle-mute' },
+    { icon: '🔊︎', label: tx.soundOff, note: tx.muteNote, tone: 'theme', action: 'toggle-mute' },
     {
       icon: themeIcons.home || '⌂',
       label: tx.home,
@@ -520,7 +520,7 @@ function buildButtonIntroSceneTemplateObjects(
     fontSize: u(15, 'y'),
   });
   pushConnector('↓', stageWidth - u(354), u(370, 'y'), u(28), u(26, 'y'));
-  pushButton(`▶\n⏸⏸`, stageWidth - u(389), u(404, 'y'), u(92), u(92, 'y'), 'warning', {
+  pushButton(`▶`, stageWidth - u(389), u(404, 'y'), u(92), u(92, 'y'), 'theme', {
     fontSize: EDUCATION_BUTTON_ICON_SIZE_LARGE,
     runtimeAction: 'none',
     forceSceneTemplateLayout: true,
@@ -528,7 +528,7 @@ function buildButtonIntroSceneTemplateObjects(
     playLabel: '',
     pauseLabel: '',
     playIcon: '▶',
-    pauseIcon: '⏸⏸',
+    pauseIcon: '❚❚',
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -2039,7 +2039,7 @@ function getButtonPairSemanticIcon(iconObject = {}, labelObject = {}) {
     action.includes('restart')
   )
     return '↻';
-  if (labelKey.includes('ses') || action.includes('mute')) return iconObject.soundOffIcon || '🔊';
+  if (labelKey.includes('ses') || action.includes('mute')) return iconObject.soundOffIcon || '🔊︎';
   if (labelKey.includes('cozum') || labelKey.includes('cevap') || action.includes('answer'))
     return '✎';
   if (labelKey.includes('tamamla') || labelKey.includes('kontrol') || action.includes('complete'))

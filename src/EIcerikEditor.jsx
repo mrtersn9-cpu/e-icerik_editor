@@ -3167,6 +3167,48 @@ export default function EIcerikEditor() {
     [currentProjectId, loadWorkspaceState, showToast]
   );
 
+  const [manualSaving, setManualSaving] = useState(false);
+  const handleManualSave = useCallback(async () => {
+    if (!currentProjectId) {
+      showToast('Kaydedilecek aktif proje yok.');
+      return;
+    }
+    if (dbStatus !== 'connected') {
+      showToast('Veritabanı bağlı değil; kayıt yapılamadı.');
+      return;
+    }
+    if (manualSaving) return;
+    setManualSaving(true);
+    try {
+      const r = await apiRequest(`/projects/${currentProjectId}/draft`, {
+        method: 'PUT',
+        timeoutMs: REMOTE_SAVE_REQUEST_TIMEOUT_MS,
+        body: JSON.stringify({
+          state: createSafeStateForStorage(present),
+          name: projectNameDraft,
+          setCurrent: true,
+          lockBookId: present.selBookId || '',
+        }),
+      });
+      if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
+      mergeWorkspaceProjectData({ currentProject: r?.project });
+      setLastSaved(new Date());
+      showToast('Kaydedildi.');
+    } catch (error) {
+      showToast(error?.message || 'Kayıt başarısız.');
+    } finally {
+      setManualSaving(false);
+    }
+  }, [
+    currentProjectId,
+    dbStatus,
+    manualSaving,
+    present,
+    projectNameDraft,
+    mergeWorkspaceProjectData,
+    showToast,
+  ]);
+
   const handleSaveProjectName = useCallback(async () => {
     if (!currentProjectId) return;
     try {
@@ -3806,6 +3848,8 @@ export default function EIcerikEditor() {
         history={history}
         importRef={importRef}
         lastSaved={lastSaved}
+        onManualSave={handleManualSave}
+        manualSaving={manualSaving}
         redo={redo}
         selActivity={selActivity}
         selBook={selBook}
@@ -4025,7 +4069,7 @@ export default function EIcerikEditor() {
               {selActivity && (
                 <div
                   style={{
-                    width: isSlidePanelCollapsed ? 34 : 10,
+                    width: isSlidePanelCollapsed ? 30 : 12,
                     flexShrink: 0,
                     display: 'flex',
                     alignItems: 'center',
@@ -4036,11 +4080,11 @@ export default function EIcerikEditor() {
                   {isSlidePanelCollapsed ? (
                     <button
                       onClick={() => setIsSlidePanelCollapsed(false)}
+                      title="Sahne panelini aç"
                       style={{
-                        width: 34,
+                        width: 30,
                         height: '100%',
-                        minHeight: 180,
-                        borderRadius: 12,
+                        borderRadius: 10,
                         border: '1px solid #cfd8e3',
                         background: 'linear-gradient(180deg,#ffffff,#f3f6f9)',
                         color: '#52667a',
@@ -4060,7 +4104,7 @@ export default function EIcerikEditor() {
                       onPointerDown={(e) => startLayoutResize('left-panel', e)}
                       onDoubleClick={() => setLeftPanelWidth(PANEL_LIMITS.left.default)}
                       style={{
-                        width: 10,
+                        width: 12,
                         height: '100%',
                         display: 'flex',
                         alignItems: 'center',
@@ -4075,17 +4119,24 @@ export default function EIcerikEditor() {
                           e.stopPropagation();
                           setIsSlidePanelCollapsed(true);
                         }}
+                        title="Sahne panelini gizle"
                         style={{
                           position: 'absolute',
                           top: 14,
-                          left: -4,
-                          width: 16,
-                          height: 48,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 18,
+                          height: 44,
                           borderRadius: 999,
                           border: '1px solid #cfd8e3',
                           background: 'linear-gradient(180deg,#ffffff,#f3f6f9)',
                           color: '#7b8794',
                           cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          zIndex: 2,
                         }}
                       >
                         ‹
@@ -4147,6 +4198,7 @@ export default function EIcerikEditor() {
                         showChrome={false}
                         showBaseLayer={showBaseLayer}
                         objectClipboardRef={objectClipboardRef}
+                        onPickIcon={(cb) => setIconPicker({ onSelect: cb })}
                       />
                     </>
                   }
@@ -4285,6 +4337,7 @@ export default function EIcerikEditor() {
                     onDoubleClick={() => setRightPanelWidth(PANEL_LIMITS.right.default)}
                     style={{
                       width: 10,
+                      flexShrink: 0,
                       height: '100%',
                       display: 'flex',
                       alignItems: 'center',
@@ -4693,6 +4746,7 @@ export default function EIcerikEditor() {
                   showBaseLayer={showBaseLayer}
                   objectClipboardRef={objectClipboardRef}
                   touchMode={deviceMode !== 'desktop'}
+                  onPickIcon={(cb) => setIconPicker({ onSelect: cb })}
                 />
               </div>
               <div style={{ flexShrink: 0, overflow: 'hidden', borderRadius: 18 }}>
