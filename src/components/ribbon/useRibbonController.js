@@ -740,6 +740,24 @@ export default function useRibbonController({
         tone: 'success',
         runtimeAction: 'complete',
       },
+      {
+        id: 'start-activity',
+        icon: '▶',
+        label: settings.startActivityText || 'Etkinliği Başlat',
+        width: 350,
+        tone: 'theme',
+        runtimeAction: '',
+        trigger: { action: 'SliderGec', value: '__next__' },
+      },
+      {
+        id: 'activity-intro',
+        icon: '?',
+        label: settings.activityIntroText || 'Etkinlik Tanıtımı',
+        width: 350,
+        tone: 'theme',
+        runtimeAction: '',
+        trigger: { action: 'SliderGec', value: '__prev__' },
+      },
     ];
   }, [activity]);
 

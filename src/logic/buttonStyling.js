@@ -716,7 +716,15 @@ function restyleReadyButtonsForPreset(
       const linked = linkedId && linkedId !== object.id ? byId.get(linkedId) : null;
       if (linked && linked !== object) tone = getReadyButtonTone(linked);
     }
-    if (!tone) return object;
+    if (!tone) {
+      // Tonu olmayan (kullanıcının kendi eklediği) butonlar: yalnızca yazı rengi
+      // override'ı uygulanır — böylece "Buton yazı rengi" etkinlikteki TÜM butonların
+      // yazı rengini değiştirir. Renk boşsa (Temaya bırak) buton değişmeden kalır.
+      if (textColor) {
+        return { ...object, style: { ...(object.style || {}), color: textColor } };
+      }
+      return object;
+    }
     const playPausePatch = isPlayPauseReadyButton(object) ? getPlayPauseButtonPatch(object) : {};
     const built = buildReadyButtonStyle(stylePreset, tone, { ...object, ...playPausePatch });
     // Yuvarlak ikon dairelerinin (kare-ish) şeklini koru — yalnızca rengi güncelle.

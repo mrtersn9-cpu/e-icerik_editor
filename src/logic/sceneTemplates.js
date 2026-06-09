@@ -2160,9 +2160,12 @@ function applySceneTemplateToSlide(slide = {}, options = {}) {
   if (templateId !== SCENE_TEMPLATE_BUTTON_INTRO_ID && templateId !== SCENE_TEMPLATE_LAUNCH_PAGE_ID)
     return slide;
 
+  // Kullanıcı talebi: Etkinlik giriş sayfası HER ZAMAN boş gelir; içerik (hazır
+  // butonlar dahil) manuel eklenir. Tema değişiminde de hiçbir nesne üretilmez.
+  // buildLaunchPageSceneTemplate korunur (dışa aktarılıyor) ama üretim atlanır.
   const templateResult =
     templateId === SCENE_TEMPLATE_LAUNCH_PAGE_ID
-      ? buildLaunchPageSceneTemplate(slide, presetId)
+      ? { objects: [], triggers: [] }
       : buildButtonIntroSceneTemplateObjects(slide, presetId);
   const generatedObjects = (templateResult.objects || []).map((item, index) => ({
     ...item,

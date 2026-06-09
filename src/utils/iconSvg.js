@@ -52,6 +52,8 @@ const SEMANTIC_ICON_NODES = {
   play:      [["polygon",{"points":"6 3 20 12 6 21 6 3"}]],
   pause:     [["rect",{"x":"14","y":"4","width":"4","height":"16","rx":"1"}],["rect",{"x":"6","y":"4","width":"4","height":"16","rx":"1"}]],
   close:     [["path",{"d":"M18 6 6 18"}],["path",{"d":"m6 6 12 12"}]],
+  start:     [["circle",{"cx":"12","cy":"12","r":"10"}],["polygon",{"points":"10 8 16 12 10 16 10 8"}]],
+  info:      [["circle",{"cx":"12","cy":"12","r":"10"}],["path",{"d":"M12 16v-4"}],["path",{"d":"M12 8h.01"}]],
 };
 
 // Eylem/etiket anahtarından semantik SVG markup döndürür (yoksa '').
@@ -62,13 +64,15 @@ export function getSemanticSvgIcon(actionKey = '', labelKey = '', opts = {}) {
   if (label.includes('anasayfa') || label.includes('home') || action === 'home') nodeKey = 'home';
   else if (label.includes('menu') || action.includes('menu')) nodeKey = 'menu';
   else if (label.includes('yenidenbaslat') || label.includes('tekrarla') || label.includes('retry') || action.includes('restart')) nodeKey = 'restart';
+  // "Etkinliği Başlat" — restart'tan SONRA gelmeli ('yenidenbaslat' içindeki 'baslat' çakışmasın).
+  else if (label.includes('etkinligibaslat') || label.includes('baslat') || action === 'start') nodeKey = 'start';
   else if (label.includes('cozum') || label.includes('cevap') || action.includes('answer') || action.includes('showanswer')) nodeKey = 'answer';
   else if (label.includes('tamamla') || label.includes('kontrol') || action.includes('complete')) nodeKey = 'complete';
   else if (label.includes('ileri') || label.includes('next') || action.includes('next')) nodeKey = 'next';
   else if (label.includes('geri') || label.includes('prev') || action.includes('prev')) nodeKey = 'prev';
   else if (action.includes('mute') || label.includes('seskapat')) nodeKey = 'mute';
   else if (label.includes('ses') || action.includes('sound')) nodeKey = 'sound';
-  else if (label.includes('etkinliktanitimi') || label.includes('intro') || action.includes('intro')) nodeKey = 'help';
+  else if (label.includes('etkinliktanitimi') || label.includes('tanitim') || label.includes('intro') || action.includes('intro')) nodeKey = 'info';
   else if (label.includes('play') || label.includes('oynat') || action.includes('play')) nodeKey = 'play';
   else if (label.includes('pause') || label.includes('duraklat') || action.includes('pause')) nodeKey = 'pause';
   else if (label.includes('kapat') || label.includes('close') || action.includes('close')) nodeKey = 'close';

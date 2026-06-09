@@ -253,7 +253,10 @@ describe('scene template generation', () => {
     expect(intro.objects.some((item) => item.id === 'manual-intro')).toBe(true);
   });
 
-  test('force rebuild completes a partial launch template and keeps manual objects', () => {
+  test('launch template stays empty (manual fill) and keeps manual objects', () => {
+    // Kullanıcı talebi: Etkinlik giriş sayfası HER ZAMAN boş gelir; içerik (hazır
+    // butonlar dahil) manuel eklenir. Force rebuild de hiçbir launch-page nesnesi
+    // üretmez, ama kullanıcının manuel eklediği nesneleri korur.
     const result = ensureSceneTemplateSlide(
       activityWithTemplates(),
       SCENE_TEMPLATE_LAUNCH_PAGE_ID,
@@ -262,12 +265,14 @@ describe('scene template generation', () => {
     const launch = getActivitySlides(result).find(
       (slide) => slide.sceneTemplateId === SCENE_TEMPLATE_LAUNCH_PAGE_ID
     );
-    const slots = slotIds(launch);
 
-    expect(slots.has(`${SCENE_TEMPLATE_LAUNCH_PAGE_ID}:start-button`)).toBe(true);
-    expect(slots.has(`${SCENE_TEMPLATE_LAUNCH_PAGE_ID}:start-icon`)).toBe(true);
-    expect(slots.has(`${SCENE_TEMPLATE_LAUNCH_PAGE_ID}:intro-button`)).toBe(true);
-    expect(slots.has(`${SCENE_TEMPLATE_LAUNCH_PAGE_ID}:intro-icon`)).toBe(true);
+    expect(
+      launch.objects.some(
+        (item) =>
+          item.generatedBy === 'scene-template' &&
+          item.sceneTemplateId === SCENE_TEMPLATE_LAUNCH_PAGE_ID
+      )
+    ).toBe(false);
     expect(launch.objects.some((item) => item.id === 'manual-launch')).toBe(true);
   });
 
