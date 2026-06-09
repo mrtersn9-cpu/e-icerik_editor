@@ -130,29 +130,37 @@ export default function useTimelineController({
     });
   }, [totalDuration, zoom]);
 
+  const activeLayerId = safeActivity.activeLayerId || 'base';
   const rows = useMemo(
     () =>
-      timeline.map((item, index) => {
-        const object = objects.find((entry) => entry.id === item.objectId) || null;
-        const selected = selectedIdSet.has(item.objectId) || safeActivity.selectedObjectId === item.objectId;
-        const active = isObjectTimelineActive(safeActivity, item.objectId, currentTime);
-        return {
-          id: item.id,
-          active,
-          clip: item,
-          editable: canEditTimelineItem(item, objects),
-          icon: OBJECT_TYPE_ICONS[object?.type] || '•',
-          index,
-          label: object?.label || object?.name || item.name || 'Klip',
-          layerName: layerNameFor(safeActivity, object?.layerId || 'base'),
-          locked: object?.locked === true,
-          object,
-          selected,
-          tone: getTimelineClipTone(object?.type),
-          visible: object?.visible !== false,
-        };
-      }),
-    [currentTime, isObjectTimelineActive, objects, safeActivity, selectedIdSet, timeline]
+      timeline
+        // Timeline'da yalnızca AKTİF katmandaki ögeleri göster (katmanlar arası karışma olmasın).
+        .map((item) => ({
+          item,
+          object: objects.find((entry) => entry.id === item.objectId) || null,
+        }))
+        .filter(({ object }) => (object?.layerId || 'base') === activeLayerId)
+        .map(({ item, object }, index) => {
+          const selected =
+            selectedIdSet.has(item.objectId) || safeActivity.selectedObjectId === item.objectId;
+          const active = isObjectTimelineActive(safeActivity, item.objectId, currentTime);
+          return {
+            id: item.id,
+            active,
+            clip: item,
+            editable: canEditTimelineItem(item, objects),
+            icon: OBJECT_TYPE_ICONS[object?.type] || '•',
+            index,
+            label: object?.label || object?.name || item.name || 'Klip',
+            layerName: layerNameFor(safeActivity, object?.layerId || 'base'),
+            locked: object?.locked === true,
+            object,
+            selected,
+            tone: getTimelineClipTone(object?.type),
+            visible: object?.visible !== false,
+          };
+        }),
+    [activeLayerId, currentTime, isObjectTimelineActive, objects, safeActivity, selectedIdSet, timeline]
   );
 
   const patchActivity = (patch) => {
