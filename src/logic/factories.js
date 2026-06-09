@@ -660,7 +660,6 @@ function createActivity(name, type = 'selection') {
     slideAutoAdvanceDelay: 5,
     // Accessibility
     accessibilityLevel: 'AA',
-    speakerNotes: '',
   };
 
   // Type-specific data

@@ -433,7 +433,6 @@ const StageCanvas = forwardRef(function StageCanvas(
       const objs = a.objects || [];
       const o = createObject('video');
       o.mediaUrl = mediaUrl;
-      o.mediaName = file.name;
       o.label = file.name.replace(/\.[^.]+$/, '') || 'Video';
       o.zIndex = nextTopZIndex(objs);
       o.layerId = a.activeLayerId || 'base';
@@ -456,7 +455,6 @@ const StageCanvas = forwardRef(function StageCanvas(
       const objs = a.objects || [];
       const o = createObject('audio');
       o.mediaUrl = mediaUrl;
-      o.mediaName = file.name;
       o.label = file.name.replace(/\.[^.]+$/, '') || 'Ses';
       o.showPlayerControls = false;
       o.autoPlay = true;
@@ -543,6 +541,10 @@ const StageCanvas = forwardRef(function StageCanvas(
         })),
       copiedAt: Date.now(),
     };
+    // Sayfa yenilemede kaybolmaması için sessionStorage'a yaz.
+    try {
+      sessionStorage.setItem('eicerik_obj_clipboard', JSON.stringify(clipboardRef.current));
+    } catch { /* kota aşıldıysa sessizce geç */ }
     return true;
   }, [clipboardRef]);
 

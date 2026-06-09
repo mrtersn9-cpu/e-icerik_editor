@@ -285,7 +285,6 @@ export default function useRibbonController({
         const mediaUrl = await uploadMediaFile(file);
         const object = createObjectFromActivity(activity, 'video');
         object.mediaUrl = mediaUrl;
-        object.mediaName = file.name;
         object.label = file.name.replace(/\.[^.]+$/, '') || 'Video';
         commitRibbonObject(object);
       }),
@@ -298,7 +297,6 @@ export default function useRibbonController({
         const mediaUrl = await uploadMediaFile(file);
         const object = createObjectFromActivity(activity, 'audio');
         object.mediaUrl = mediaUrl;
-        object.mediaName = file.name;
         object.label = file.name.replace(/\.[^.]+$/, '') || 'Ses';
         object.showPlayerControls = false;
         object.autoPlay = true;
@@ -1252,7 +1250,7 @@ export default function useRibbonController({
         if (['scene', 'design', 'transitions', 'view'].includes(tab)) {
           setActiveEditorTab('sahne');
         }
-        if (['home', 'insert', 'animation', 'object-format'].includes(tab)) {
+        if (['insert', 'animation', 'object-format'].includes(tab)) {
           setActiveEditorTab('nesneler');
         }
       },

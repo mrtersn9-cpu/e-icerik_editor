@@ -1435,6 +1435,17 @@ export default function EIcerikEditor() {
   const adminSessionTokenRef = useRef('');
   const objectClipboardRef = useRef(null);
   const slideClipboardRef = useRef(null);
+  // Sayfa yenilemeden sonra nesne panosunu sessionStorage'dan geri yükle.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('eicerik_obj_clipboard');
+      if (saved && objectClipboardRef.current == null) {
+        objectClipboardRef.current = JSON.parse(saved);
+        clipboardKindRef.current = 'objects';
+      }
+    } catch { /* bozuk veri → yoksay */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const slideClipboardCommandsRef = useRef({});
   // Klavyeyle en son kopyalanan tür ('objects' | 'slide'). Yapıştırma bu türe
   // göre yönlendirilir; böylece nesne kopyaladıysak slaytlar arası nesne
@@ -1442,6 +1453,7 @@ export default function EIcerikEditor() {
   const clipboardKindRef = useRef('');
   const workspaceEntryModeRef = useRef(authState?.userId ? 'refresh' : 'anonymous');
   const presentRef = useRef(history.present);
+  const isDirtyRef = useRef(false);
   const currentRouteRef = useRef(routeFromSelection(history.present));
   const currentProjectIdRef = useRef(null);
   const browserHistoryCursorRef = useRef(0);
@@ -1888,14 +1900,15 @@ export default function EIcerikEditor() {
         if (canvasRef.current.copySelected?.()) clipboardKindRef.current = 'objects';
       } else if (modKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
-        // En son kopyalanan türe göre yapıştır. Slayt kopyalandıysa önce slaytı
-        // dene; aksi halde (nesne kopyalandıysa) nesneyi yapıştır — bu yol
-        // slaytlar arası nesne yapıştırmayı da kapsar.
+        // En son kopyalanan türe göre yapıştır. Slayt ise slayt önce, nesne ise nesne önce;
+        // her iki durumda da geri-plan olarak diğer kanal denenir.
         if (clipboardKindRef.current === 'slide') {
           if (slideClipboardCommandsRef.current.pasteSlide?.()) return;
+          canvasRef.current.pasteClipboard?.();
+        } else {
+          if (canvasRef.current.pasteClipboard?.()) return;
+          slideClipboardCommandsRef.current.pasteSlide?.();
         }
-        if (canvasRef.current.pasteClipboard?.()) return;
-        slideClipboardCommandsRef.current.pasteSlide?.();
       } else if (modKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         canvasRef.current.duplicateSelected();
@@ -2324,23 +2337,26 @@ export default function EIcerikEditor() {
       skipRemoteSaveRef.current = false;
       return;
     }
+    // Yeni state → kirli bayrak set et. Kayıt tamamlandıktan sonra hâlâ
+    // kirliyse (yani kayıt uçuştayken yeni düzenleme geldi) hemen tekrar kaydet.
+    isDirtyRef.current = true;
     let saveTimer;
     const runSave = () => {
-      // Bir kayıt zaten uçuştaysa yenisini başlatma (yavaş yüklemede istekler
-      // üst üste binip bant genişliğini doldurmasın); bitince son hâli kaydet.
-      if (remoteSavePendingRef.current) {
-        saveTimer = setTimeout(runSave, 1200);
-        return;
-      }
+      // Kayıt zaten uçuştaysa yeni istek başlatma; .then()/.catch() içinden
+      // isDirtyRef ile yeniden tetiklenecek → kapatma-temizleme yarışı yok.
+      if (remoteSavePendingRef.current) return;
+      isDirtyRef.current = false;
       remoteSavePendingRef.current = true;
+      // Her zaman en güncel durumu kaydet (kapatma‐değişken staleness'ı önler).
+      const snapshot = presentRef.current;
       apiRequest(`/projects/${currentProjectId}/draft`, {
         method: 'PUT',
         timeoutMs: REMOTE_SAVE_REQUEST_TIMEOUT_MS,
         body: JSON.stringify({
-          state: createSafeStateForStorage(present),
+          state: createSafeStateForStorage(snapshot),
           name: projectNameDraft,
           setCurrent: true,
-          lockBookId: present.selBookId || '',
+          lockBookId: snapshot.selBookId || '',
         }),
       })
         .then((r) => {
@@ -2351,12 +2367,11 @@ export default function EIcerikEditor() {
           if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
           mergeWorkspaceProjectData({ currentProject: r?.project });
           setLastSaved(new Date());
-          // Önbelleği "son kaydedilen hâl" ile güncelle → bir sonraki açılışta
-          // kullanıcı en güncel işini anında görür (geçmiş hâl değil).
+          // Önbelleği her zaman en güncel durum ile güncelle.
           if (lastWorkspaceRef.current) {
             lastWorkspaceRef.current = {
               ...lastWorkspaceRef.current,
-              state: createSafeStateForStorage(present),
+              state: createSafeStateForStorage(presentRef.current),
               updatedAt: r?.updatedAt || lastWorkspaceRef.current.updatedAt,
               currentProject: r?.project || lastWorkspaceRef.current.currentProject,
             };
@@ -2365,6 +2380,8 @@ export default function EIcerikEditor() {
           if (hadOfflineDraft) {
             showToast('Yerel değişiklikler SQL sunucusuna yüklendi.', 'success');
           }
+          // Kayıt uçuştayken yeni düzenleme geldiyse hemen tekrar kaydet.
+          if (isDirtyRef.current) saveTimer = setTimeout(runSave, 350);
         })
         .catch((error) => {
           remoteSavePendingRef.current = false;
@@ -2379,12 +2396,13 @@ export default function EIcerikEditor() {
             );
             setBookLockWarning(message);
             showToast(message, 'warning');
-            if (currentProjectId && present.selBookId) {
-              releaseBookLock(currentProjectId, present.selBookId);
+            if (currentProjectId && snapshot.selBookId) {
+              releaseBookLock(currentProjectId, snapshot.selBookId);
             }
             const fallbackRoute = { pubId: presentRef.current.selPubId || null, bookId: null, actId: null };
             setNavigationRouteState(fallbackRoute);
             writeBrowserRoute(fallbackRoute, 'replace');
+            offlineDraftPendingRef.current = false;
             return;
           }
           if (error?.code === 'USER_LOCKED') {
@@ -2398,8 +2416,7 @@ export default function EIcerikEditor() {
             });
             return;
           }
-          // Transient error (network hiccup, FTP deployment in progress, etc.)
-          // Retry automatically — only go fully offline after 5 consecutive failures.
+          // Geçici hata: 5 ardışık başarısızlıkta çevrimdışı moda geç.
           saveFailCountRef.current += 1;
           offlineDraftPendingRef.current = true;
           if (saveFailCountRef.current >= 5) {
@@ -2410,8 +2427,8 @@ export default function EIcerikEditor() {
               'warning'
             );
           }
-          // Geçici hatada toast spam'i yok; durum göstergesi zaten "yerel taslak"
-          // gösteriyor ve kayıt arka planda yeniden denenecek.
+          // Kirliyse gecikmeli tekrar dene.
+          if (isDirtyRef.current) saveTimer = setTimeout(runSave, 1200);
         });
     };
     saveTimer = setTimeout(runSave, 350);

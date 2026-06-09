@@ -296,6 +296,9 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     numericMin: merged.numericMin ?? null,
     numericMax: merged.numericMax ?? null,
     surveyQuestions: Array.isArray(merged.surveyQuestions) ? merged.surveyQuestions : [],
+    slideAdvance: merged.slideAdvance || activity.slideAdvance || 'user',
+    slideRevisit: merged.slideRevisit || activity.slideRevisit || 'resume',
+    slideAutoAdvanceDelay: Number(merged.slideAutoAdvanceDelay ?? activity.slideAutoAdvanceDelay ?? 5) || 5,
   };
 }
 
