@@ -44,7 +44,33 @@ function clamp(value, min, max) {
 }
 
 function deepClone(value) {
+  // structuredClone NaN/Infinity/undefined değerlerini korur; JSON tabanlı klon bunları bozar.
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Klonlanamayan değerlerde JSON'a düş.
+    }
+  }
   return JSON.parse(JSON.stringify(value));
+}
+
+// Geçmiş snapshot'ları için patch dizisini klonlar ama ağır base64 alanlarını (imageData /
+// sourceMaskData) referansla paylaşır. Bu alanlar değişmez (immutable) olduğundan referans
+// paylaşımı güvenlidir ve 60 snapshot'ın belleği şişirmesini önler.
+function clonePatchesPreservingImage(patches) {
+  const out = {};
+  for (const page of Object.keys(patches || {})) {
+    out[page] = (patches[page] || []).map((p) => {
+      if (!p || typeof p !== 'object') return p;
+      const { imageData, sourceMaskData, ...rest } = p;
+      const clone = deepClone(rest);
+      if (imageData !== undefined) clone.imageData = imageData;
+      if (sourceMaskData !== undefined) clone.sourceMaskData = sourceMaskData;
+      return clone;
+    });
+  }
+  return out;
 }
 
 function normalizeBox(box) {
@@ -63,6 +89,60 @@ function expandBox(box, padding) {
     normalized[2] + padding,
     normalized[3] + padding,
   ]);
+}
+
+// Kutuyu (dx,dy) kadar kaydırır ama 0–1000 sınırları içinde GENİŞLİK/YÜKSEKLİĞİ koruyarak tutar.
+// Köşeleri bağımsız clamp etmenin aksine kutu kenarda ezilmez.
+function shiftBoxClamped(box, dx, dy) {
+  const w = Math.max(0, box[3] - box[1]);
+  const h = Math.max(0, box[2] - box[0]);
+  const x = clamp(box[1] + dx, 0, Math.max(0, 1000 - w));
+  const y = clamp(box[0] + dy, 0, Math.max(0, 1000 - h));
+  return [y, x, y + h, x + w];
+}
+
+// Resize sırasında hareketli köşeyi, sabit (anchor) köşeye göre minimum boyutta tutar; kutu sıfıra inmez.
+// box ve initial [ymin, xmin, ymax, xmax] formatında, normalize ÖNCESİ uygulanır.
+function enforceMinResize(box, handle, initial) {
+  const isTop = handle === 'nw' || handle === 'ne';
+  const isLeft = handle === 'nw' || handle === 'sw';
+  const anchorY = isTop ? initial[2] : initial[0];
+  const anchorX = isLeft ? initial[3] : initial[1];
+  const movingYIdx = isTop ? 0 : 2;
+  const movingXIdx = isLeft ? 1 : 3;
+  const out = [...box];
+  if (Math.abs(out[movingYIdx] - anchorY) < MIN_BOX_SIZE) {
+    out[movingYIdx] = anchorY + (isTop ? -MIN_BOX_SIZE : MIN_BOX_SIZE);
+  }
+  if (Math.abs(out[movingXIdx] - anchorX) < MIN_BOX_SIZE) {
+    out[movingXIdx] = anchorX + (isLeft ? -MIN_BOX_SIZE : MIN_BOX_SIZE);
+  }
+  return out;
+}
+
+// Shift ile orantılı (en-boy oranı korumalı) resize: sabit köşeye göre en-boy oranını korur.
+function applyAspectResize(initial, box, handle) {
+  const initW = Math.max(1e-6, initial[3] - initial[1]);
+  const initH = Math.max(1e-6, initial[2] - initial[0]);
+  const aspect = initW / initH;
+  const isTop = handle === 'nw' || handle === 'ne';
+  const isLeft = handle === 'nw' || handle === 'sw';
+  const anchorY = isTop ? initial[2] : initial[0];
+  const anchorX = isLeft ? initial[3] : initial[1];
+  const movingY = isTop ? box[0] : box[2];
+  const movingX = isLeft ? box[1] : box[3];
+  let w = Math.abs(movingX - anchorX);
+  let h = Math.abs(movingY - anchorY);
+  if (w / Math.max(1e-6, h) > aspect) h = w / aspect;
+  else w = h * aspect;
+  const out = [...box];
+  const newX = anchorX + (isLeft ? -w : w);
+  const newY = anchorY + (isTop ? -h : h);
+  if (isLeft) out[1] = newX;
+  else out[3] = newX;
+  if (isTop) out[0] = newY;
+  else out[2] = newY;
+  return out;
 }
 
 function boxWidth(box) {
@@ -444,8 +524,13 @@ function downloadBlob(blob, filename) {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  // revoke'u ertele: tarayıcı büyük blob'un indirmesini okumadan URL iptal edilirse indirme boş kalır.
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 60000);
 }
 
 function canvasToBlob(canvas, type = 'image/png', quality = 0.92) {
@@ -505,8 +590,9 @@ function createFeatheredPatchAsset(sourceCanvas, sourceRect, feather = 14) {
       }
     }
     cropCtx.putImageData(imageData, 0, 0);
-  } catch {
-    // no-op
+  } catch (err) {
+    // Feather (kenar yumuşatma) başarısız olursa patch sert kenarla yine oluşur; sessiz kalma.
+    console.error('Patch kenar yumuşatma başarısız:', err);
   }
 
   return {
@@ -533,14 +619,16 @@ function getPatchRenderMetrics(patch, targetRect) {
   return { centerX, centerY, drawWidth, drawHeight };
 }
 
-function drawWrappedText(ctx, element, width, height) {
+// scale: PDF-points → piksel çarpanı (raster canvas ölçeği). fontSize PDF noktası olarak saklanır,
+// böylece ekran ve tüm export yolları aynı oranı kullanır (WYSIWYG).
+function drawWrappedText(ctx, element, width, height, scale = 1) {
   const rect = pixelBox(element.box, width, height);
-  const fontSize = Math.max(10, element.fontSize || 14);
+  const fontSize = Math.max(6, element.fontSize || 16) * scale;
   ctx.save();
   ctx.fillStyle = element.bgColor || 'rgb(255,255,255)';
   ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
   ctx.fillStyle = element.color || '#000000';
-  ctx.font = `${fontSize}px Arial, sans-serif`;
+  ctx.font = `${fontSize}px ${element.fontFamily || 'Arial, sans-serif'}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lines = String(element.text || '')
@@ -604,7 +692,7 @@ function buildMaskSvg(mask, width, height) {
   return parts.join('');
 }
 
-async function composePageCanvas(baseCanvas, masks, patches, texts) {
+async function composePageCanvas(baseCanvas, masks, patches, texts, scale = 1) {
   const out = document.createElement('canvas');
   out.width = baseCanvas.width;
   out.height = baseCanvas.height;
@@ -642,7 +730,7 @@ async function composePageCanvas(baseCanvas, masks, patches, texts) {
     ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
     ctx.restore();
   }
-  (texts || []).forEach((element) => drawWrappedText(ctx, element, out.width, out.height));
+  (texts || []).forEach((element) => drawWrappedText(ctx, element, out.width, out.height, scale));
   return out;
 }
 
@@ -817,6 +905,28 @@ const T = {
 
 const PDF_PAGE_SIDEBAR_WIDTH = 240;
 const PDF_RIGHT_PANEL_WIDTH = 300;
+
+// ── Etkileşim/render sabitleri (önceden dosyaya dağılmış magic number'lar)
+const SCALE_CLAMP_MIN = 0.4; // sayfa fit raster ölçeği alt sınırı
+const SCALE_CLAMP_MAX = 2.6; // sayfa fit raster ölçeği üst sınırı
+const STAGE_FIT_PADDING = 80; // sayfayı kaba sığdırırken bırakılan boşluk (px)
+const PASTE_OFFSET = 18; // kopyala/yapıştır ötelemesi (normalize birim)
+const SNAP_THRESHOLD = 8; // hizalama yakalama eşiği (normalize birim)
+const MIN_BOX_SIZE = 10; // resize sırasında minimum kutu genişlik/yükseklik (normalize birim)
+const NUDGE_STEP = 1; // ok tuşuyla ince kaydırma (normalize birim)
+const NUDGE_STEP_LARGE = 10; // Shift+ok tuşuyla kaba kaydırma (normalize birim)
+const ZOOM_MIN = 0.25; // kullanıcı görüntü zoom'u alt sınırı
+const ZOOM_MAX = 8; // kullanıcı görüntü zoom'u üst sınırı
+const ZOOM_WHEEL_SENSITIVITY = 0.0015; // Ctrl+tekerlek zoom hassasiyeti
+const ZOOM_SHARPEN_THRESHOLD = 1.8; // bu zoom üstünde netlik için yeniden raster tetiklenir
+const RENDER_SCALES = {
+  auto: 1.6, // otomatik tarama raster ölçeği
+  png: 2.6, // PNG dışa aktarma
+  jpeg: 2.4, // JPEG dışa aktarma
+  pdf: 2.4, // temizlenmiş PDF dışa aktarma
+  thumb: 0.22, // küçük resim ölçeği
+  svg: 2, // SVG dışa aktarma raster ölçeği
+};
 
 const WORKFLOW_PILL_STYLE = {
   display: 'inline-flex',
@@ -1036,6 +1146,7 @@ export default function PdfCleanStudio({
   const [currentPage, setCurrentPage] = useState(1);
   const [thumbnails, setThumbnails] = useState([]);
   const [pageViewport, setPageViewport] = useState({ width: 1, height: 1 });
+  const [displayScale, setDisplayScale] = useState(1); // PDF noktası → ekran pikseli (font ölçeği için)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [pageSummary, setPageSummary] = useState('');
   const [pageTextEntries, setPageTextEntries] = useState({});
@@ -1050,6 +1161,7 @@ export default function PdfCleanStudio({
   const [editingTextId, setEditingTextId] = useState(null);
   const [status, setStatus] = useState('PDF dosyasını sürükleyin veya seçin.');
   const [busy, setBusy] = useState(false);
+  const [renderBusy, setRenderBusy] = useState(false); // sayfa render kilidi (tarama busy'sinden ayrı)
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
@@ -1081,10 +1193,34 @@ export default function PdfCleanStudio({
   const [integrationBusy, setIntegrationBusy] = useState(false);
   const [integrationBookId, setIntegrationBookId] = useState(integrationBook?.id || '');
 
+  // ── Zoom & Pan
+  const [viewZoom, setViewZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isSpacePan, setIsSpacePan] = useState(false); // Space basılıyken geçici pan modu
+  const [rasterScale, setRasterScale] = useState(1); // netlik için fazladan raster çarpanı (>=1)
+
+  // ── Çoklu seçim (selectedId birincil seçim olarak kalır; selectedItems çoklu küme)
+  const [selectedItems, setSelectedItems] = useState([]); // [{ id, type }]
+  const [marqueeRect, setMarqueeRect] = useState(null); // boş alanda sürükleyerek seçim kutusu
+
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const surfaceRef = useRef(null);
   const renderTaskRef = useRef(null);
+  // Pointer/wheel dinleyicilerinin tek sefer bağlanıp daima güncel değerleri okuması için ref'ler.
+  const onKeyRef = useRef(() => {});
+  const pointerMoveRef = useRef(() => {});
+  const pointerUpRef = useRef(() => {});
+  const pointerDownRef = useRef(() => {});
+  const textElementsRef = useRef(textElements);
+  const editingStartTextRef = useRef(null);
+  const viewRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
+  const zoomSharpenTimerRef = useRef(null);
+  const panGestureRef = useRef(null); // orta tuş / space ile pan jesti
+  const cursorRafRef = useRef(null); // imleç koordinatı güncellemesini frame'e topla
+  const marqueeStartRef = useRef(null); // boş alanda sürükleyerek çoklu seçim jesti
+  textElementsRef.current = textElements;
+  viewRef.current = { zoom: viewZoom, pan: panOffset };
 
   // ── Derived
   const masks = useMemo(() => pageMasks[currentPage] || [], [pageMasks, currentPage]);
@@ -1210,14 +1346,21 @@ export default function PdfCleanStudio({
   }, [pagePatches, pageTexts, masks, selectedId, selectedType, activeMaskId]);
 
   // ── History helpers
+  const makeSnapshot = (m, p, t, affectedPage) => ({
+    masks: deepClone(m),
+    patches: clonePatchesPreservingImage(p),
+    texts: deepClone(t),
+    affectedPage,
+  });
+
   const resetHistory = (m = {}, p = {}, t = {}) =>
     setHistoryState({
-      stack: [{ masks: deepClone(m), patches: deepClone(p), texts: deepClone(t) }],
+      stack: [makeSnapshot(m, p, t)],
       index: 0,
     });
 
   const pushHistory = (m, p, t) => {
-    const snap = { masks: deepClone(m), patches: deepClone(p), texts: deepClone(t) };
+    const snap = makeSnapshot(m, p, t, currentPage);
     setHistoryState((prev) => {
       const stack = prev.stack.slice(0, prev.index + 1);
       stack.push(snap);
@@ -1233,20 +1376,22 @@ export default function PdfCleanStudio({
     setTextElements(snap.texts || {});
   };
 
+  // undo/redo tek doğruluk kaynağından (historyState nesnesi) okur ve TEK ADIM geri/ileri alır.
+  // Otomatik sayfa atlaması YOK: kullanıcı bulunduğu sayfada kalır (geleneksel editör davranışı).
   const undo = () => {
-    if (historyIndex > 0) {
-      applySnapshot(history[historyIndex - 1]);
-      setHistoryState((prev) => ({ ...prev, index: Math.max(0, prev.index - 1) }));
-    }
+    const { stack, index } = historyState;
+    if (index <= 0) return;
+    applySnapshot(stack[index - 1]);
+    setHistoryState((prev) => ({ ...prev, index: Math.max(0, prev.index - 1) }));
   };
   const redo = () => {
-    if (historyIndex < history.length - 1) {
-      applySnapshot(history[historyIndex + 1]);
-      setHistoryState((prev) => ({
-        ...prev,
-        index: Math.min(prev.stack.length - 1, prev.index + 1),
-      }));
-    }
+    const { stack, index } = historyState;
+    if (index >= stack.length - 1) return;
+    applySnapshot(stack[index + 1]);
+    setHistoryState((prev) => ({
+      ...prev,
+      index: Math.min(prev.stack.length - 1, prev.index + 1),
+    }));
   };
 
   // ── Mutation helpers
@@ -1323,11 +1468,15 @@ export default function PdfCleanStudio({
       ),
     }));
   };
-  const finishTextEdit = (id) => {
-    const nextTexts = deepClone(textElements);
-    setTextElements(nextTexts);
+  const finishTextEdit = () => {
     setEditingTextId(null);
-    pushHistory(pageMasks, patches, nextTexts);
+    // En güncel metni ref'ten oku (onBlur, son onChange commit'inden önce gelse bile güvenli).
+    const latestTexts = textElementsRef.current;
+    const id = editingTextId;
+    const latestEl = id ? (latestTexts[currentPage] || []).find((i) => i.id === id) : null;
+    // İçerik düzenleme başındaki değerle aynıysa gereksiz history girdisi ekleme.
+    if (latestEl && latestEl.text === editingStartTextRef.current) return;
+    pushHistory(pageMasks, patches, latestTexts);
   };
   const resetCurrentPage = () => {
     const nm = { ...pageMasks, [currentPage]: [] };
@@ -1350,22 +1499,194 @@ export default function PdfCleanStudio({
     });
   };
 
+  // Seçimde öne getirir. Yalnızca gerçekten en üstte DEĞİLSE zIndex'i artırır (idempotent) ve
+  // bu salt-görsel değişiklik undo geçmişini KİRLETMEZ (sadece-tık geri-alma adımı üretmez).
   const bringToFront = (id, type) => {
     if (type === 'patch') {
-      const items = [...(patches[currentPage] || [])];
+      const items = patches[currentPage] || [];
+      const target = items.find((i) => i.id === id);
+      if (!target) return;
       const maxZ = items.length ? Math.max(...items.map((i) => i.zIndex || 0)) : 0;
-      const idx = items.findIndex((i) => i.id === id);
-      if (idx === -1) return;
-      items[idx] = { ...items[idx], zIndex: maxZ + 1 };
-      setPatches({ ...patches, [currentPage]: items });
+      if ((target.zIndex || 0) === maxZ) return; // zaten en üstte: işlem yok
+      setPatches({
+        ...patches,
+        [currentPage]: items.map((i) => (i.id === id ? { ...i, zIndex: maxZ + 1 } : i)),
+      });
     } else if (type === 'text') {
-      const items = [...(textElements[currentPage] || [])];
+      const items = textElements[currentPage] || [];
+      const target = items.find((i) => i.id === id);
+      if (!target) return;
       const maxZ = items.length ? Math.max(...items.map((i) => i.zIndex || 0)) : 0;
-      const idx = items.findIndex((i) => i.id === id);
-      if (idx === -1) return;
-      items[idx] = { ...items[idx], zIndex: maxZ + 1 };
-      setTextElements({ ...textElements, [currentPage]: items });
+      if ((target.zIndex || 0) === maxZ) return;
+      setTextElements({
+        ...textElements,
+        [currentPage]: items.map((i) => (i.id === id ? { ...i, zIndex: maxZ + 1 } : i)),
+      });
     }
+  };
+
+  // Verilen öğe dizisinde bir üst zIndex değeri (yeni öğeleri en üste koymak için tek kaynak).
+  const nextZIndex = (items) =>
+    items && items.length ? Math.max(...items.map((i) => i.zIndex || 0)) + 1 : 1;
+
+  // ── Çoklu seçim yardımcıları
+  const isItemSelected = (id, type) => selectedItems.some((s) => s.id === id && s.type === type);
+  const selectSingle = (id, type) => {
+    setSelectedItems([{ id, type }]);
+  };
+  const toggleSelected = (id, type) => {
+    setSelectedItems((prev) =>
+      prev.some((s) => s.id === id && s.type === type)
+        ? prev.filter((s) => !(s.id === id && s.type === type))
+        : [...prev, { id, type }]
+    );
+  };
+  const clearSelection = () => {
+    setSelectedId(null);
+    setSelectedType(null);
+    setActiveMaskId(null);
+    setSelectedItems([]);
+  };
+  const selectAllOnPage = () => {
+    const all = [
+      ...pagePatches.map((i) => ({ id: i.id, type: 'patch' })),
+      ...pageTexts.map((i) => ({ id: i.id, type: 'text' })),
+      ...masks.map((i) => ({ id: i.id, type: 'mask' })),
+    ];
+    setSelectedItems(all);
+    const first = all[all.length - 1];
+    if (first) {
+      if (first.type === 'mask') {
+        setActiveMaskId(first.id);
+        setSelectedId(null);
+        setSelectedType(null);
+      } else {
+        setSelectedId(first.id);
+        setSelectedType(first.type);
+        setActiveMaskId(null);
+      }
+    }
+  };
+
+  // Seçili öğenin/öğelerin kutusunu normalize birimde kaydır (ok tuşu nudge).
+  const nudgeSelection = (dx, dy) => {
+    const targets = selectedItems.length
+      ? selectedItems
+      : selectedType
+        ? [{ id: selectedId, type: selectedType }]
+        : activeMaskId
+          ? [{ id: activeMaskId, type: 'mask' }]
+          : [];
+    if (!targets.length) return;
+    const shift = (box) => normalizeBox([box[0] + dy, box[1] + dx, box[2] + dy, box[3] + dx]);
+    const patchIds = new Set(targets.filter((t) => t.type === 'patch').map((t) => t.id));
+    const textIds = new Set(targets.filter((t) => t.type === 'text').map((t) => t.id));
+    const maskIds = new Set(targets.filter((t) => t.type === 'mask').map((t) => t.id));
+    const np = patchIds.size
+      ? {
+          ...patches,
+          [currentPage]: (patches[currentPage] || []).map((i) =>
+            patchIds.has(i.id) ? { ...i, targetBox: shift(i.targetBox) } : i
+          ),
+        }
+      : patches;
+    const nt = textIds.size
+      ? {
+          ...textElements,
+          [currentPage]: (textElements[currentPage] || []).map((i) =>
+            textIds.has(i.id) ? { ...i, box: shift(i.box) } : i
+          ),
+        }
+      : textElements;
+    const nm = maskIds.size
+      ? {
+          ...pageMasks,
+          [currentPage]: (pageMasks[currentPage] || []).map((i) =>
+            maskIds.has(i.id) ? { ...i, box: shift(i.box) } : i
+          ),
+        }
+      : pageMasks;
+    if (patchIds.size) setPatches(np);
+    if (textIds.size) setTextElements(nt);
+    if (maskIds.size) setPageMasks(nm);
+    pushHistory(nm, np, nt);
+  };
+
+  // Seçili patch/metni çoğalt (Ctrl+D). Kopya PASTE_OFFSET kadar ötelenir.
+  const duplicateSelection = () => {
+    const offsetBox = (box) =>
+      normalizeBox([
+        box[0] + PASTE_OFFSET,
+        box[1] + PASTE_OFFSET,
+        box[2] + PASTE_OFFSET,
+        box[3] + PASTE_OFFSET,
+      ]);
+    if (selectedType === 'patch' && currentSelection) {
+      const copy = {
+        ...deepClone(currentSelection),
+        id: uid('patch'),
+        targetBox: offsetBox(currentSelection.targetBox),
+        zIndex: nextZIndex(pagePatches),
+      };
+      const np = { ...patches, [currentPage]: [...(patches[currentPage] || []), copy] };
+      setPatches(np);
+      selectSingle(copy.id, 'patch');
+      setSelectedId(copy.id);
+      setSelectedType('patch');
+      pushHistory(pageMasks, np, textElements);
+    } else if (selectedType === 'text' && currentSelection) {
+      const copy = {
+        ...deepClone(currentSelection),
+        id: uid('text'),
+        box: offsetBox(currentSelection.box),
+        zIndex: nextZIndex(pageTexts),
+      };
+      const nt = { ...textElements, [currentPage]: [...(textElements[currentPage] || []), copy] };
+      setTextElements(nt);
+      selectSingle(copy.id, 'text');
+      setSelectedId(copy.id);
+      setSelectedType('text');
+      pushHistory(pageMasks, patches, nt);
+    }
+  };
+
+  // Çoklu seçimdeki tüm öğeleri sil (Delete).
+  const removeSelectedItems = () => {
+    const targets = selectedItems.length
+      ? selectedItems
+      : selectedType
+        ? [{ id: selectedId, type: selectedType }]
+        : activeMaskId
+          ? [{ id: activeMaskId, type: 'mask' }]
+          : [];
+    if (!targets.length) return;
+    const patchIds = new Set(targets.filter((t) => t.type === 'patch').map((t) => t.id));
+    const textIds = new Set(targets.filter((t) => t.type === 'text').map((t) => t.id));
+    const maskIds = new Set(targets.filter((t) => t.type === 'mask').map((t) => t.id));
+    const np = patchIds.size
+      ? { ...patches, [currentPage]: (patches[currentPage] || []).filter((i) => !patchIds.has(i.id)) }
+      : patches;
+    const nt = textIds.size
+      ? {
+          ...textElements,
+          [currentPage]: (textElements[currentPage] || []).filter((i) => !textIds.has(i.id)),
+        }
+      : textElements;
+    const nm = maskIds.size
+      ? {
+          ...pageMasks,
+          [currentPage]: (pageMasks[currentPage] || []).filter((i) => !maskIds.has(i.id)),
+        }
+      : pageMasks;
+    if (patchIds.size) setPatches(np);
+    if (textIds.size) setTextElements(nt);
+    if (maskIds.size) setPageMasks(nm);
+    clearSelection();
+    setDraggingElement(null);
+    setDragGhost(null);
+    setAlignmentGuides([]);
+    setResizing(null);
+    pushHistory(nm, np, nt);
   };
 
   const movePatchLayer = (id, direction) => {
@@ -1395,9 +1716,10 @@ export default function PdfCleanStudio({
       box: patch.targetBox,
       text,
       fontSize: 16,
+      fontFamily: 'Arial, sans-serif',
       color: '#000000',
       bgColor: patch.bgColor || 'rgb(255,255,255)',
-      zIndex: pageTexts.length ? Math.max(...pageTexts.map((i) => i.zIndex || 0)) + 1 : 1,
+      zIndex: nextZIndex(pageTexts),
     };
     const nt = { ...textElements, [currentPage]: [...(textElements[currentPage] || []), nextText] };
     const np = {
@@ -1433,7 +1755,7 @@ export default function PdfCleanStudio({
       ny = box[0];
     const guides = [];
     const pts = getSnapPoints(skipId, skipType);
-    const SNAP = 8;
+    const SNAP = SNAP_THRESHOLD;
     [box[1], box[3], (box[1] + box[3]) / 2].forEach((p) => {
       pts.x.forEach((t) => {
         if (Math.abs(p - t) < SNAP) {
@@ -1469,7 +1791,7 @@ export default function PdfCleanStudio({
   };
 
   // ── Rasterize helpers
-  const renderPageRaster = async (pageNumber, scale = 1.6) => {
+  const renderPageRaster = async (pageNumber, scale = RENDER_SCALES.auto) => {
     if (!pdfDoc) return null;
     const page = await pdfDoc.getPage(pageNumber);
     const viewport = page.getViewport({ scale });
@@ -1490,7 +1812,7 @@ export default function PdfCleanStudio({
     setBusy(true);
     setStatus('Bu sayfa yüksek çözünürlükte taranıyor...');
     try {
-      const rendered = await renderPageRaster(currentPage, 1.6);
+      const rendered = await renderPageRaster(currentPage, RENDER_SCALES.auto);
       if (!rendered) throw new Error('Sayfa hazırlanamadı.');
       const entries = await extractTextEntries(rendered.page, rendered.viewport, pdfjsLib);
       const detected = detectInteractiveElementsLocal(
@@ -1527,7 +1849,7 @@ export default function PdfCleanStudio({
       const nte = deepClone(pageTextEntries);
       for (let p = 1; p <= numPages; p++) {
         setBulkProgress(p);
-        const rendered = await renderPageRaster(p, 1.6);
+        const rendered = await renderPageRaster(p, RENDER_SCALES.auto);
         if (!rendered) continue;
         const entries = await extractTextEntries(rendered.page, rendered.viewport, pdfjsLib);
         nte[p] = entries;
@@ -1551,10 +1873,22 @@ export default function PdfCleanStudio({
   };
 
   // ── Export helpers
+  // Bir sayfanın yalnızca GÖRÜNÜR katmanlarını, ekrandaki ile aynı z-order'da döndürür. Tüm export
+  // yolları (SVG/PNG/JPEG/PDF/entegrasyon) bunu kullanır → çıktı ekranla birebir eşleşir.
+  const collectVisibleLayers = (pageNumber) => {
+    const vis = (id) => layerVisibility[id] !== false;
+    const byZ = (a, b) => (a.zIndex || 0) - (b.zIndex || 0);
+    return {
+      masks: (pageMasks[pageNumber] || []).filter((m) => vis(m.id)),
+      patches: (patches[pageNumber] || []).filter((p) => vis(p.id)).slice().sort(byZ),
+      texts: (textElements[pageNumber] || []).filter((t) => vis(t.id)).slice().sort(byZ),
+    };
+  };
+
   const buildPageSvgString = async (pageNumber) => {
     if (!pdfDoc) return null;
     const page = await pdfDoc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 2 });
+    const viewport = page.getViewport({ scale: RENDER_SCALES.svg });
     const tc = document.createElement('canvas');
     tc.width = Math.round(viewport.width);
     tc.height = Math.round(viewport.height);
@@ -1563,15 +1897,17 @@ export default function PdfCleanStudio({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, tc.width, tc.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
+    const { masks: vMasks, patches: vPatches, texts: vTexts } = collectVisibleLayers(pageNumber);
+    const num = (v, def) => (Number.isFinite(Number(v)) ? Number(v) : def);
     const parts = [
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${tc.width}" height="${tc.height}" viewBox="0 0 ${tc.width} ${tc.height}">`,
-      `<image x="0" y="0" width="${tc.width}" height="${tc.height}" xlink:href="${tc.toDataURL('image/png')}" />`,
+      `<image x="0" y="0" width="${tc.width}" height="${tc.height}" xlink:href="${escapeXml(tc.toDataURL('image/png'))}" />`,
     ];
-    (pageMasks[pageNumber] || []).forEach((mask) => {
+    vMasks.forEach((mask) => {
       const fill = sampleBackgroundColor(ctx, mask.box, tc.width, tc.height, samplingMode);
       parts.push(buildMaskSvg({ ...mask, bgColor: fill }, tc.width, tc.height));
     });
-    (patches[pageNumber] || []).forEach((patch) => {
+    vPatches.forEach((patch) => {
       if (!patch.isClone) {
         const src = sourceCleanupRect(getPatchSourceCleanupBox(patch), tc.width, tc.height, 2);
         parts.push(
@@ -1581,16 +1917,32 @@ export default function PdfCleanStudio({
       const tgt = pixelBox(patch.targetBox, tc.width, tc.height);
       const m = getPatchRenderMetrics(patch, tgt);
       parts.push(
-        `<image x="${m.centerX - m.drawWidth / 2}" y="${m.centerY - m.drawHeight / 2}" width="${m.drawWidth}" height="${m.drawHeight}" xlink:href="${patch.imageData}" transform="rotate(${patch.rotation || 0} ${m.centerX} ${m.centerY})" style="filter:brightness(${patch.brightness || 100}%) contrast(${patch.contrast || 100}%);" />`
+        `<image x="${m.centerX - m.drawWidth / 2}" y="${m.centerY - m.drawHeight / 2}" width="${m.drawWidth}" height="${m.drawHeight}" xlink:href="${escapeXml(patch.imageData)}" transform="rotate(${num(patch.rotation, 0)} ${m.centerX} ${m.centerY})" style="filter:brightness(${num(patch.brightness, 100)}%) contrast(${num(patch.contrast, 100)}%);" />`
       );
     });
-    (textElements[pageNumber] || []).forEach((el) => {
+    vTexts.forEach((el) => {
       const r = pixelBox(el.box, tc.width, tc.height);
+      const fontSize = Math.max(6, num(el.fontSize, 16)) * RENDER_SCALES.svg;
+      const fontFamily = el.fontFamily || 'Arial, sans-serif';
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      const lines = String(el.text || '')
+        .split(/\n+/)
+        .slice(0, 8);
+      const lineHeight = fontSize * 1.25;
+      const startY = cy - (lines.length * lineHeight) / 2 + lineHeight / 2;
       parts.push(
         `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${escapeXml(el.bgColor || '#fff')}" />`
       );
+      // Çok satırlı metin: her satır ayrı tspan (canvas drawWrappedText ile aynı lineHeight/ortalama).
+      const tspans = lines
+        .map(
+          (line, i) =>
+            `<tspan x="${cx}" y="${startY + i * lineHeight}" dominant-baseline="middle">${escapeXml(line)}</tspan>`
+        )
+        .join('');
       parts.push(
-        `<text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" fill="${escapeXml(el.color || '#000')}" font-size="${el.fontSize || 16}" text-anchor="middle" dominant-baseline="middle">${escapeXml(el.text || '')}</text>`
+        `<text fill="${escapeXml(el.color || '#000')}" font-size="${fontSize}" font-family="${escapeXml(fontFamily)}" text-anchor="middle">${tspans}</text>`
       );
     });
     parts.push('</svg>');
@@ -1618,22 +1970,37 @@ export default function PdfCleanStudio({
   };
   const exportCurrentPageSvg = async () => {
     if (!file) return;
-    const svg = await buildPageSvgString(currentPage);
-    if (!svg) return;
-    downloadBlob(
-      new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
-      `${file.name.replace(/\.pdf$/i, '')}-s${currentPage}.svg`
-    );
-    setStatus(`Sayfa ${currentPage} SVG olarak indirildi.`);
+    setExportBusy(true);
+    setStatus('SVG hazırlanıyor...');
+    try {
+      const svg = await buildPageSvgString(currentPage);
+      if (!svg) return;
+      downloadBlob(
+        new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
+        `${file.name.replace(/\.pdf$/i, '')}-s${currentPage}.svg`
+      );
+      setStatus(`Sayfa ${currentPage} SVG olarak indirildi.`);
+    } catch (err) {
+      setStatus(err?.message || 'SVG oluşturulamadı.');
+    } finally {
+      setExportBusy(false);
+    }
   };
   const exportCurrentPagePng = async () => {
     if (!pdfDoc || !file) return;
     setExportBusy(true);
     setStatus('PNG hazırlanıyor...');
     try {
-      const rendered = await renderPageRaster(currentPage, 2.6);
+      const rendered = await renderPageRaster(currentPage, RENDER_SCALES.png);
       if (!rendered) return;
-      const composed = await composePageCanvas(rendered.canvas, masks, pagePatches, pageTexts);
+      const layers = collectVisibleLayers(currentPage);
+      const composed = await composePageCanvas(
+        rendered.canvas,
+        layers.masks,
+        layers.patches,
+        layers.texts,
+        RENDER_SCALES.png
+      );
       if (!composed) return;
       const blob = await canvasToBlob(composed, 'image/png', 0.94);
       if (!blob) return;
@@ -1650,9 +2017,16 @@ export default function PdfCleanStudio({
     setExportBusy(true);
     setStatus('JPEG hazırlanıyor...');
     try {
-      const rendered = await renderPageRaster(currentPage, 2.4);
+      const rendered = await renderPageRaster(currentPage, RENDER_SCALES.jpeg);
       if (!rendered) return;
-      const composed = await composePageCanvas(rendered.canvas, masks, pagePatches, pageTexts);
+      const layers = collectVisibleLayers(currentPage);
+      const composed = await composePageCanvas(
+        rendered.canvas,
+        layers.masks,
+        layers.patches,
+        layers.texts,
+        RENDER_SCALES.jpeg
+      );
       if (!composed) return;
       const blob = await canvasToBlob(composed, 'image/jpeg', 0.9);
       if (!blob) return;
@@ -1671,13 +2045,15 @@ export default function PdfCleanStudio({
     try {
       const out = await PDFDocument.create();
       for (let p = 1; p <= numPages; p++) {
-        const rendered = await renderPageRaster(p, 2.4);
+        const rendered = await renderPageRaster(p, RENDER_SCALES.pdf);
         if (!rendered) continue;
+        const layers = collectVisibleLayers(p);
         const composed = await composePageCanvas(
           rendered.canvas,
-          pageMasks[p] || [],
-          patches[p] || [],
-          textElements[p] || []
+          layers.masks,
+          layers.patches,
+          layers.texts,
+          RENDER_SCALES.pdf
         );
         if (!composed) continue;
         const blob = await canvasToBlob(composed, 'image/png', 0.92);
@@ -1862,15 +2238,31 @@ export default function PdfCleanStudio({
   useEffect(() => {
     const node = containerRef.current;
     if (!node || typeof ResizeObserver === 'undefined') return;
-    const measure = () =>
-      setStageSize({
-        width: Math.max(0, Math.floor(node.clientWidth || 0)),
-        height: Math.max(0, Math.floor(node.clientHeight || 0)),
+    let raf = null;
+    const apply = () =>
+      setStageSize((prev) => {
+        const width = Math.max(0, Math.floor(node.clientWidth || 0));
+        const height = Math.max(0, Math.floor(node.clientHeight || 0));
+        // Aynı değerde gereksiz state güncellemesi/render fırtınası yapma.
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
       });
-    measure();
+    // ResizeObserver olaylarını bir sonraki frame'e topla (sürükleyerek yeniden boyutlandırmada
+    // render fırtınasını önler).
+    const measure = () => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        apply();
+      });
+    };
+    apply();
     const obs = new ResizeObserver(measure);
     obs.observe(node);
-    return () => obs.disconnect();
+    return () => {
+      if (raf != null) cancelAnimationFrame(raf);
+      obs.disconnect();
+    };
   }, [fullScreen, isSidebarOpen, file]);
 
   useEffect(() => {
@@ -1933,6 +2325,7 @@ export default function PdfCleanStudio({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnızca dosya değişiminde yeniden yükle; resetHistory kararlı
   }, [file]);
 
   useEffect(() => {
@@ -1945,8 +2338,9 @@ export default function PdfCleanStudio({
       const items = [];
       try {
         for (let p = 1; p <= pdfDoc.numPages; p++) {
+          if (cancelled) return; // belge değiştiyse kalan sayfaları boşuna render etme
           const page = await pdfDoc.getPage(p);
-          const vp = page.getViewport({ scale: 0.22 });
+          const vp = page.getViewport({ scale: RENDER_SCALES.thumb });
           const tc = document.createElement('canvas');
           tc.width = Math.max(1, Math.round(vp.width));
           tc.height = Math.max(1, Math.round(vp.height));
@@ -1956,10 +2350,16 @@ export default function PdfCleanStudio({
           ctx.fillRect(0, 0, tc.width, tc.height);
           await page.render({ canvasContext: ctx, viewport: vp }).promise;
           items.push({ pageNumber: p, url: tc.toDataURL('image/jpeg', 0.72) });
+          // Ara canvas'ı serbest bırakmaya yardım et.
+          tc.width = 0;
+          tc.height = 0;
         }
         if (!cancelled) setThumbnails(items);
-      } catch {
-        if (!cancelled) setThumbnails([]);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Küçük resim üretimi başarısız:', err);
+          setThumbnails([]);
+        }
       }
     })();
     return () => {
@@ -1967,16 +2367,19 @@ export default function PdfCleanStudio({
     };
   }, [pdfDoc]);
 
+  // Sayfa raster + yerleşim. Taban ölçek container'a fit eder; netlik için rasterScale ile daha yüksek
+  // çözünürlükte çizilir ama görüntü (CSS) boyutu taban ölçekte kalır, böylece overlay'ler hizalı kalır.
   useEffect(() => {
     if (!pdfDoc || !pdfjsLib) return;
     let cancelled = false;
     (async () => {
-      setBusy(true);
+      setRenderBusy(true);
       try {
         if (renderTaskRef.current) {
           try {
             renderTaskRef.current.cancel();
           } catch {}
+          renderTaskRef.current = null;
         }
         const page = await pdfDoc.getPage(currentPage);
         const canvas = canvasRef.current;
@@ -1985,92 +2388,203 @@ export default function PdfCleanStudio({
         const wb = Math.max(360, stageSize.width || container.clientWidth || 360);
         const hb = Math.max(360, stageSize.height || container.clientHeight || 360);
         const bvp = page.getViewport({ scale: 1 });
-        const scale = clamp(
-          Math.min((wb - 80) / Math.max(1, bvp.width), (hb - 80) / Math.max(1, bvp.height)),
-          0.4,
-          2.6
+        const baseScale = clamp(
+          Math.min(
+            (wb - STAGE_FIT_PADDING) / Math.max(1, bvp.width),
+            (hb - STAGE_FIT_PADDING) / Math.max(1, bvp.height)
+          ),
+          SCALE_CLAMP_MIN,
+          SCALE_CLAMP_MAX
         );
-        const vp = page.getViewport({ scale });
+        const displayVp = page.getViewport({ scale: baseScale });
+        const renderVp = page.getViewport({ scale: baseScale * Math.max(1, rasterScale) });
         const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx) return;
-        canvas.width = Math.round(vp.width);
-        canvas.height = Math.round(vp.height);
-        canvas.style.width = `${Math.round(vp.width)}px`;
-        canvas.style.height = `${Math.round(vp.height)}px`;
+        const dispW = Math.round(displayVp.width);
+        const dispH = Math.round(displayVp.height);
+        canvas.width = Math.round(renderVp.width);
+        canvas.height = Math.round(renderVp.height);
+        canvas.style.width = `${dispW}px`;
+        canvas.style.height = `${dispH}px`;
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const task = page.render({ canvasContext: ctx, viewport: vp });
+        const task = page.render({ canvasContext: ctx, viewport: renderVp });
         renderTaskRef.current = task;
-        await task.promise;
-        renderTaskRef.current = null;
+        try {
+          await task.promise;
+        } finally {
+          if (renderTaskRef.current === task) renderTaskRef.current = null;
+        }
         if (cancelled) return;
-        const entries = await extractTextEntries(page, vp, pdfjsLib);
-        if (cancelled) return;
-        setPageViewport({ width: canvas.width, height: canvas.height });
-        setPageTextEntries((prev) => ({ ...prev, [currentPage]: entries }));
-        setPageSummary(summarizePageText(entries));
+        setPageViewport({ width: dispW, height: dispH });
+        setDisplayScale(baseScale);
       } catch (err) {
-        if (!cancelled) setStatus(err?.message || 'Sayfa yüklenemedi.');
+        // İptal edilen render (hızlı sayfa/zoom değişimi) hata değildir; sessizce yut.
+        if (!cancelled && err?.name !== 'RenderingCancelledException') {
+          setStatus(err?.message || 'Sayfa yüklenemedi.');
+        }
       } finally {
-        if (!cancelled) setBusy(false);
+        if (!cancelled) setRenderBusy(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pdfjsLib, currentPage, stageSize.width, stageSize.height]);
+  }, [pdfDoc, pdfjsLib, currentPage, stageSize.width, stageSize.height, rasterScale]);
 
-  // ── Pointer events
+  // Metin çıkarımı sayfa içeriğine bağlı; ölçek/zoom'dan bağımsız (0–1000 normalize). Ayrı effect olduğu
+  // için resize/zoom sırasında gereksiz yere tekrar çalışmaz.
   useEffect(() => {
-    const handleMove = (e) => {
-      const pt = getNormalizedPoint(e.clientX, e.clientY);
-      if (pt) setCursorCoords({ x: Math.round(pt.x), y: Math.round(pt.y) });
-
-      if (drawState) setDraftRect(normalizeBox([drawState.startY, drawState.startX, pt.y, pt.x]));
-
-      if (draggingElement) {
-        const dx = pt.x - draggingElement.startX,
-          dy = pt.y - draggingElement.startY;
-        const ib = draggingElement.initialBox;
-        const nb = normalizeBox([ib[0] + dy, ib[1] + dx, ib[2] + dy, ib[3] + dx]);
-        const snapped = applySnap(nb, draggingElement.id, draggingElement.type);
-        setDragGhost({ id: draggingElement.id, type: draggingElement.type, box: snapped.box });
-        setAlignmentGuides(snapped.guides);
+    if (!pdfDoc || !pdfjsLib) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        const vp = page.getViewport({ scale: 1 });
+        const entries = await extractTextEntries(page, vp, pdfjsLib);
+        if (cancelled) return;
+        setPageTextEntries((prev) => ({ ...prev, [currentPage]: entries }));
+        setPageSummary(summarizePageText(entries));
+      } catch (err) {
+        if (!cancelled) console.error('Metin çıkarımı başarısız:', err);
       }
-
-      if (resizing) {
-        let nb = [...resizing.initialBox];
-        if (resizing.handle === 'nw') {
-          nb[0] = pt.y;
-          nb[1] = pt.x;
-        } else if (resizing.handle === 'ne') {
-          nb[0] = pt.y;
-          nb[3] = pt.x;
-        } else if (resizing.handle === 'sw') {
-          nb[2] = pt.y;
-          nb[1] = pt.x;
-        } else if (resizing.handle === 'se') {
-          nb[2] = pt.y;
-          nb[3] = pt.x;
-        }
-        nb = normalizeBox(nb);
-        if (resizing.type === 'patch')
-          setPatches((prev) => ({
-            ...prev,
-            [currentPage]: (prev[currentPage] || []).map((i) =>
-              i.id === resizing.id ? { ...i, targetBox: nb } : i
-            ),
-          }));
-        else
-          setTextElements((prev) => ({
-            ...prev,
-            [currentPage]: (prev[currentPage] || []).map((i) =>
-              i.id === resizing.id ? { ...i, box: nb } : i
-            ),
-          }));
-      }
+    })();
+    return () => {
+      cancelled = true;
     };
+  }, [pdfDoc, pdfjsLib, currentPage]);
 
+  // Yüksek zoom'da netlik: viewZoom eşiği aşınca debounce'lu olarak rasterScale artar ve yeniden raster
+  // tetikler (metin çıkarımını etkilemez). Eşik altında rasterScale = 1.
+  useEffect(() => {
+    const target = viewZoom > ZOOM_SHARPEN_THRESHOLD ? clamp(Math.ceil(viewZoom), 1, 4) : 1;
+    if (target === rasterScale) return undefined;
+    if (zoomSharpenTimerRef.current) clearTimeout(zoomSharpenTimerRef.current);
+    zoomSharpenTimerRef.current = setTimeout(() => setRasterScale(target), 260);
+    return () => {
+      if (zoomSharpenTimerRef.current) clearTimeout(zoomSharpenTimerRef.current);
+    };
+  }, [viewZoom, rasterScale]);
+
+  // ── Pointer events (dinleyiciler tek sefer bağlanır; handler'lar her render güncel closure'ı okur)
+  // İmleç koordinatını her pointermove'da değil frame başına bir kez ve yalnızca değiştiğinde günceller.
+  const flushCursor = (pt) => {
+    if (cursorRafRef.current != null) return;
+    cursorRafRef.current = requestAnimationFrame(() => {
+      cursorRafRef.current = null;
+      const x = Math.round(pt.x);
+      const y = Math.round(pt.y);
+      setCursorCoords((prev) => (prev && prev.x === x && prev.y === y ? prev : { x, y }));
+    });
+  };
+
+  pointerMoveRef.current = (e) => {
+    // Pan jesti (orta tuş / Space+sürükle): görünümü kaydır.
+    if (panGestureRef.current) {
+      const g = panGestureRef.current;
+      setPanOffset({
+        x: g.startPan.x + (e.clientX - g.startX),
+        y: g.startPan.y + (e.clientY - g.startY),
+      });
+      return;
+    }
+    const pt = getNormalizedPoint(e.clientX, e.clientY);
+    if (!pt) return; // koordinat hesaplanamıyorsa hiçbir jesti işleme (null-deref koruması)
+    flushCursor(pt);
+
+    if (marqueeStartRef.current) {
+      const s = marqueeStartRef.current;
+      setMarqueeRect(normalizeBox([s.y, s.x, pt.y, pt.x]));
+      return;
+    }
+
+    if (drawState) setDraftRect(normalizeBox([drawState.startY, drawState.startX, pt.y, pt.x]));
+
+    if (draggingElement) {
+      const dx = pt.x - draggingElement.startX;
+      const dy = pt.y - draggingElement.startY;
+      // Boyutu koruyarak sınır içinde kaydır (kenarda öğe ezilmez).
+      const nb = shiftBoxClamped(draggingElement.initialBox, dx, dy);
+      const snapped = applySnap(nb, draggingElement.id, draggingElement.type);
+      setDragGhost({ id: draggingElement.id, type: draggingElement.type, box: snapped.box });
+      setAlignmentGuides(snapped.guides);
+    }
+
+    if (resizing) {
+      let nb = [...resizing.initialBox];
+      if (resizing.handle === 'nw') {
+        nb[0] = pt.y;
+        nb[1] = pt.x;
+      } else if (resizing.handle === 'ne') {
+        nb[0] = pt.y;
+        nb[3] = pt.x;
+      } else if (resizing.handle === 'sw') {
+        nb[2] = pt.y;
+        nb[1] = pt.x;
+      } else if (resizing.handle === 'se') {
+        nb[2] = pt.y;
+        nb[3] = pt.x;
+      }
+      if (e.shiftKey) nb = applyAspectResize(resizing.initialBox, nb, resizing.handle); // orantılı
+      nb = enforceMinResize(nb, resizing.handle, resizing.initialBox); // minimum boyut
+      nb = normalizeBox(nb);
+      if (resizing.type === 'patch')
+        setPatches((prev) => ({
+          ...prev,
+          [currentPage]: (prev[currentPage] || []).map((i) =>
+            i.id === resizing.id ? { ...i, targetBox: nb } : i
+          ),
+        }));
+      else
+        setTextElements((prev) => ({
+          ...prev,
+          [currentPage]: (prev[currentPage] || []).map((i) =>
+            i.id === resizing.id ? { ...i, box: nb } : i
+          ),
+        }));
+    }
+  };
+
+  pointerUpRef.current = async () => {
+    // Pan jestini sonlandır (draw/drag/resize işleme).
+    if (panGestureRef.current) {
+      panGestureRef.current = null;
+      return;
+    }
+    // Marquee çoklu seçimi sonlandır: kutuyla kesişen tüm öğeleri seç.
+    if (marqueeStartRef.current) {
+      const box = marqueeRect;
+      const additive = marqueeStartRef.current.additive;
+      marqueeStartRef.current = null;
+      setMarqueeRect(null);
+      if (box && boxArea(box) > 4) {
+        const hits = [
+          ...pagePatches
+            .filter((i) => boxesOverlap(i.targetBox, box))
+            .map((i) => ({ id: i.id, type: 'patch' })),
+          ...pageTexts
+            .filter((i) => boxesOverlap(i.box, box))
+            .map((i) => ({ id: i.id, type: 'text' })),
+          ...masks.filter((i) => boxesOverlap(i.box, box)).map((i) => ({ id: i.id, type: 'mask' })),
+        ];
+        setSelectedItems((prev) =>
+          additive
+            ? [...prev, ...hits.filter((h) => !prev.some((p) => p.id === h.id && p.type === h.type))]
+            : hits
+        );
+        const last = hits[hits.length - 1];
+        if (last && last.type !== 'mask') {
+          setSelectedId(last.id);
+          setSelectedType(last.type);
+          setActiveMaskId(null);
+        } else if (last) {
+          setActiveMaskId(last.id);
+          setSelectedId(null);
+          setSelectedType(null);
+        }
+      }
+      return;
+    }
     const handleUp = async () => {
       if (drawState && draftRect) {
         const canvas = canvasRef.current;
@@ -2103,15 +2617,17 @@ export default function PdfCleanStudio({
             box: draftRect,
             text: 'Metin girin',
             fontSize: 16,
+            fontFamily: 'Arial, sans-serif',
             color: '#000000',
             bgColor,
-            zIndex: (pageTexts.length || 0) + 10,
+            zIndex: nextZIndex(pageTexts),
           };
           const nextTexts = {
             ...textElements,
             [currentPage]: [...(textElements[currentPage] || []), nt],
           };
           setTextElements(nextTexts);
+          selectSingle(nt.id, 'text');
           setSelectedId(nt.id);
           setSelectedType('text');
           setEditingTextId(nt.id);
@@ -2139,7 +2655,8 @@ export default function PdfCleanStudio({
                 tc,
                 pageMasks[currentPage] || [],
                 patches[currentPage] || [],
-                textElements[currentPage] || []
+                textElements[currentPage] || [],
+                pScale
               );
               const srcCanvas = composed || tc;
               const srcRect = pixelBox(draftRect, srcCanvas.width, srcCanvas.height);
@@ -2173,9 +2690,7 @@ export default function PdfCleanStudio({
                   feather: 14,
                   brightness: 100,
                   contrast: 100,
-                  zIndex: pagePatches.length
-                    ? Math.max(...pagePatches.map((i) => i.zIndex || 0)) + 1
-                    : 1,
+                  zIndex: nextZIndex(pagePatches),
                   isClone: patchToolMode === 'clone',
                 };
                 const nextPatches = {
@@ -2183,6 +2698,7 @@ export default function PdfCleanStudio({
                   [currentPage]: [...(patches[currentPage] || []), np],
                 };
                 setPatches(nextPatches);
+                selectSingle(np.id, 'patch');
                 setSelectedId(np.id);
                 setSelectedType('patch');
                 setMode('view');
@@ -2229,156 +2745,308 @@ export default function PdfCleanStudio({
       setAlignmentGuides([]);
       setResizing(null);
     };
+    await handleUp();
+  };
 
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Pointer drag handlers keep the in-flight gesture snapshot; applySnap changes would restart active drags.
-  }, [
-    currentPage,
-    draftRect,
-    drawState,
-    draggingElement,
-    dragGhost,
-    mode,
-    pageMasks,
-    patches,
-    textElements,
-    pdfDoc,
-    pagePatches,
-    pageTexts.length,
-    patchToolMode,
-    resizing,
-    samplingMode,
-  ]);
+  // Orta fare tuşuyla (her yerde) pan başlat.
+  pointerDownRef.current = (e) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      panGestureRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startPan: viewRef.current.pan,
+      };
+    }
+  };
 
-  // ── Keyboard shortcuts
   useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    const mv = (e) => pointerMoveRef.current(e);
+    const up = (e) => pointerUpRef.current(e);
+    const down = (e) => pointerDownRef.current(e);
+    window.addEventListener('pointermove', mv);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up); // iptal de jesti temizlesin (yapışkan sürükleme yok)
+    window.addEventListener('pointerdown', down);
+    return () => {
+      window.removeEventListener('pointermove', mv);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      window.removeEventListener('pointerdown', down);
+      if (cursorRafRef.current != null) cancelAnimationFrame(cursorRafRef.current);
+    };
+  }, []);
+
+  // ── Ctrl+tekerlek zoom (imleç altındaki nokta sabit kalır) + Ctrl yoksa zoom'luyken tekerlekle pan.
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return undefined;
+    const onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        undo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        const surface = surfaceRef.current;
+        if (!surface) return;
+        const z1 = viewRef.current.zoom;
+        const z2 = clamp(z1 * (1 - e.deltaY * ZOOM_WHEEL_SENSITIVITY), ZOOM_MIN, ZOOM_MAX);
+        if (z2 === z1) return;
+        const rect = surface.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const pan = viewRef.current.pan;
+        const factor = 1 - z2 / z1;
+        const newPan = { x: pan.x + cx * factor, y: pan.y + cy * factor };
+        // viewRef'i senkron güncelle: hızlı ardışık tekerlek olayları doğru birikir.
+        viewRef.current = { zoom: z2, pan: newPan };
+        setViewZoom(z2);
+        setPanOffset(newPan);
+      } else if (viewRef.current.zoom !== 1) {
+        // Yakınlaşmışken tekerlek ile kaydır (Shift: yatay).
         e.preventDefault();
-        redo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && currentSelection) {
-        e.preventDefault();
-        setCopiedItem({ type: selectedType, data: deepClone(currentSelection) });
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && copiedItem) {
-        e.preventDefault();
-        if (copiedItem.type === 'patch') {
-          const copied = {
-            ...copiedItem.data,
-            id: uid('patch'),
-            targetBox: normalizeBox([
-              copiedItem.data.targetBox[0] + 18,
-              copiedItem.data.targetBox[1] + 18,
-              copiedItem.data.targetBox[2] + 18,
-              copiedItem.data.targetBox[3] + 18,
-            ]),
-          };
-          const np = { ...patches, [currentPage]: [...(patches[currentPage] || []), copied] };
-          setPatches(np);
-          setSelectedId(copied.id);
-          setSelectedType('patch');
-          pushHistory(pageMasks, np, textElements);
-        } else if (copiedItem.type === 'text') {
-          const copied = {
-            ...copiedItem.data,
-            id: uid('text'),
-            box: normalizeBox([
-              copiedItem.data.box[0] + 18,
-              copiedItem.data.box[1] + 18,
-              copiedItem.data.box[2] + 18,
-              copiedItem.data.box[3] + 18,
-            ]),
-          };
-          const nt = {
-            ...textElements,
-            [currentPage]: [...(textElements[currentPage] || []), copied],
-          };
-          setTextElements(nt);
-          setSelectedId(copied.id);
-          setSelectedType('text');
-          pushHistory(pageMasks, patches, nt);
-        }
-        return;
-      }
-      if (e.key === '?' && !editingTextId) {
-        setShowKeyHelp((v) => !v);
-        return;
-      }
-      if (e.key === 'Escape') {
-        setMode('view');
-        setSelectedId(null);
-        setSelectedType(null);
-        setActiveMaskId(null);
-        return;
-      }
-      if (e.key === 'v' && !editingTextId) {
-        setMode('view');
-        return;
-      }
-      if (e.key === 'e' && !editingTextId) {
-        setMode('manual');
-        return;
-      }
-      if (e.key === 'p' && !editingTextId) {
-        setMode('patch');
-        return;
-      }
-      if (e.key === 't' && !editingTextId) {
-        setMode('text');
-        return;
-      }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !editingTextId) {
-        if (selectedType === 'patch' && selectedId) removePatch(selectedId);
-        else if (selectedType === 'text' && selectedId) removeText(selectedId);
-        else if (activeMaskId) removeMask(activeMaskId);
+        const dx = e.shiftKey ? e.deltaY : e.deltaX;
+        const dy = e.shiftKey ? 0 : e.deltaY;
+        const pan = viewRef.current.pan;
+        const newPan = { x: pan.x - dx, y: pan.y - dy };
+        viewRef.current = { ...viewRef.current, pan: newPan };
+        setPanOffset(newPan);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Keyboard shortcuts intentionally bind to the current selection/page snapshot without rebinding every command helper.
-  }, [
-    activeMaskId,
-    copiedItem,
-    currentPage,
-    currentSelection,
-    editingTextId,
-    history,
-    historyIndex,
-    pageMasks,
-    patches,
-    selectedId,
-    selectedType,
-    textElements,
-  ]);
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [file]);
 
-  const handleSurfacePointerDown = (e) => {
-    if (!canvasRef.current) return;
-    if (e.target !== surfaceRef.current) return;
-    if (mode === 'view') {
-      setSelectedId(null);
-      setSelectedType(null);
-      setActiveMaskId(null);
+  // Zoom kontrol yardımcıları (UI butonları ve klavye için).
+  const applyZoomAtCenter = (z2) => {
+    const surface = surfaceRef.current;
+    const z1 = viewRef.current.zoom;
+    const target = clamp(z2, ZOOM_MIN, ZOOM_MAX);
+    if (target === z1) return;
+    if (!surface) {
+      setViewZoom(target);
       return;
     }
-    const pt = getNormalizedPoint(e.clientX, e.clientY);
-    if (!pt) return;
-    e.preventDefault();
+    const rect = surface.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const pan = viewRef.current.pan;
+    const factor = 1 - target / z1;
+    const newPan = { x: pan.x + cx * factor, y: pan.y + cy * factor };
+    viewRef.current = { zoom: target, pan: newPan };
+    setViewZoom(target);
+    setPanOffset(newPan);
+  };
+  const zoomIn = () => applyZoomAtCenter(viewRef.current.zoom * 1.2);
+  const zoomOut = () => applyZoomAtCenter(viewRef.current.zoom / 1.2);
+  const zoomReset = () => {
+    viewRef.current = { zoom: 1, pan: { x: 0, y: 0 } };
+    setViewZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  // ── Klavye kısayolları
+  // Yapıştırma kopyayı kademeli öteler: aynı öğeyi peş peşe yapıştırınca üst üste binmesin.
+  const pasteCopiedItem = () => {
+    if (!copiedItem) return;
+    if (copiedItem.type === 'patch') {
+      const box = shiftBoxClamped(copiedItem.data.targetBox, PASTE_OFFSET, PASTE_OFFSET);
+      const copied = { ...copiedItem.data, id: uid('patch'), targetBox: box, zIndex: nextZIndex(pagePatches) };
+      const np = { ...patches, [currentPage]: [...(patches[currentPage] || []), copied] };
+      setPatches(np);
+      selectSingle(copied.id, 'patch');
+      setSelectedId(copied.id);
+      setSelectedType('patch');
+      setCopiedItem({ type: 'patch', data: { ...copiedItem.data, targetBox: box } });
+      pushHistory(pageMasks, np, textElements);
+    } else if (copiedItem.type === 'text') {
+      const box = shiftBoxClamped(copiedItem.data.box, PASTE_OFFSET, PASTE_OFFSET);
+      const copied = { ...copiedItem.data, id: uid('text'), box, zIndex: nextZIndex(pageTexts) };
+      const nt = { ...textElements, [currentPage]: [...(textElements[currentPage] || []), copied] };
+      setTextElements(nt);
+      selectSingle(copied.id, 'text');
+      setSelectedId(copied.id);
+      setSelectedType('text');
+      setCopiedItem({ type: 'text', data: { ...copiedItem.data, box } });
+      pushHistory(pageMasks, patches, nt);
+    } else if (copiedItem.type === 'mask') {
+      const box = shiftBoxClamped(copiedItem.data.box, PASTE_OFFSET, PASTE_OFFSET);
+      const copied = { ...copiedItem.data, id: uid('mask'), box };
+      const nm = { ...pageMasks, [currentPage]: [...(pageMasks[currentPage] || []), copied] };
+      setPageMasks(nm);
+      setActiveMaskId(copied.id);
+      setSelectedItems([{ id: copied.id, type: 'mask' }]);
+      setCopiedItem({ type: 'mask', data: { ...copiedItem.data, box } });
+      pushHistory(nm, patches, textElements);
+    }
+  };
+
+  onKeyRef.current = (e) => {
+    // Form alanlarında (input/textarea/select/contentEditable) hiçbir kısayolu ele geçirme:
+    // tarayıcının doğal yazma/undo/kopyala-yapıştır davranışı korunur, kazara silme/mod değişimi olmaz.
+    const tag = e.target?.tagName;
+    if (e.target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      return;
+    }
+
+    const ctrl = e.ctrlKey || e.metaKey;
+    const key = e.key;
+    const lower = typeof key === 'string' ? key.toLowerCase() : '';
+
+    if (ctrl && lower === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if (ctrl && (lower === 'y' || (lower === 'z' && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+      return;
+    }
+    if (ctrl && lower === 'c' && currentSelection) {
+      e.preventDefault();
+      setCopiedItem({ type: selectedType, data: deepClone(currentSelection) });
+      return;
+    }
+    if (ctrl && lower === 'v' && copiedItem) {
+      e.preventDefault();
+      pasteCopiedItem();
+      return;
+    }
+    if (ctrl && lower === 'd' && currentSelection) {
+      e.preventDefault();
+      duplicateSelection();
+      return;
+    }
+    if (ctrl && lower === 'a' && (pagePatches.length || pageTexts.length || masks.length)) {
+      e.preventDefault();
+      selectAllOnPage();
+      return;
+    }
+    if (ctrl && lower === 's') {
+      e.preventDefault();
+      if (file && !bulkBusy) exportCleanedPdf();
+      return;
+    }
+    if (key === '?') {
+      setShowKeyHelp((v) => !v);
+      return;
+    }
+    if (key === 'Escape') {
+      if (showKeyHelp) {
+        setShowKeyHelp(false);
+        return;
+      }
+      setMode('view');
+      clearSelection();
+      return;
+    }
+    if (key === ' ' || e.code === 'Space') {
+      // Buton/link odaktayken Space onu etkinleştirsin; aksi halde geçici pan modu.
+      if (tag === 'BUTTON' || tag === 'A') return;
+      e.preventDefault();
+      setIsSpacePan(true);
+      return;
+    }
+    if (key === 'PageDown') {
+      e.preventDefault();
+      setCurrentPage((p) => Math.min(numPages, p + 1));
+      return;
+    }
+    if (key === 'PageUp') {
+      e.preventDefault();
+      setCurrentPage((p) => Math.max(1, p - 1));
+      return;
+    }
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
+      const hasSel = selectedItems.length || selectedType || activeMaskId;
+      if (!hasSel) return;
+      e.preventDefault();
+      const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP;
+      const dx = key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0;
+      const dy = key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0;
+      nudgeSelection(dx, dy);
+      return;
+    }
+    if (lower === 'v') {
+      setMode('view');
+      return;
+    }
+    if (lower === 'e') {
+      setMode('manual');
+      return;
+    }
+    if (lower === 'p') {
+      setMode('patch');
+      return;
+    }
+    if (lower === 't') {
+      setMode('text');
+      return;
+    }
+    if (key === 'Delete' || key === 'Backspace') {
+      removeSelectedItems();
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e) => onKeyRef.current(e);
+    const onKeyUp = (e) => {
+      if (e.key === ' ' || e.code === 'Space') setIsSpacePan(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  // Metin düzenlemeye girerken başlangıç değerini yakala (finishTextEdit değişiklik kontrolü için).
+  useEffect(() => {
+    if (editingTextId) {
+      const el = (textElementsRef.current[currentPage] || []).find((i) => i.id === editingTextId);
+      editingStartTextRef.current = el ? el.text : null;
+    }
+  }, [editingTextId, currentPage]);
+
+  // Sayfa değişiminde seçim daima temizlenir (yeni sayfada geçersiz/yanlış öğe seçili kalmasın) ve pan
+  // sıfırlanır (yeni sayfa görünür konuma gelsin).
+  useEffect(() => {
     setSelectedId(null);
     setSelectedType(null);
     setActiveMaskId(null);
+    setSelectedItems([]);
+    setEditingTextId(null);
+    // Yeni sayfa sığdırılmış (zoom 1, pan 0) görünür.
+    viewRef.current = { zoom: 1, pan: { x: 0, y: 0 } };
+    setViewZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnızca sayfa değişiminde seçim/zoom/pan sıfırlanır
+  }, [currentPage]);
+
+  const handleSurfacePointerDown = (e) => {
+    if (!canvasRef.current) return;
+    // Space basılı veya orta tuş: pan jesti (her modda).
+    if (isSpacePan || e.button === 1) {
+      e.preventDefault();
+      panGestureRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startPan: viewRef.current.pan,
+      };
+      return;
+    }
+    if (e.target !== surfaceRef.current) return;
+    const pt = getNormalizedPoint(e.clientX, e.clientY);
+    if (!pt) return;
+    if (mode === 'view') {
+      // Boş alanda sürükle → marquee çoklu seçim; basit tık → seçimi temizle.
+      e.preventDefault();
+      if (!e.shiftKey) clearSelection();
+      marqueeStartRef.current = { x: pt.x, y: pt.y, additive: e.shiftKey };
+      setMarqueeRect([pt.y, pt.x, pt.y, pt.x]);
+      return;
+    }
+    e.preventDefault();
+    clearSelection();
     setDrawState({ startX: pt.x, startY: pt.y });
     setDraftRect([pt.y, pt.x, pt.y, pt.x]);
   };
@@ -2722,6 +3390,37 @@ export default function PdfCleanStudio({
               +
             </button>
           </PropRow>
+          <PropRow label="Yazı tipi">
+            <select
+              value={el.fontFamily || 'Arial, sans-serif'}
+              onChange={(e) => updateText(el.id, (t) => ({ ...t, fontFamily: e.target.value }))}
+              style={{
+                flex: 1,
+                height: 24,
+                border: `1px solid ${T.borderHi}`,
+                borderRadius: 5,
+                background: 'rgba(15,23,42,.04)',
+                color: T.text,
+                fontSize: 11,
+                padding: '0 6px',
+              }}
+            >
+              {[
+                ['Arial, sans-serif', 'Arial'],
+                ['Helvetica, Arial, sans-serif', 'Helvetica'],
+                ["'Times New Roman', Times, serif", 'Times New Roman'],
+                ['Georgia, serif', 'Georgia'],
+                ["'Courier New', monospace", 'Courier New'],
+                ['Verdana, sans-serif', 'Verdana'],
+                ["'Trebuchet MS', sans-serif", 'Trebuchet MS'],
+                ['Tahoma, sans-serif', 'Tahoma'],
+              ].map(([value, label]) => (
+                <option key={label} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </PropRow>
           <PropRow label="Yazı rengi">
             <input
               type="color"
@@ -2795,9 +3494,9 @@ export default function PdfCleanStudio({
       <div style={{ display: 'grid', gap: 6 }}>
         <button
           onClick={exportCurrentPageSvg}
-          disabled={!file || exportBusy}
+          disabled={!file || isHeavyOp}
           style={{
-            ...tbBtn(false, { small: true, disabled: !file || exportBusy }),
+            ...tbBtn(false, { small: true, disabled: !file || isHeavyOp }),
             justifyContent: 'center',
           }}
         >
@@ -2805,9 +3504,9 @@ export default function PdfCleanStudio({
         </button>
         <button
           onClick={exportCurrentPagePng}
-          disabled={!file || exportBusy}
+          disabled={!file || isHeavyOp}
           style={{
-            ...tbBtn(false, { small: true, disabled: !file || exportBusy }),
+            ...tbBtn(false, { small: true, disabled: !file || isHeavyOp }),
             justifyContent: 'center',
           }}
         >
@@ -2815,9 +3514,9 @@ export default function PdfCleanStudio({
         </button>
         <button
           onClick={exportCurrentPageJpeg}
-          disabled={!file || exportBusy}
+          disabled={!file || isHeavyOp}
           style={{
-            ...tbBtn(false, { small: true, disabled: !file || exportBusy }),
+            ...tbBtn(false, { small: true, disabled: !file || isHeavyOp }),
             justifyContent: 'center',
           }}
         >
@@ -2828,9 +3527,9 @@ export default function PdfCleanStudio({
       <div style={{ display: 'grid', gap: 6 }}>
         <button
           onClick={exportCleanedPdf}
-          disabled={!file || bulkBusy}
+          disabled={!file || isHeavyOp}
           style={{
-            ...tbBtn(false, { small: true, disabled: !file || bulkBusy }),
+            ...tbBtn(false, { small: true, disabled: !file || isHeavyOp }),
             justifyContent: 'center',
           }}
         >
@@ -2838,9 +3537,9 @@ export default function PdfCleanStudio({
         </button>
         <button
           onClick={exportAllSvg}
-          disabled={!file || exportBusy}
+          disabled={!file || isHeavyOp}
           style={{
-            ...tbBtn(false, { small: true, disabled: !file || exportBusy }),
+            ...tbBtn(false, { small: true, disabled: !file || isHeavyOp }),
             justifyContent: 'center',
           }}
         >
@@ -3126,6 +3825,26 @@ export default function PdfCleanStudio({
   );
 
   // ── Main canvas area
+  // Ağır işlemler (render/tarama/export/entegrasyon) çakışmasın diye tüm ağır butonlar tek kilide bağlı.
+  const isHeavyOp = busy || renderBusy || bulkBusy || exportBusy || integrationBusy;
+
+  const zoomBtnStyle = {
+    width: 22,
+    height: 20,
+    border: `1px solid ${T.border}`,
+    borderRadius: 5,
+    background: '#fff',
+    color: T.text,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+    padding: 0,
+  };
+
   const renderCanvas = () => (
     <div
       style={{
@@ -3215,6 +3934,10 @@ export default function PdfCleanStudio({
             boxShadow:
               '0 34px 70px rgba(2,6,23,.38), 0 0 0 1px rgba(255,255,255,.08)',
             overflow: 'hidden',
+            // Görüntü zoom'u + pan: CSS transform layout'u değiştirmez, koordinat matematiğini bozmaz.
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${viewZoom})`,
+            transformOrigin: '0 0',
+            willChange: 'transform',
           }}
         >
           <canvas ref={canvasRef} style={{ display: 'block' }} />
@@ -3226,7 +3949,13 @@ export default function PdfCleanStudio({
               inset: 0,
               touchAction: 'none',
               userSelect: 'none',
-              cursor: mode === 'view' ? 'default' : 'crosshair',
+              cursor: isSpacePan
+                ? panGestureRef.current
+                  ? 'grabbing'
+                  : 'grab'
+                : mode === 'view'
+                  ? 'default'
+                  : 'crosshair',
             }}
           >
             {alignmentGuides.map((g, i) => (
@@ -3244,18 +3973,58 @@ export default function PdfCleanStudio({
                 }}
               />
             ))}
+            {marqueeRect &&
+              (() => {
+                const box = pixelBox(marqueeRect, pageViewport.width, pageViewport.height);
+                return (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: box.x,
+                      top: box.y,
+                      width: box.width,
+                      height: box.height,
+                      border: '1px dashed rgba(37,99,235,.9)',
+                      background: 'rgba(37,99,235,.12)',
+                      zIndex: 120,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                );
+              })()}
             {masks
               .filter((m) => layerVisibility[m.id] !== false)
               .map((mask) => {
                 const box = pixelBox(mask.box, pageViewport.width, pageViewport.height);
+                const isSel = isItemSelected(mask.id, 'mask') || activeMaskId === mask.id;
                 return (
                   <div
                     key={mask.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={mask.label || 'Maske'}
+                    aria-pressed={isSel}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setActiveMaskId(mask.id);
+                        selectSingle(mask.id, 'mask');
+                        setRightTab('ozellikler');
+                      }
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveMaskId(mask.id);
-                      setSelectedId(null);
-                      setSelectedType(null);
+                      if (e.shiftKey) {
+                        toggleSelected(mask.id, 'mask');
+                        setActiveMaskId(mask.id);
+                        setSelectedId(null);
+                        setSelectedType(null);
+                      } else {
+                        setActiveMaskId(mask.id);
+                        selectSingle(mask.id, 'mask');
+                        setSelectedId(null);
+                        setSelectedType(null);
+                      }
                       setRightTab('ozellikler');
                     }}
                     style={{
@@ -3265,9 +4034,11 @@ export default function PdfCleanStudio({
                       width: box.width,
                       height: box.height,
                       background: mask.bgColor || '#ffffff',
-                      outline: 'none',
+                      outline: isSel ? '2px solid rgba(37,99,235,.9)' : 'none',
                       boxShadow: 'none',
                       cursor: 'pointer',
+                      // Çizim modunda maskenin üstünden yeni alan çizilebilsin.
+                      pointerEvents: mode !== 'view' ? 'none' : 'auto',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -3308,6 +4079,7 @@ export default function PdfCleanStudio({
                   pageViewport.height
                 );
                 const active = selectedType === 'patch' && selectedId === patch.id;
+                const inMulti = active || isItemSelected(patch.id, 'patch');
                 const m = getPatchRenderMetrics(patch, tgt);
                 return (
                   <div key={patch.id}>
@@ -3329,10 +4101,22 @@ export default function PdfCleanStudio({
                       />
                     )}
                     <div
+                      // Çizim modunda öğe üstünden yeni alan çizilebilsin diye olayı yüzeye bırak.
                       onPointerDown={(e) => {
+                        if (isSpacePan || e.button === 1) return; // pan jesti
+                        if (mode !== 'view') return; // çizim modu: surface çizimi başlatsın
                         e.stopPropagation();
+                        if (e.shiftKey) {
+                          toggleSelected(patch.id, 'patch');
+                          setSelectedId(patch.id);
+                          setSelectedType('patch');
+                          setActiveMaskId(null);
+                          setRightTab('ozellikler');
+                          return;
+                        }
                         const pt = getNormalizedPoint(e.clientX, e.clientY);
                         if (!pt) return;
+                        if (!isItemSelected(patch.id, 'patch')) selectSingle(patch.id, 'patch');
                         setSelectedId(patch.id);
                         setSelectedType('patch');
                         setActiveMaskId(null);
@@ -3355,8 +4139,11 @@ export default function PdfCleanStudio({
                         transform: `translate(-50%,-50%) rotate(${patch.rotation || 0}deg)`,
                         transformOrigin: 'center',
                         zIndex: (patch.zIndex || 0) + 30,
-                        cursor: 'move',
-                        outline: active ? '2px solid rgba(37,99,235,.6)' : 'none',
+                        cursor: mode !== 'view' ? 'crosshair' : 'move',
+                        pointerEvents: mode !== 'view' ? 'none' : 'auto',
+                        outline: inMulti
+                          ? `2px solid rgba(37,99,235,${active ? 0.6 : 0.4})`
+                          : 'none',
                         outlineOffset: 0,
                       }}
                     >
@@ -3439,14 +4226,30 @@ export default function PdfCleanStudio({
                   pageViewport.height
                 );
                 const active = selectedType === 'text' && selectedId === el.id;
+                const inMulti = active || isItemSelected(el.id, 'text');
                 const editing = editingTextId === el.id;
+                // Ekran font boyutu render ölçeğiyle çarpılır (WYSIWYG: ekran ≈ export).
+                const screenFont = (el.fontSize || 16) * displayScale;
+                const fontFamily = el.fontFamily || 'Arial, sans-serif';
                 return (
                   <div
                     key={el.id}
                     onPointerDown={(e) => {
+                      if (isSpacePan || e.button === 1) return; // pan jesti
+                      if (mode !== 'view') return; // çizim modu: surface çizimi başlatsın
                       e.stopPropagation();
+                      if (editing) return;
+                      if (e.shiftKey) {
+                        toggleSelected(el.id, 'text');
+                        setSelectedId(el.id);
+                        setSelectedType('text');
+                        setActiveMaskId(null);
+                        setRightTab('ozellikler');
+                        return;
+                      }
                       const pt = getNormalizedPoint(e.clientX, e.clientY);
-                      if (!pt || editing) return;
+                      if (!pt) return;
+                      if (!isItemSelected(el.id, 'text')) selectSingle(el.id, 'text');
                       setSelectedId(el.id);
                       setSelectedType('text');
                       setActiveMaskId(null);
@@ -3468,12 +4271,14 @@ export default function PdfCleanStudio({
                       height: box.height,
                       background: el.bgColor || '#ffffff',
                       color: el.color || '#000000',
-                      fontSize: el.fontSize || 16,
+                      fontSize: screenFont,
+                      fontFamily,
                       textAlign: el.textAlign || 'center',
-                      cursor: editing ? 'text' : 'move',
+                      cursor: mode !== 'view' ? 'crosshair' : editing ? 'text' : 'move',
+                      pointerEvents: mode !== 'view' && !editing ? 'none' : 'auto',
                       zIndex: (el.zIndex || 0) + 50,
-                      outline: active
-                        ? '2px solid rgba(37,99,235,.5)'
+                      outline: inMulti
+                        ? `2px solid rgba(37,99,235,${active ? 0.5 : 0.4})`
                         : '1px solid rgba(148,163,184,.5)',
                       display: 'flex',
                       alignItems: 'center',
@@ -3491,9 +4296,17 @@ export default function PdfCleanStudio({
                     {editing ? (
                       <textarea
                         autoFocus
-                        value={el.text}
+                        value={el.text || ''}
                         onChange={(e) => updateTextValue(el.id, e.target.value)}
-                        onBlur={() => finishTextEdit(el.id)}
+                        onBlur={() => finishTextEdit()}
+                        onKeyDown={(e) => {
+                          // Esc: düzenlemeyi bitir; Ctrl/Cmd+Enter: bitir. (Enter satır ekler.)
+                          if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+                            e.preventDefault();
+                            finishTextEdit();
+                          }
+                          e.stopPropagation();
+                        }}
                         style={{
                           width: '100%',
                           height: '100%',
@@ -3502,7 +4315,8 @@ export default function PdfCleanStudio({
                           resize: 'none',
                           background: 'transparent',
                           color: el.color || '#000',
-                          fontSize: el.fontSize || 16,
+                          fontSize: screenFont,
+                          fontFamily,
                           textAlign: el.textAlign || 'center',
                         }}
                       />
@@ -3607,6 +4421,7 @@ export default function PdfCleanStudio({
         setSelectedType(item._kind);
         setActiveMaskId(null);
       }
+      selectSingle(item.id, item._kind);
       setRightTab('ozellikler');
     };
     const deleteItem = (item) => {
@@ -3756,12 +4571,20 @@ export default function PdfCleanStudio({
       onClick={() => setShowKeyHelp(false)}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Klavye kısayolları"
+        ref={(node) => node && node.focus()}
+        tabIndex={-1}
         style={{
           background: '#ffffff',
           border: `1px solid ${T.borderHi}`,
           borderRadius: 20,
           padding: 28,
           minWidth: 340,
+          maxHeight: '80vh',
+          overflowY: 'auto',
+          outline: 'none',
           boxShadow: '0 24px 64px rgba(15,23,42,.4)',
           color: T.text,
         }}
@@ -3775,12 +4598,19 @@ export default function PdfCleanStudio({
             ['P', 'Patch (alan taşı)'],
             ['T', 'Metin ekle'],
             ['Ctrl+Z', 'Geri al'],
-            ['Ctrl+Y', 'İleri al'],
+            ['Ctrl+Y / Ctrl+Shift+Z', 'İleri al'],
             ['Ctrl+C', 'Kopyala'],
             ['Ctrl+V', 'Yapıştır'],
-            ['Delete', 'Seçili öğeyi sil'],
-            ['Esc', 'Seçimi kaldır'],
-            ['?', 'Bu yardımı kapat'],
+            ['Ctrl+D', 'Çoğalt'],
+            ['Ctrl+A', 'Tümünü seç'],
+            ['Ctrl+S', 'Temizlenmiş PDF indir'],
+            ['Ok tuşları', 'Kaydır (Shift = 10×)'],
+            ['PageUp / PageDown', 'Önceki / sonraki sayfa'],
+            ['Ctrl+Tekerlek', 'Yakınlaştır / uzaklaştır'],
+            ['Space + sürükle', 'Kaydır (pan)'],
+            ['Delete / Backspace', 'Seçili öğeyi sil'],
+            ['Esc', 'Seçimi/modu kaldır'],
+            ['?', 'Yardımı aç/kapat'],
           ].map(([k, d]) => (
             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <kbd
@@ -4073,15 +4903,15 @@ export default function PdfCleanStudio({
           <span style={{ fontSize: 11, color: T.muted, whiteSpace: 'nowrap' }}>TARAMA</span>
           <button
             onClick={runAutoCleanCurrentPage}
-            disabled={!file || busy || bulkBusy}
-            style={tbBtn(false, { disabled: !file || busy || bulkBusy })}
+            disabled={!file || isHeavyOp}
+            style={tbBtn(false, { disabled: !file || isHeavyOp })}
           >
             {busy ? '⟳ Taranıyor...' : '⚡ Bu Sayfa'}
           </button>
           <button
             onClick={runAutoCleanAllPages}
-            disabled={!file || busy || bulkBusy}
-            style={tbBtn(false, { disabled: !file || busy || bulkBusy })}
+            disabled={!file || isHeavyOp}
+            style={tbBtn(false, { disabled: !file || isHeavyOp })}
           >
             {bulkBusy ? `⟳ ${bulkProgress}/${numPages}` : '⚡ Tümü'}
           </button>
@@ -4094,22 +4924,22 @@ export default function PdfCleanStudio({
           <span style={{ fontSize: 11, color: T.muted, whiteSpace: 'nowrap' }}>DIŞA AKTAR</span>
           <button
             onClick={exportCurrentPagePng}
-            disabled={!file || exportBusy}
-            style={tbBtn(false, { small: true, disabled: !file || exportBusy })}
+            disabled={!file || isHeavyOp}
+            style={tbBtn(false, { small: true, disabled: !file || isHeavyOp })}
           >
             PNG
           </button>
           <button
             onClick={exportCurrentPageSvg}
-            disabled={!file || exportBusy}
-            style={tbBtn(false, { small: true, disabled: !file || exportBusy })}
+            disabled={!file || isHeavyOp}
+            style={tbBtn(false, { small: true, disabled: !file || isHeavyOp })}
           >
             SVG
           </button>
           <button
             onClick={exportCleanedPdf}
-            disabled={!file || bulkBusy}
-            style={tbBtn(false, { small: true, disabled: !file || bulkBusy })}
+            disabled={!file || isHeavyOp}
+            style={tbBtn(false, { small: true, disabled: !file || isHeavyOp })}
           >
             {bulkBusy ? '⟳' : '📑 PDF'}
           </button>
@@ -4683,13 +5513,51 @@ export default function PdfCleanStudio({
                 </span>
               </>
             )}
+            {file && (
+              <>
+                <div style={{ width: 1, height: 14, background: T.border }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <button
+                    onClick={zoomOut}
+                    title="Uzaklaştır (Ctrl+tekerlek)"
+                    aria-label="Uzaklaştır"
+                    style={zoomBtnStyle}
+                  >
+                    −
+                  </button>
+                  <button
+                    onClick={zoomReset}
+                    title="Sığdır / %100 (zoom'u sıfırla)"
+                    aria-label="Zoom'u sıfırla"
+                    style={{ ...zoomBtnStyle, width: 'auto', padding: '0 6px', minWidth: 44 }}
+                  >
+                    %{Math.round(viewZoom * 100)}
+                  </button>
+                  <button
+                    onClick={zoomIn}
+                    title="Yakınlaştır (Ctrl+tekerlek)"
+                    aria-label="Yakınlaştır"
+                    style={zoomBtnStyle}
+                  >
+                    +
+                  </button>
+                </div>
+              </>
+            )}
             <div style={{ flex: 1 }} />
             {file && <WorkflowBadge meta={currentPageWorkflow.statusMeta} compact />}
             {file && (
               <span style={{ fontSize: 11, color: T.muted }}>%{currentPageWorkflow.quality}</span>
             )}
-            <span style={{ fontSize: 11, color: T.muted }}>{status}</span>
-            {busy && <span style={{ fontSize: 11, color: T.warn }}>⟳</span>}
+            <span
+              role="status"
+              aria-live="polite"
+              aria-busy={busy || renderBusy || bulkBusy || exportBusy}
+              style={{ fontSize: 11, color: T.muted }}
+            >
+              {status}
+            </span>
+            {(busy || renderBusy) && <span style={{ fontSize: 11, color: T.warn }}>⟳</span>}
             <div style={{ width: 1, height: 14, background: T.border }} />
             <span style={{ fontSize: 11, color: T.muted }}>? = kısayollar</span>
           </div>

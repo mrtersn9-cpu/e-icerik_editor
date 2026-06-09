@@ -219,10 +219,10 @@ export function buildPdfSelectionObjects(draft, page) {
   return { objects, slots, masks, layout };
 }
 
-export function applyPdfCleaningMasks(kind, page) {
-  if (kind === 'drag-drop') {
-    return [];
-  }
+// NOT: Bu fonksiyon kasıtlı olarak boş dizi döndürür ve şu an hiçbir runtime yolundan çağrılmaz.
+// Temizleme maskeleri PdfCleanStudio tarafında (pageMasks/composePageCanvas) yönetilir; burada
+// otomatik maske ÜRETİLMEZ. İleride otomatik maskeleme eklenirse mantık buraya yazılmalı.
+export function applyPdfCleaningMasks(/* kind, page */) {
   return [];
 }
 
