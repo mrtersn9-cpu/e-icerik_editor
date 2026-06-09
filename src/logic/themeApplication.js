@@ -22,17 +22,25 @@ const GENERATED_TEMPLATE_IDS = new Set([
   SCENE_TEMPLATE_LAUNCH_PAGE_ID,
 ]);
 
-function restyleGeneratedObjectsForPreset(slide = {}, presetId = '') {
+function restyleGeneratedObjectsForPreset(slide = {}, presetId = '', options = {}) {
   const layers = getActivityLayers(slide);
   const resolvedLayerNames = buildResolvedLayerNameMap(layers, slide);
-  const readyStyled = restyleReadyButtonsForPreset(slide.objects || [], presetId);
-  return restyleAnswerLayerObjectsForPreset(readyStyled, layers, resolvedLayerNames, presetId);
+  const readyStyled = restyleReadyButtonsForPreset(slide.objects || [], presetId, options);
+  return restyleAnswerLayerObjectsForPreset(
+    readyStyled,
+    layers,
+    resolvedLayerNames,
+    presetId,
+    options
+  );
 }
 
 export function applyGeneratedThemeToActivity(activity = {}, presetId = '') {
   if (!presetId) return activity;
 
   const committed = commitMaterializedActivity(activity);
+  // Kullanıcının seçtiği global hazır-buton yazı rengi (varsa) tüm butonlara uygulanır.
+  const styleOptions = { textColor: committed.readyButtonTextColor || '' };
   const slides = getActivitySlides(committed);
   const currentSlideId = committed.currentSlideId || slides[0]?.id || '';
   const contextSlides = slides.map((slide, index) =>
@@ -62,7 +70,7 @@ export function applyGeneratedThemeToActivity(activity = {}, presetId = '') {
       });
     }
 
-    const objects = restyleGeneratedObjectsForPreset(nextSlide, presetId);
+    const objects = restyleGeneratedObjectsForPreset(nextSlide, presetId, styleOptions);
     return normalizeSlide(
       {
         ...nextSlide,

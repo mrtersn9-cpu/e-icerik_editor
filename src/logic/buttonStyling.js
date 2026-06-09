@@ -586,9 +586,14 @@ function getReadyButtonTone(object = {}) {
 function getButtonPackageTone(object = {}) {
   if (object?.type !== 'button') return '';
   if (object.readyButtonTone) return object.readyButtonTone;
-  if (object.sceneTemplateDemoAction === 'toggle-play-pause') return 'warning';
-  if (object.sceneTemplateDemoAction === 'toggle-mute') return 'neutral';
-  return getReadyButtonTone(object) || 'primary';
+  // Ses/oynat-duraklat demo butonları da tema rengi alır (getReadyButtonTone ile tutarlı).
+  // Eskiden 'neutral'/'warning' verip tema değişiminde koyu/turuncu kalıyorlardı.
+  if (
+    object.sceneTemplateDemoAction === 'toggle-play-pause' ||
+    object.sceneTemplateDemoAction === 'toggle-mute'
+  )
+    return 'theme';
+  return getReadyButtonTone(object) || 'theme';
 }
 
 function shouldRestyleReadyButton(object = {}) {
@@ -690,12 +695,14 @@ function buildReadyButtonStyleFromPackage(pkgId, tone = 'primary', object = {}) 
 
 function restyleReadyButtonsForPreset(
   objects = [],
-  presetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID
+  presetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
+  options = {}
 ) {
   const stylePreset =
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
   const motion = stylePreset?.motion || {};
+  const textColor = String(options.textColor || '').trim();
   const list = objects || [];
   const byId = new Map(list.map((item) => [item?.id, item]));
   return list.map((object) => {
@@ -727,6 +734,7 @@ function restyleReadyButtonsForPreset(
         ...(object.style || {}),
         ...built,
         ...(keepRound ? { borderRadius: prevRadius } : {}),
+        ...(textColor ? { color: textColor } : {}),
       },
       ...(motion ? { buttonMotion: { ...motion } } : {}),
     };
@@ -802,8 +810,10 @@ function restyleAnswerLayerObjectsForPreset(
   objects = [],
   layers = [],
   resolvedLayerNames = {},
-  presetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID
+  presetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
+  options = {}
 ) {
+  const buttonTextColor = String(options.textColor || '').trim();
   const preset =
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
@@ -830,17 +840,19 @@ function restyleAnswerLayerObjectsForPreset(
       key.includes('geri')
     );
   };
-  const buttonTone = (object = {}, layerKey = 'normal') => {
+  const buttonTone = (object = {}) => {
     const action = String(object.runtimeAction || '').toLowerCase();
     const labelKey = normalizeRuntimeActionLabel(object.label || object.text || '');
+    // Sabit kırmızı: kapat/× , yeniden başlat / tekrarla
     if (
       isCloseLike(object) ||
       action === 'restart' ||
       labelKey.includes('yeniden') ||
-      labelKey.includes('tekrar')
+      labelKey.includes('tekrar') ||
+      labelKey.includes('retry')
     )
       return 'danger';
-    if (action === 'toggle-mute') return 'neutral';
+    // Sabit yeşil: tamamla / çözümü göster
     if (
       action === 'complete' ||
       action === 'show-answer' ||
@@ -848,10 +860,8 @@ function restyleAnswerLayerObjectsForPreset(
       labelKey.includes('tamam')
     )
       return 'success';
-    if (layerKey === 'menu' && (labelKey.includes('restart') || labelKey.includes('baslat')))
-      return 'warning';
-    if (layerKey === 'menu') return 'primary';
-    return layerKey === 'correct' ? 'success' : layerKey === 'incorrect' ? 'danger' : 'warning';
+    // Geri kalan tüm kontrol butonları (ses, menü, başlat, ileri/geri vb.) → tema rengi
+    return 'theme';
   };
   const restyleButton = (object, layerKey) => {
     const tone = object.readyButtonTone || buttonTone(object, layerKey);
@@ -879,6 +889,7 @@ function restyleAnswerLayerObjectsForPreset(
         ...layerButtonStyle,
         fontWeight: 900,
         textAlign: 'center',
+        ...(buttonTextColor ? { color: buttonTextColor } : {}),
       },
     };
   };

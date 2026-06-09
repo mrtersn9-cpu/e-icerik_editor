@@ -575,6 +575,8 @@ function createDefaultActivitySlides() {
 function createActivity(name, type = 'selection') {
   const defaultSlides = createDefaultActivitySlides();
   const firstSlide = defaultSlides[0];
+  // Varsayılan tema: Lise/Akademik Mavi — buton paketi 'Akademik' (pkg-6) + cevap stili 'aurora-glass'.
+  const defaultPkg = BUTTON_PACKAGES.find((pkg) => pkg.id === 'pkg-6') || BUTTON_PACKAGES[0];
   const base = {
     id: uid(),
     name,
@@ -584,8 +586,9 @@ function createActivity(name, type = 'selection') {
     sceneTemplateId: firstSlide.sceneTemplateId,
     sceneTemplatePresetId: firstSlide.sceneTemplatePresetId,
     sceneTemplateVersion: firstSlide.sceneTemplateVersion,
-    buttonPackageId: BUTTON_PACKAGES[0].id,
-    buttonAnimationProfileId: BUTTON_PACKAGES[0]?.animationProfileId || 'calmLift',
+    buttonPackageId: defaultPkg.id,
+    buttonAnimationProfileId: defaultPkg?.animationProfileId || 'calmLift',
+    answerLayerStylePresetId: 'aurora-glass',
     contentLanguage: 'tr',
     stageWidth: firstSlide.stageWidth,
     stageHeight: firstSlide.stageHeight,

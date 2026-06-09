@@ -836,13 +836,10 @@ function buildLaunchPageSceneTemplate(
         fontSize: iconFontSize,
         runtimeAction: button.runtimeAction || 'none',
         buttonRadius: 999,
+        // Arka plan/renk sabitlenmez: ikon dairesi kendi tonundan (theme) stillenir,
+        // böylece tema değişiminde butonla birlikte yeniden renklenir (#7).
         style: {
           ...(options.style || {}),
-          background: options.background || button.style?.background,
-          borderColor: options.borderColor || button.style?.borderColor,
-          color: options.color || button.style?.color,
-          borderWidth: Math.max(2, Number(button.style?.borderWidth || 2)),
-          boxShadow: button.style?.boxShadow,
           padding: 0,
           lineHeight: 1,
         },
@@ -1196,13 +1193,8 @@ function buildLaunchPageSceneTemplate(
   };
   const drawVisualLaunchStage = () => {
     const profile = launchProfiles[preset?.id || ''] || launchProfiles['rose-editorial'];
-    const outerX = u(112);
-    const outerY = u(92, 'y');
-    const outerW = stageWidth - u(224);
-    const outerH = stageHeight - u(184, 'y');
-    const panelX = outerX + u(132);
-    const panelY = outerY + u(185, 'y');
-    const panelW = outerW - u(264);
+    // Sadeleştirilmiş intro: yalnızca buton konumları için gereken koordinatlar kaldı.
+    const panelY = u(92, 'y') + u(185, 'y');
     const panelH = u(330, 'y');
     const buttonY = panelY + Math.round((panelH - u(106, 'y')) / 2);
     const buttonW = profile.buttons === 'cards' ? u(470) : u(500);
@@ -1224,61 +1216,10 @@ function buildLaunchPageSceneTemplate(
         borderColor: 'transparent',
       },
     });
-    pushShape({
-      x: outerX,
-      y: outerY,
-      width: outerW,
-      height: outerH,
-      style: {
-        background: 'rgba(255,255,255,.12)',
-        borderColor: 'rgba(255,255,255,.35)',
-        borderWidth: 1,
-        borderRadius: panelRadius + 28,
-        boxShadow: 'inset 0 2px 0 rgba(255,255,255,.3), 0 32px 70px rgba(15,23,42,.22)',
-      },
-    });
-    drawDecorativeSide(profile, outerX, outerY, outerW, outerH);
-    pushShape({
-      x: panelX,
-      y: panelY,
-      width: panelW,
-      height: panelH,
-      style: {
-        background: profile.panel,
-        borderColor: 'rgba(255,255,255,.58)',
-        borderWidth: 2,
-        borderRadius: panelRadius + 18,
-        boxShadow: `${surfaceShadow}, inset 0 2px 0 rgba(255,255,255,.62), inset 0 -10px 0 rgba(15,23,42,.06)`,
-      },
-    });
-    pushShape({
-      x: panelX + u(58),
-      y: panelY + u(42, 'y'),
-      width: panelW - u(116),
-      height: u(18, 'y'),
-      style: {
-        background: profile.rail,
-        borderColor: 'transparent',
-        borderWidth: 0,
-        borderRadius: 999,
-        boxShadow: '0 12px 24px rgba(15,23,42,.14)',
-      },
-    });
-    pushShape({
-      x: panelX + u(58),
-      y: panelY + panelH - u(60, 'y'),
-      width: panelW - u(116),
-      height: u(18, 'y'),
-      style: {
-        background: profile.rail,
-        borderColor: 'transparent',
-        borderWidth: 0,
-        borderRadius: 999,
-        boxShadow: '0 12px 24px rgba(15,23,42,.14)',
-      },
-    });
+    // Etkinlik girişi sadeleştirildi (#11): yalnızca 2 buton kalsın. Dış çerçeve,
+    // dekoratif yan şeritler, iç panel ve rail çizgileri kaldırıldı; sade zemin yeterli.
 
-    const introTone = profile.buttons === 'console' ? 'neutral' : 'soft';
+    const introTone = 'theme';
     assignIntroButton(
       pushButton(introLabel, firstX, buttonY, buttonW, buttonH, introTone, {
         fontSize: profile.buttons === 'arcade' ? 25 : 24,
