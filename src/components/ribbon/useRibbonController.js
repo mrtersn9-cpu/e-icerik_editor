@@ -298,6 +298,14 @@ export default function useRibbonController({
         object.showPlayerControls = false;
         object.autoPlay = true;
         object.mediaEndAction = 'none';
+        // Articulate gibi: küçük hoparlör ikonu, sahne DIŞINA (sağ üst pasteboard).
+        const sw = Number(activity.stageWidth) || 1920;
+        const audioCount = (activity.objects || []).filter((it) => it.type === 'audio').length;
+        object.width = 56;
+        object.height = 56;
+        object.x = sw + 24;
+        object.y = 24 + audioCount * 70;
+        object.isOffstageAudio = true;
         commitRibbonObject(object);
       }),
     [activity, commitRibbonObject, selectLocalFile]

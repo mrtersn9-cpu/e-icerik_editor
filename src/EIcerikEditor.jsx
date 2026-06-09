@@ -1903,8 +1903,15 @@ export default function EIcerikEditor() {
       } else if (modKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         const a = history.present;
+        const act = a.activities.find((x) => x.id === a.selActId);
+        const curLayer = act?.activeLayerId || 'base';
+        // Yalnızca görünür ve AKTİF katmandaki ögeleri seç (gizli/diğer katman hariç)
         setSelectedIds(
-          new Set((a.activities.find((x) => x.id === a.selActId)?.objects || []).map((o) => o.id))
+          new Set(
+            (act?.objects || [])
+              .filter((o) => o.visible !== false && (o.layerId || 'base') === curLayer)
+              .map((o) => o.id)
+          )
         );
       } else if (e.key === 'Escape') {
         if (canvasExpanded) {

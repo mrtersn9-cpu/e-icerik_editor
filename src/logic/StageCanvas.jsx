@@ -457,6 +457,15 @@ const StageCanvas = forwardRef(function StageCanvas(
       o.mediaEndAction = 'none';
       o.zIndex = nextTopZIndex(objs);
       o.layerId = a.activeLayerId || 'base';
+      // Articulate gibi: sahne içine büyük oynatıcı koyma — küçük hoparlör ikonu olarak
+      // sahne DIŞINA (gri pasteboard, sağ üst) yerleştir.
+      const sw = Number(a.stageWidth) || 1920;
+      const audioCount = objs.filter((item) => item.type === 'audio').length;
+      o.width = 56;
+      o.height = 56;
+      o.x = sw + 24;
+      o.y = 24 + audioCount * 70;
+      o.isOffstageAudio = true;
       onUpdate({
         ...a,
         objects: [...objs, o],
@@ -538,6 +547,10 @@ const StageCanvas = forwardRef(function StageCanvas(
     const a = latestRef.current;
     const existingObjects = a.objects || [];
     const existingTimeline = getActivityTimeline(a);
+    const pasteSw = Number(a.stageWidth) || 1920;
+    const pasteSh = Number(a.stageHeight) || 1080;
+    const pastePadX = pasteSw * 0.75;
+    const pastePadY = pasteSh * 0.75;
     const targetLayerIds = new Set((a.layers || []).map((layer) => layer.id).filter(Boolean));
     if (!targetLayerIds.size) targetLayerIds.add('base');
     const fallbackLayerId = targetLayerIds.has(a.activeLayerId) ? a.activeLayerId : 'base';
@@ -565,10 +578,14 @@ const StageCanvas = forwardRef(function StageCanvas(
         id: newId,
         groupId: sourceGroupId ? groupIdMap.get(sourceGroupId) : item.groupId || '',
         ...(sourceHoverGroup ? { linkedHoverGroup: hoverGroupIdMap.get(sourceHoverGroup) } : {}),
-        linkedActionTargetId: idMap.get(item.linkedActionTargetId) || item.linkedActionTargetId || '',
+        // Bağ yalnız kopyalananlar arasındaysa yeni id'ye eşlenir; değilse temizlenir
+        // (kopya, orijinalin hedefini kontrol etmesin).
+        linkedActionTargetId: idMap.has(item.linkedActionTargetId)
+          ? idMap.get(item.linkedActionTargetId)
+          : '',
         layerId: targetLayerIds.has(item.layerId || 'base') ? item.layerId || 'base' : fallbackLayerId,
-        x: Math.max(0, (Number(item.x) || 0) + 24),
-        y: Math.max(0, (Number(item.y) || 0) + 24),
+        x: clamp(Math.round((Number(item.x) || 0) + 24), -pastePadX, pasteSw + pastePadX),
+        y: clamp(Math.round((Number(item.y) || 0) + 24), -pastePadY, pasteSh + pastePadY),
         zIndex: existingObjects.length + index + 1,
         style: item.style ? { ...item.style } : item.style,
       };
@@ -588,8 +605,9 @@ const StageCanvas = forwardRef(function StageCanvas(
       objects: nextObjects,
       timeline: [...existingTimeline, ...duplicatedTimeline],
     });
-    const lastId = duplicatedObjects[duplicatedObjects.length - 1]?.id || null;
-    onUpdate({ ...a, objects: nextObjects, selectedObjectId: lastId, timeline: nextTimeline });
+    // Birincil seçim ilk yapıştırılan öge olsun (seçim setiyle tutarlı; eskiden son ögeydi).
+    const primaryId = duplicatedObjects[0]?.id || null;
+    onUpdate({ ...a, objects: nextObjects, selectedObjectId: primaryId, timeline: nextTimeline });
     onSelectionChange(newSelection);
     return true;
   }, [clipboardRef, onSelectionChange, onUpdate]);
@@ -599,29 +617,37 @@ const StageCanvas = forwardRef(function StageCanvas(
     pasteClipboard();
   }, [copySelected, pasteClipboard]);
 
-  const bringFront = useCallback(() => {
-    const a = latestRef.current;
-    const id = a.selectedObjectId;
-    if (!id) return;
-    onUpdate({
-      ...a,
-      objects: (a.objects || []).map((o) =>
-        o.id === id ? { ...o, zIndex: nextTopZIndex(a.objects) } : o
-      ),
-    });
-  }, [onUpdate]);
-
-  const sendBack = useCallback(() => {
-    const a = latestRef.current;
-    const id = a.selectedObjectId;
-    if (!id) return;
-    onUpdate({
-      ...a,
-      objects: (a.objects || []).map((o) =>
-        o.id === id ? { ...o, zIndex: 1 } : { ...o, zIndex: o.zIndex + 1 }
-      ),
-    });
-  }, [onUpdate]);
+  // Seçili öge(ler)i mevcut göreli sıralarını koruyarak en üste/alta taşı.
+  // Diğer ögelerin zIndex'i değişmez (eski sendBack hepsini +1 kaydırıp düzeni bozuyordu).
+  const reorderSelectionZ = useCallback(
+    (toFront) => {
+      const a = latestRef.current;
+      const ids = latestSelectedIdsRef.current;
+      const targetIds =
+        ids.size > 0 ? ids : a.selectedObjectId ? new Set([a.selectedObjectId]) : new Set();
+      if (targetIds.size === 0) return;
+      const objs = a.objects || [];
+      if (!objs.length) return;
+      const zVals = objs.map((o) => Number(o.zIndex) || 0);
+      const maxZ = Math.max(...zVals);
+      const minZ = Math.min(...zVals);
+      const selectedSorted = objs
+        .filter((o) => targetIds.has(o.id))
+        .sort((x, y) => (Number(x.zIndex) || 0) - (Number(y.zIndex) || 0));
+      if (!selectedSorted.length) return;
+      const newZ = new Map();
+      selectedSorted.forEach((o, i) => {
+        newZ.set(o.id, toFront ? maxZ + 1 + i : minZ - selectedSorted.length + i);
+      });
+      onUpdate({
+        ...a,
+        objects: objs.map((o) => (newZ.has(o.id) ? { ...o, zIndex: newZ.get(o.id) } : o)),
+      });
+    },
+    [onUpdate]
+  );
+  const bringFront = useCallback(() => reorderSelectionZ(true), [reorderSelectionZ]);
+  const sendBack = useCallback(() => reorderSelectionZ(false), [reorderSelectionZ]);
 
   const nudge = useCallback(
     (dx, dy) => {
@@ -880,6 +906,17 @@ const StageCanvas = forwardRef(function StageCanvas(
         if (handle.includes('n')) {
           next.y = Math.max(0, Math.min(s.y + dy, b - MIN));
           next.height = Math.max(MIN, b - next.y);
+        }
+        // Shift: en-boy oranını koru (Illustrator gibi orantılı boyutlandır)
+        if (me.shiftKey) {
+          const aspect = s.height > 0 ? s.width / s.height : 1;
+          const dw = Math.abs(next.width - s.width);
+          const dh = Math.abs(next.height - s.height);
+          if (dw >= dh) next.height = Math.max(MIN, Math.round(next.width / aspect));
+          else next.width = Math.max(MIN, Math.round(next.height * aspect));
+          // Sabit kenarı (resize ankrajı) koru: w/n tutamaçlarında sağ/alt kenar sabittir
+          next.x = handle.includes('w') ? r - next.width : s.x;
+          next.y = handle.includes('n') ? b - next.height : s.y;
         }
         const nextPatch =
           obj.generatedBy === 'answer-placement'
@@ -1669,7 +1706,8 @@ const StageCanvas = forwardRef(function StageCanvas(
                           if (['button', 'text', 'shape'].includes(o.type) && !o.iconSvg) {
                             e.preventDefault();
                             e.stopPropagation();
-                            selectObjectById(o.id);
+                            // Sağ tık ile tutarlı: zaten seçili değilse tekile indir
+                            if (!selectedIds.has(o.id)) selectObjectById(o.id);
                             setEditingObjectId(o.id);
                           }
                         }
@@ -1839,19 +1877,40 @@ const StageCanvas = forwardRef(function StageCanvas(
                       }}
                     />
                   ) : o.type === 'audio' && o.mediaUrl ? (
-                    <div
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '0 12px',
-                        background: 'linear-gradient(135deg,#f8fbff,#e0f2fe)',
-                        color: '#0f172a',
-                        border: '1px solid rgba(14,165,233,.35)',
-                      }}
-                    >
+                    o.isOffstageAudio ||
+                    (Number(o.width) <= 80 && Number(o.height) <= 80) ? (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg,#38bdf8,#0ea5e9)',
+                          color: '#ffffff',
+                          border: '1px solid rgba(14,165,233,.55)',
+                          boxShadow: '0 8px 18px rgba(14,165,233,.35)',
+                          fontSize: Math.max(16, 22 * scale),
+                        }}
+                        title={o.label || 'Ses'}
+                      >
+                        🔊︎
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '0 12px',
+                          background: 'linear-gradient(135deg,#f8fbff,#e0f2fe)',
+                          color: '#0f172a',
+                          border: '1px solid rgba(14,165,233,.35)',
+                        }}
+                      >
                       <div
                         style={{
                           width: 34,
@@ -1890,7 +1949,8 @@ const StageCanvas = forwardRef(function StageCanvas(
                           Sahne dışı ses
                         </div>
                       </div>
-                    </div>
+                      </div>
+                    )
                   ) : o.type === 'custom-widget' ? (
                     widgetSrc ? (
                       <WidgetHost

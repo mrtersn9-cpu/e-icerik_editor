@@ -30,7 +30,17 @@ export function getEditorLinkedSelectionIds(activity = {}, objectId = '') {
   const layerId = current.layerId || 'base';
   const linkedActionTargetId = String(current.linkedActionTargetId || '').trim();
   const linkedHoverGroup = String(current.linkedHoverGroup || '').trim();
+  const groupId = String(current.groupId || '').trim();
   const selectionIds = new Set([current.id]);
+
+  // Kullanıcı gruplaması: aynı groupId'li ögeler birlikte seçilir/taşınır (gruplama
+  // komutu groupId atıyor ama eskiden seçim mantığı groupId'yi hiç kullanmıyordu).
+  if (groupId) {
+    objects.forEach((item) => {
+      if ((item.layerId || 'base') !== layerId) return;
+      if (String(item.groupId || '').trim() === groupId) selectionIds.add(item.id);
+    });
+  }
 
   if (linkedActionTargetId) {
     objects.forEach((item) => {
