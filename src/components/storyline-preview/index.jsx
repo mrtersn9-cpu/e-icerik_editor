@@ -3229,6 +3229,10 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
             : null,
         },
       });
+      // Kapasite/yer değiştirme (swap) kuralları paylaşılan runtime core'unda
+      // (storylineRendererAttachDragDrop) uygulanır; burada yalnızca core'un
+      // runtime durumunu React state'ine aynalıyoruz. Böylece önizleme ile
+      // SCORM çıktısı birebir aynı davranır.
       persistentDropAssignmentsRef.current = {
         ...(persistentDropAssignmentsRef.current || {}),
         [previewScopeKey]: {

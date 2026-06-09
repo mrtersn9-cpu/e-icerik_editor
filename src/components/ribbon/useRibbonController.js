@@ -426,7 +426,12 @@ export default function useRibbonController({
     updateActivity({
       ...activity,
       objects: (activity.objects || []).map((item) =>
-        targetIds.has(item.id) ? { ...item, groupId: '' } : item
+        // Sadece groupId değil; hazır ikon/etiket butonları linkedHoverGroup ve
+        // linkedActionTargetId ile bağlı. Grubu gerçekten çözebilmek (öğeleri
+        // ayrı ayrı sürükleyebilmek) için bu bağları da temizliyoruz.
+        targetIds.has(item.id)
+          ? { ...item, groupId: '', linkedHoverGroup: '', linkedActionTargetId: '' }
+          : item
       ),
     });
     setSelectedIds(new Set(targetIds));

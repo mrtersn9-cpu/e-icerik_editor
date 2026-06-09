@@ -99,7 +99,7 @@ export default function ActivityStructureTree({
               disabled={slides.length <= 1}
               icon="delete"
               label="Sahne sil"
-              onClick={onDeleteSlide}
+              onClick={() => onDeleteSlide?.()}
               tone={mapChrome.danger}
             />
           </div>
@@ -156,6 +156,13 @@ export default function ActivityStructureTree({
                   event.preventDefault();
                   setEditingSlideId(slide.id);
                   setEditingSlideKey((value) => value + 1);
+                }
+                if (event.key === 'Delete' || event.key === 'Backspace') {
+                  // Slayt ağacına odaklıyken Delete bu slaytı siler; global canvas
+                  // silme işleyicisine düşmemesi için propagasyonu durdururuz.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (slides.length > 1) onDeleteSlide?.(slide.id);
                 }
               }}
               style={{

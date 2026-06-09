@@ -348,34 +348,90 @@ export function FormatRightPanelContent({ controller }) {
         'Tıklama görevi yok';
 
   if (isMultiSelection) {
+    // Toplu seçimde de tekli seçimdeki (mantıklı olan) tüm biçim kontrollerini
+    // sunarız. Alanlar, seçimdeki ilk öğenin gerçek değerlerini yansıtır; değişiklik
+    // tüm seçili öğelere uygulanır (patchObject/patchStyle -> applyRibbonObjectPatch
+    // zaten tüm hedeflere yazar). Etikete/alt metne/tetikleyici hedefine gibi
+    // öğeye özgü alanlar toplu seçimde mantıksız olduğundan dışarıda bırakılır.
+    const multi = selectedObjects[0] || {};
+    const multiStyle = multi.style || {};
+    const num = (val, fallback) => (Number.isFinite(Number(val)) ? Number(val) : fallback);
+    const multiOpacityPct = Math.round((multi.opacity ?? multiStyle.opacity ?? 1) * 100);
     return (
       <>
-        <PanelCard title="1. Toplu görünüm" collapsible>
+        <PanelCard title="1. Genel" collapsible>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <FieldLabel>
+              Layer
+              <NativeSelect
+                value={multi.layerId || activity.activeLayerId || 'base'}
+                options={layers.map((layer, index) => ({
+                  value: layer.id,
+                  label:
+                    resolvedNames[layer.id] ||
+                    (layer.kind === 'base' ? 'Base Layer' : layer.name || `Layer ${index + 1}`),
+                }))}
+                onChange={(value) => patchObject({ layerId: value })}
+              />
+            </FieldLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+              <ToggleRow label="Görünür" checked={multi.visible !== false} onChange={(checked) => patchObject({ visible: checked })} />
+              <ToggleRow label="Kilitli" checked={!!multi.locked} onChange={(checked) => patchObject({ locked: checked })} />
+            </div>
+          </div>
+        </PanelCard>
+
+        <PanelCard title="2. Konum ve boyut" collapsible>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+            <FieldLabel>
+              X
+              <NumberInput value={Math.round(num(multi.x, 0))} onChange={(value) => patchObject({ x: value })} />
+            </FieldLabel>
+            <FieldLabel>
+              Y
+              <NumberInput value={Math.round(num(multi.y, 0))} onChange={(value) => patchObject({ y: value })} />
+            </FieldLabel>
+            <FieldLabel>
+              Genişlik
+              <NumberInput value={Math.round(num(multi.width, 1))} onChange={(value) => patchObject({ width: Math.max(1, value || 1) })} />
+            </FieldLabel>
+            <FieldLabel>
+              Yükseklik
+              <NumberInput value={Math.round(num(multi.height, 1))} onChange={(value) => patchObject({ height: Math.max(1, value || 1) })} />
+            </FieldLabel>
+            <FieldLabel>
+              Döndürme
+              <NumberInput value={Math.round(num(multi.rotation, 0))} onChange={(value) => patchObject({ rotation: value })} />
+            </FieldLabel>
+          </div>
+        </PanelCard>
+
+        <PanelCard title="3. Görsel stil" collapsible>
           <div style={{ display: 'grid', gap: 7 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
               <FieldLabel>
                 Metin rengi
-                <ColorInput value="#111827" onChange={(value) => commands.setObjectStyle?.({ color: value })} />
+                <ColorInput value={multiStyle.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
               </FieldLabel>
               <FieldLabel>
                 Zemin
-                <ColorInput value="#ffffff" onChange={(value) => commands.setObjectStyle?.({ background: value })} />
+                <ColorInput value={multiStyle.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
               </FieldLabel>
               <FieldLabel>
                 Font
-                <NumberInput value={16} onChange={(value) => commands.setObjectStyle?.({ fontSize: value })} />
+                <NumberInput value={num(multiStyle.fontSize ?? multi.fontSize, 16)} onChange={(value) => patchStyle({ fontSize: value })} />
               </FieldLabel>
               <FieldLabel>
                 Radius
-                <NumberInput value={8} onChange={(value) => commands.setObjectStyle?.({ borderRadius: value })} />
+                <NumberInput value={num(multiStyle.borderRadius, 0)} onChange={(value) => patchStyle({ borderRadius: value })} />
               </FieldLabel>
               <FieldLabel>
                 Kenar
-                <NumberInput value={1} onChange={(value) => commands.setObjectStyle?.({ borderWidth: value })} />
+                <NumberInput value={num(multiStyle.borderWidth, 0)} onChange={(value) => patchStyle({ borderWidth: value })} />
               </FieldLabel>
               <FieldLabel>
                 Kenar rengi
-                <ColorInput value="#cbd5e1" onChange={(value) => commands.setObjectStyle?.({ borderColor: value })} />
+                <ColorInput value={multiStyle.borderColor || '#cbd5e1'} onChange={(value) => patchStyle({ borderColor: value })} />
               </FieldLabel>
             </div>
             <ButtonGrid
@@ -388,7 +444,46 @@ export function FormatRightPanelContent({ controller }) {
             />
           </div>
         </PanelCard>
-        <PanelCard title="2. Hizala ve düzenle" collapsible>
+
+        <PanelCard title="3.5 Görünürlük ve efektler" collapsible>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <FieldLabel>
+              Opaklık (%)
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={multiOpacityPct}
+                  onChange={(e) => patchStyle({ opacity: Number(e.target.value) / 100 })}
+                  style={{ width: '100%', accentColor: '#2563eb' }}
+                />
+                <NumberInput
+                  value={multiOpacityPct}
+                  onChange={(value) => patchStyle({ opacity: Math.max(0, Math.min(100, Number(value) || 0)) / 100 })}
+                />
+              </div>
+            </FieldLabel>
+            <FieldLabel>
+              Filtre
+              <NativeSelect
+                value={currentFilterOption(multiStyle.filter)}
+                options={filterOptions}
+                onChange={(value) => patchStyle({ filter: value === 'none' ? '' : value })}
+              />
+            </FieldLabel>
+            <FieldLabel>
+              Gölge
+              <NativeSelect
+                value={currentShadowOption(multiStyle.boxShadow)}
+                options={shadowPresets}
+                onChange={(value) => patchStyle({ boxShadow: value === 'none' ? '' : value })}
+              />
+            </FieldLabel>
+          </div>
+        </PanelCard>
+
+        <PanelCard title="4. Hizala ve düzenle" collapsible>
           <ButtonGrid
             actions={[
               { label: 'Sola Hizala', onClick: () => commands.align?.('left') },
@@ -402,7 +497,8 @@ export function FormatRightPanelContent({ controller }) {
             ]}
           />
         </PanelCard>
-        <PanelCard title="3. Seçim özeti" collapsible>
+
+        <PanelCard title="5. Seçim özeti" collapsible>
           {selectedObjects.slice(0, 10).map((item, index) => (
             <InspectorRow
               key={item.id}

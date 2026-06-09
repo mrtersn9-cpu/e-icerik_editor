@@ -734,17 +734,9 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
     });
     retryIcon.linkedActionTargetId = retryLabel.id;
     retryLabel.linkedActionTargetId = retryLabel.id;
-    if (introSlideId) {
-      generatedTriggers.push({
-        ...createTriggerItem(generatedTriggers.length),
-        when: 'onClick',
-        target: retryLabel.id,
-        action: 'SliderGec',
-        value: introSlideId,
-        name: 'Tekrar dene görevi',
-        generatedBy: 'answer-template',
-      });
-    }
+    // "Tekrar dene" yalnızca runtimeAction:'restart' kullanır; bu, başka slayta
+    // gitmek yerine mevcut slaytın denemesini sıfırlayıp base layer'a döner.
+    // Eski SliderGec (Sahneye Geç) tetikleyicisi kasıtlı olarak eklenmiyor.
   };
 
   const pushNormalPopupTemplate = (layerId) => {
@@ -815,7 +807,8 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
         label: tx.restart,
         runtimeAction: 'restart',
         tone: 'warning',
-        trigger: introSlideId ? { action: 'SliderGec', value: introSlideId } : null,
+        // restart base layer'a döner; navigasyon tetikleyicisi yok.
+        trigger: null,
       },
       {
         icon: '🔊',
@@ -906,7 +899,8 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           icon: themeIcons.restart || '↻',
           width: 240,
           runtimeAction: 'restart',
-          trigger: introSlideId ? { action: 'SliderGec', value: introSlideId } : null,
+          // restart base layer'a döner; navigasyon tetikleyicisi yok.
+          trigger: null,
         },
       ],
     });
@@ -931,8 +925,9 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           tone: 'danger',
           icon: themeIcons.restart || '↻',
           width: 250,
+          // restart base layer'a döner; navigasyon tetikleyicisi yok.
           runtimeAction: 'restart',
-          trigger: introSlideId ? { action: 'SliderGec', value: introSlideId } : null,
+          trigger: null,
         },
       ],
     });

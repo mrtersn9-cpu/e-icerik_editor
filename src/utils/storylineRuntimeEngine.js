@@ -330,14 +330,32 @@ export function findStorylineRuntimeDropTarget({
   const compatibleDrops = (drops || []).filter(isStorylineRuntimeDropTargetLikeObject);
 
   if (Number.isFinite(pointerX) && Number.isFinite(pointerY)) {
-    const pointerDrop = compatibleDrops.find(
+    // İmleç doğrudan bir hedefin içindeyse onu seç. Komşu/yakın hedeflerde yanlış
+    // hedefe bırakmayı önlemek için isabet alanını genişletmiyoruz; birden çok
+    // hedef üst üste biniyorsa merkezi imlece en yakın olanı seçeriz. Gevşeklik,
+    // aşağıdaki "öğe merkezi içerme" ve "en yakın hedef" geri dönüşleriyle sağlanır.
+    const pointerDrops = compatibleDrops.filter(
       (drop) =>
-        pointerX >= (Number(drop.x) || 0) - dragW * 0.45 &&
-        pointerX <= (Number(drop.x) || 0) + (Number(drop.width) || 0) + dragW * 0.45 &&
-        pointerY >= (Number(drop.y) || 0) - dragH * 0.45 &&
-        pointerY <= (Number(drop.y) || 0) + (Number(drop.height) || 0) + dragH * 0.45
+        pointerX >= (Number(drop.x) || 0) &&
+        pointerX <= (Number(drop.x) || 0) + (Number(drop.width) || 0) &&
+        pointerY >= (Number(drop.y) || 0) &&
+        pointerY <= (Number(drop.y) || 0) + (Number(drop.height) || 0)
     );
-    if (pointerDrop) return pointerDrop;
+    if (pointerDrops.length === 1) return pointerDrops[0];
+    if (pointerDrops.length > 1) {
+      let bestPointerDrop = null;
+      let bestPointerDist = Infinity;
+      pointerDrops.forEach((drop) => {
+        const cx = (Number(drop.x) || 0) + (Number(drop.width) || 0) / 2;
+        const cy = (Number(drop.y) || 0) + (Number(drop.height) || 0) / 2;
+        const dist = Math.hypot(pointerX - cx, pointerY - cy);
+        if (dist < bestPointerDist) {
+          bestPointerDist = dist;
+          bestPointerDrop = drop;
+        }
+      });
+      return bestPointerDrop;
+    }
   }
 
   const dragCenterX = x + dragW / 2;
@@ -443,13 +461,17 @@ export function evaluateStorylineRuntimeDragDrop({
   const placements = Object.entries(assignments)
     .filter(([dragKey, dropKey]) => dragKey && dropKey)
     .map(([dragKey, dropKey]) => {
-      const drag = byKey[dragKey] || byId[dragKey] || null;
+      // "Aynı öğe çoklu hedefe" klonları `${baseKey}@@${uniq}` anahtarıyla
+      // saklanır. Eşleşme için temel (base) sürüklenebilir kimliğini çözeriz;
+      // dragKey'i (klon anahtarı) ise durum/highlight için olduğu gibi tutarız.
+      const baseDragKey = dragKey.includes('@@') ? dragKey.split('@@')[0] : dragKey;
+      const drag = byKey[baseDragKey] || byId[baseDragKey] || null;
       const drop = byKey[dropKey] || byId[dropKey] || null;
       return {
         id: getStorylineDragDropPairKey(dragKey, dropKey),
         dragKey,
         dropKey,
-        dragId: drag?.id || dragKey,
+        dragId: drag?.id || baseDragKey,
         dropId: drop?.id || dropKey,
       };
     });
@@ -742,7 +764,13 @@ export function getStorylineRuntimeCommandsForAction(
   action = '',
   { slide = {}, reasonPrefix = 'runtime' } = {}
 ) {
-  if (action === 'restart') return [{ type: 'restart', reason: `${reasonPrefix}-restart-button` }];
+  if (action === 'restart')
+    // "Yeniden Başlat" butonu: başka slayta gitmek yerine mevcut slaytın
+    // denemesini sıfırlayıp base layer'a döner.
+    return [
+      { type: 'resetAttempt', reason: `${reasonPrefix}-restart-button` },
+      { type: 'setLayer', layerId: 'base' },
+    ];
   if (action === 'home') return [{ type: 'goHome', reason: `${reasonPrefix}-home-button` }];
   if (action === 'answer') {
     const layer = findRuntimeLayerByKeys(slide.layers || [], ['cevap', 'answer']);

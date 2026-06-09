@@ -58,6 +58,98 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(stage.innerHTML).toContain('data-selection-overlay="true"');
   });
 
+  test('renders clone nodes for multi-target (reusable) drag placements', () => {
+    const runtimeApi = getSharedStorylineRendererRuntimeApi();
+    const stage = document.createElement('div');
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      dragDropSettings: { allowMultipleTargetsPerDrag: true },
+      objects: [
+        { id: 'drag-1', type: 'draggable', label: 'A', x: 20, y: 30, width: 100, height: 40 },
+        { id: 'drop-a', type: 'dropzone', x: 260, y: 80, width: 120, height: 48 },
+        { id: 'drop-b', type: 'dropzone', x: 260, y: 160, width: 120, height: 48 },
+      ],
+    };
+    const state = {
+      activeLayerId: 'base',
+      hidden: {},
+      objectStates: {},
+      dragPositions: { 'drag-1@@a': { x: 270, y: 84 }, 'drag-1@@b': { x: 270, y: 164 } },
+      dropAssignments: { 'drag-1@@a': 'drop-a', 'drag-1@@b': 'drop-b' },
+      variables: {},
+      muted: false,
+    };
+
+    runtimeApi.storylineRenderSlide({ slide, state, stage, attachRuntime: false });
+
+    const clones = stage.querySelectorAll('[data-clone-of]');
+    expect(clones.length).toBe(2);
+    clones.forEach((clone) => {
+      expect(clone.dataset.cloneOf).toBe('drag-1');
+      expect(clone.dataset.objectType).toBe('draggable');
+    });
+    // Orijinal (tepsi) öğesi de hâlâ render edilmeli (yeniden sürüklenebilsin).
+    const base = Array.from(stage.querySelectorAll('[data-object-type="draggable"]')).filter(
+      (el) => !el.dataset.cloneOf
+    );
+    expect(base.length).toBe(1);
+  });
+
+  test('keeps active layer backdrop below its interactive elements', () => {
+    const runtimeApi = getSharedStorylineRendererRuntimeApi();
+    const stage = document.createElement('div');
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      layers: [
+        { id: 'base', name: 'Ana' },
+        { id: 'L1', name: 'Yanlış' },
+      ],
+      objects: [
+        // Tam sahneyi kaplayan koyu backdrop ama yüksek zIndex ile yazılmış.
+        {
+          id: 'dim-1',
+          type: 'shape',
+          shapeKind: 'rect',
+          layerId: 'L1',
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 450,
+          zIndex: 90,
+          style: { background: 'rgba(15,23,42,.45)' },
+        },
+        {
+          id: 'btn-1',
+          type: 'button',
+          label: 'TEKRAR',
+          layerId: 'L1',
+          x: 320,
+          y: 200,
+          width: 160,
+          height: 56,
+          zIndex: 2,
+        },
+      ],
+    };
+    const state = {
+      activeLayerId: 'L1',
+      hidden: {},
+      objectStates: {},
+      dragPositions: {},
+      dropAssignments: {},
+      variables: {},
+      muted: false,
+    };
+
+    runtimeApi.storylineRenderSlide({ slide, state, stage, attachRuntime: false });
+
+    const dimZ = Number(stage.querySelector('[data-object-id="dim-1"]').style.zIndex);
+    const btnZ = Number(stage.querySelector('[data-object-id="btn-1"]').style.zIndex);
+    expect(dimZ).toBeLessThan(btnZ);
+  });
+
   test('keeps duplicate draggable ids from sharing one drag position', () => {
     const renderer = loadRuntimeRenderer();
     const slide = {

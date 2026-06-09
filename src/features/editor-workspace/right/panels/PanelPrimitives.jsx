@@ -575,13 +575,44 @@ export function ToggleRow({ checked, disabled = false, hint, label, onChange }) 
 }
 
 export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
+  // Odaktayken yerel taslak tutarız: kullanıcı alanı tamamen boşaltıp kendi
+  // sayısını serbestçe yazabilsin. Aksi halde her tuşta değer dışarıdan
+  // yeniden dayatıldığı için ilk haneler silinemiyordu.
+  const [draft, setDraft] = useState(value ?? '');
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(value ?? '');
+  }, [value, focused]);
+
+  const handleChange = (event) => {
+    const raw = event.target.value;
+    setDraft(raw);
+    // Ara durumlar (boş, "-", ".") commit edilmez; kullanıcı yazmaya devam edebilir.
+    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) onChange?.(numeric);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    const numeric = Number(draft);
+    if (draft === '' || !Number.isFinite(numeric)) {
+      setDraft(value ?? '');
+    } else {
+      onChange?.(numeric);
+    }
+  };
+
   return (
     <input
       type="number"
       step={step}
-      value={value ?? ''}
+      value={focused ? draft : value ?? ''}
       disabled={disabled}
-      onChange={(event) => onChange?.(Number(event.target.value) || 0)}
+      onFocus={() => setFocused(true)}
+      onChange={handleChange}
+      onBlur={handleBlur}
       style={{
         ...controlBase,
         background: disabled ? EDITOR_THEME.lightBg : controlBase.background,

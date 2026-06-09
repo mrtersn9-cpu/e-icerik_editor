@@ -98,8 +98,11 @@ export const OBJ_PRESETS = {
     style: {
       fontSize: 0,
       color: 'transparent',
-      background: '#eee',
-      borderColor: '#ccc',
+      // Görsellerde otomatik kenarlık/zemin olmasın; kullanıcı isterse Biçim
+      // panelinden kendi ekleyip kaldırabilir.
+      background: 'transparent',
+      borderColor: 'transparent',
+      borderWidth: 0,
       borderStyle: 'solid',
       borderRadius: 6,
     },

@@ -65,17 +65,18 @@ export function upgradeStorylineDragDropStyle(type, style = {}) {
   const background = normalizeStyleToken(style.background);
   const borderColor = normalizeStyleToken(style.borderColor);
   const color = normalizeStyleToken(style.color);
+  // '#ffffff' kasıtlı olarak yok: kullanıcı açıkça beyaz seçtiyse render sırasında
+  // güçlü varsayılana (turuncu/mavi) geri döndürülmesin.
   const legacyBackgrounds =
     type === 'draggable'
       ? new Set([
           '',
           'transparent',
           '#dbeafe',
-          '#ffffff',
           'rgba(255,255,255,.14)',
           'rgba(255,255,255,.92)',
         ])
-      : new Set(['', 'transparent', '#fed7aa', '#ffffff', 'rgba(255,255,255,.92)']);
+      : new Set(['', 'transparent', '#fed7aa', 'rgba(255,255,255,.92)']);
   const legacyBorderColors =
     type === 'draggable'
       ? new Set(['', '#2563eb', '#ec4899'])

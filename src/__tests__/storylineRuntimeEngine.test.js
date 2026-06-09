@@ -480,6 +480,26 @@ describe('storyline runtime engine', () => {
     });
   });
 
+  test('resolves clone keys for multi-target drags', () => {
+    const slide = {
+      stageWidth: 800,
+      stageHeight: 450,
+      dragDropMatches: { drag1: ['drop1', 'drop2'] },
+      objects: [
+        { id: 'drag1', type: 'draggable', label: 'A', x: 20, y: 20, width: 90, height: 40 },
+        { id: 'drop1', type: 'dropzone', label: 'A', x: 300, y: 80, width: 120, height: 52 },
+        { id: 'drop2', type: 'dropzone', label: 'B', x: 300, y: 160, width: 120, height: 52 },
+      ],
+    };
+    const result = evaluateStorylineRuntimeDragDrop({
+      slide,
+      state: { dropAssignments: { 'drag1@@a': 'drop1', 'drag1@@b': 'drop2' } },
+    });
+    expect(result.success).toBe(true);
+    expect(result.placements).toHaveLength(2);
+    expect(Object.values(result.placementResult).every(Boolean)).toBe(true);
+  });
+
   test('accepts equivalent duplicate drags in group mode', () => {
     const dragDropSlide = {
       stageWidth: 800,

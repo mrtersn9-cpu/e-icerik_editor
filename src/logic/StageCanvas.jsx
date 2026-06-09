@@ -66,6 +66,17 @@ import { buildWidgetIframeSrc } from '../widgets/WidgetRegistry';
 import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
 import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
 
+// Yeni eklenen nesneye verilecek zIndex: mevcut tüm nesnelerin en üstündekinin
+// bir fazlası. Sayım (length) yerine gerçek en yüksek zIndex baz alınır; böylece
+// silme/yeniden sıralama sonrası bile yeni öğe en üstte oluşur.
+function nextTopZIndex(objects = []) {
+  const maxZ = (objects || []).reduce(
+    (max, item) => Math.max(max, Number(item?.zIndex) || 0),
+    0
+  );
+  return maxZ + 1;
+}
+
 const StageCanvas = forwardRef(function StageCanvas(
   {
     activity,
@@ -195,12 +206,12 @@ const StageCanvas = forwardRef(function StageCanvas(
   );
   const currentLayerId = canvasActivity.activeLayerId || 'base';
   const overlayLayerActive = currentLayerId !== 'base';
-  const hasExplicitLayerBackdrop = useMemo(() => {
-    if (!overlayLayerActive) return false;
-    return renderObjects.some((object) => {
-      const layerId = object.layerId || 'base';
-      if (layerId !== currentLayerId || object.type !== 'shape' || object.visible === false)
-        return false;
+  // Tam sahneyi kaplayan koyu "backdrop" (katman karartma) şekli mi? Aktif overlay
+  // katmanındaki böyle bir şekil, etkileşimli öğelerin (buton/hotspot vb.) üstünü
+  // örtmemesi için her zaman katmanın en altına yerleştirilir (aşağıdaki zIndex).
+  const isFullStageDarkBackdrop = useCallback(
+    (object) => {
+      if (!object || object.type !== 'shape' || object.visible === false) return false;
       const bg = String(object.style?.background || '').toLowerCase();
       const coversStage =
         (Number(object.x) || 0) <= 2 &&
@@ -215,14 +226,15 @@ const StageCanvas = forwardRef(function StageCanvas(
       const alphaMatch = bg.match(/rgba\([^)]*,\s*([.\d]+)\s*\)/);
       const alpha = alphaMatch ? Number(alphaMatch[1]) : 1;
       return coversStage && darkBackdrop && alpha >= 0.05;
-    });
-  }, [
-    canvasActivity.stageHeight,
-    canvasActivity.stageWidth,
-    currentLayerId,
-    overlayLayerActive,
-    renderObjects,
-  ]);
+    },
+    [canvasActivity.stageHeight, canvasActivity.stageWidth]
+  );
+  const hasExplicitLayerBackdrop = useMemo(() => {
+    if (!overlayLayerActive) return false;
+    return renderObjects.some(
+      (object) => (object.layerId || 'base') === currentLayerId && isFullStageDarkBackdrop(object)
+    );
+  }, [currentLayerId, isFullStageDarkBackdrop, overlayLayerActive, renderObjects]);
 
   const baseScale = useMemo(() => {
     return getFitScale(
@@ -328,7 +340,9 @@ const StageCanvas = forwardRef(function StageCanvas(
           : type === 'button'
             ? createButtonPresetObject(options.buttonPresetId || 'btn-blue')
             : createObjectFromActivity(a, type);
-      o.zIndex = objs.length + 1;
+      // En yüksek mevcut zIndex'in bir üstü: aktif layer içinde yüksek zIndex'li
+      // öğeler olsa bile yeni eklenen öğe daima üstte kalır.
+      o.zIndex = nextTopZIndex(objs);
       o.layerId = a.activeLayerId || 'base';
       // draggable/dropzone presets already have correct default colors — no override needed
       onUpdate({
@@ -352,7 +366,7 @@ const StageCanvas = forwardRef(function StageCanvas(
         const o = createObject('image');
         o.imageData = ev.target.result;
         o.label = file.name.replace(/\.[^.]+$/, '');
-        o.zIndex = objs.length + 1;
+        o.zIndex = nextTopZIndex(objs);
         o.layerId = a.activeLayerId || 'base';
         onUpdate({
           ...a,
@@ -377,7 +391,7 @@ const StageCanvas = forwardRef(function StageCanvas(
       o.mediaUrl = mediaUrl;
       o.mediaName = file.name;
       o.label = file.name.replace(/\.[^.]+$/, '') || 'Video';
-      o.zIndex = objs.length + 1;
+      o.zIndex = nextTopZIndex(objs);
       o.layerId = a.activeLayerId || 'base';
       onUpdate({
         ...a,
@@ -403,7 +417,7 @@ const StageCanvas = forwardRef(function StageCanvas(
       o.showPlayerControls = false;
       o.autoPlay = true;
       o.mediaEndAction = 'none';
-      o.zIndex = objs.length + 1;
+      o.zIndex = nextTopZIndex(objs);
       o.layerId = a.activeLayerId || 'base';
       onUpdate({
         ...a,
@@ -491,6 +505,7 @@ const StageCanvas = forwardRef(function StageCanvas(
     const fallbackLayerId = targetLayerIds.has(a.activeLayerId) ? a.activeLayerId : 'base';
     const idMap = new Map();
     const groupIdMap = new Map();
+    const hoverGroupIdMap = new Map();
     const newSelection = new Set();
     clipboard.objects.forEach((item) => {
       if (item?.id) idMap.set(item.id, uid());
@@ -500,10 +515,18 @@ const StageCanvas = forwardRef(function StageCanvas(
       newSelection.add(newId);
       const sourceGroupId = String(item.groupId || '').trim();
       if (sourceGroupId && !groupIdMap.has(sourceGroupId)) groupIdMap.set(sourceGroupId, uid());
+      // linkedHoverGroup'u da yeniden eşle: hazır ikon butonlar (ikon+etiket) bu
+      // alanla bağlı olduğundan, kopya eski grup kimliğini taşırsa orijinalle
+      // birleşik görünüp birlikte sürükleniyordu.
+      const sourceHoverGroup = String(item.linkedHoverGroup || '').trim();
+      if (sourceHoverGroup && !hoverGroupIdMap.has(sourceHoverGroup)) {
+        hoverGroupIdMap.set(sourceHoverGroup, `ready:copy:${uid()}`);
+      }
       return {
         ...item,
         id: newId,
         groupId: sourceGroupId ? groupIdMap.get(sourceGroupId) : item.groupId || '',
+        ...(sourceHoverGroup ? { linkedHoverGroup: hoverGroupIdMap.get(sourceHoverGroup) } : {}),
         linkedActionTargetId: idMap.get(item.linkedActionTargetId) || item.linkedActionTargetId || '',
         layerId: targetLayerIds.has(item.layerId || 'base') ? item.layerId || 'base' : fallbackLayerId,
         x: Math.max(0, (Number(item.x) || 0) + 24),
@@ -1487,7 +1510,10 @@ const StageCanvas = forwardRef(function StageCanvas(
                     justifyContent: 'center',
                     cursor: isOtherLayerObj ? 'default' : isEditorLocked ? 'pointer' : 'move',
                     userSelect: 'none',
-                    zIndex: layerBoost + Math.max(1, Number(o.zIndex) || 1),
+                    zIndex:
+                      layerBoost > 0 && isFullStageDarkBackdrop(o)
+                        ? layerBoost
+                        : layerBoost + Math.max(1, Number(o.zIndex) || 1),
                     pointerEvents: isOtherLayerObj ? 'none' : 'auto',
                     background:
                       o.imageData || usesShapeSvg ? 'transparent' : st.background || 'transparent',

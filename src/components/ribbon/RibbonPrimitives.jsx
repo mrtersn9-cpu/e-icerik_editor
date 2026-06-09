@@ -854,15 +854,48 @@ export function RibbonNumberInput({
   max,
   step,
 }) {
+  // Odaktayken yerel taslak tutarız: kullanıcı alanı tamamen boşaltıp kendi
+  // sayısını serbestçe yazabilsin. Aksi halde her tuşta değer dışarıdan
+  // (Math.round/clamp ile) yeniden dayatıldığı için ilk haneler silinemiyordu.
+  // onChange sözleşmesi event tabanlı kalır ({ target: { value } }); böylece
+  // mevcut tüm çağıranlar (event.target.value) değişmeden çalışır.
+  const [draft, setDraft] = useState(value ?? '');
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(value ?? '');
+  }, [value, focused]);
+
+  const emit = (raw) => onChange?.({ target: { value: raw } });
+
+  const handleChange = (event) => {
+    const raw = event.target.value;
+    setDraft(raw);
+    // Ara durumlar (boş, "-", ".") commit edilmez; kullanıcı yazmaya devam edebilir.
+    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+    if (Number.isFinite(Number(raw))) emit(raw);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    if (draft === '' || !Number.isFinite(Number(draft))) {
+      setDraft(value ?? '');
+    } else {
+      emit(draft);
+    }
+  };
+
   return (
     <input
       type="number"
-      value={value}
+      value={focused ? draft : value ?? ''}
       min={min}
       max={max}
       step={step}
       disabled={disabled}
-      onChange={onChange}
+      onFocus={() => setFocused(true)}
+      onChange={handleChange}
+      onBlur={handleBlur}
       style={{
         width,
         minWidth: width,

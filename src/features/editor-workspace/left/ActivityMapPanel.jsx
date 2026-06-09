@@ -276,6 +276,13 @@ export function LayerManager({ activity, onSelectionChange, onUpdateActivity }) 
                     setEditingLayerId(layerId);
                     setEditingLayerKey((value) => value + 1);
                   }
+                  if (event.key === 'Delete' || event.key === 'Backspace') {
+                    // Katman listesine odaklıyken Delete bu katmanı siler (base ve
+                    // son katman korunur); global canvas silme işleyicisine düşmesin.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!isBase && layers.length > 1) deleteLayer(layerId);
+                  }
                 }}
                 style={{
                   minHeight: 25,
@@ -432,16 +439,21 @@ export default function ActivityMapPanel({
     );
   };
 
-  const deleteSlide = () => {
+  const deleteSlide = (slideId = currentSlideId) => {
     if (!activity || slides.length <= 1) return;
+    const removeId = slideId || currentSlideId;
+    const removedIndex = slides.findIndex((slide) => slide.id === removeId);
+    if (removedIndex < 0) return;
     const nextSlides = slides
-      .filter((slide) => slide.id !== currentSlideId)
+      .filter((slide) => slide.id !== removeId)
       .map((slide, index) => normalizeSlide(slide, index));
-    const nextIndex = clamp(currentSlideIndex, 0, nextSlides.length - 1);
+    // Silinen geçerli slayt değilse seçimi koru; geçerliyse komşusunu seç.
+    const nextSelectedId =
+      removeId === currentSlideId
+        ? nextSlides[clamp(removedIndex, 0, nextSlides.length - 1)]?.id
+        : currentSlideId;
     onSelectionChange?.(new Set());
-    onUpdateActivity?.(
-      selectActivitySlide({ ...activity, slides: nextSlides }, nextSlides[nextIndex]?.id)
-    );
+    onUpdateActivity?.(selectActivitySlide({ ...activity, slides: nextSlides }, nextSelectedId));
   };
 
   const moveSlide = (direction) => {

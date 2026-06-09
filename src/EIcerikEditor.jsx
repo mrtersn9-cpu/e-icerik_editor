@@ -1437,6 +1437,10 @@ export default function EIcerikEditor() {
   const objectClipboardRef = useRef(null);
   const slideClipboardRef = useRef(null);
   const slideClipboardCommandsRef = useRef({});
+  // Klavyeyle en son kopyalanan tür ('objects' | 'slide'). Yapıştırma bu türe
+  // göre yönlendirilir; böylece nesne kopyaladıysak slaytlar arası nesne
+  // yapıştırabiliriz, slayt kopyaladıysak slayt yapıştırırız.
+  const clipboardKindRef = useRef('');
   const workspaceEntryModeRef = useRef(authState?.userId ? 'refresh' : 'anonymous');
   const presentRef = useRef(history.present);
   const currentRouteRef = useRef(routeFromSelection(history.present));
@@ -1846,11 +1850,14 @@ export default function EIcerikEditor() {
         (activity) => activity.id === history.present.selActId
       );
       const slideTreeFocused = !!ae?.closest?.('[data-slide-tree-item="true"]');
+      // Canvas'ta nesne seçiliyse kopyalama/yapıştırma her zaman nesne üzerinde
+      // çalışır. Slayt panosu yalnızca hiçbir nesne seçili değilken (slayt
+      // ağacına odaklıyken veya Sahne sekmesindeyken) devreye girer. Aksi halde
+      // (örn. slayt ağacı bayat odakta kalınca) hazır butonları kopyalarken
+      // tüm slayt kopyalanıyordu.
+      const hasObjectSelection = selectedIds.size > 0 || !!currentActivity?.selectedObjectId;
       const useSlideClipboard =
-        slideTreeFocused ||
-        (storyRibbonTab === 'scene' &&
-          selectedIds.size === 0 &&
-          !currentActivity?.selectedObjectId);
+        !hasObjectSelection && (slideTreeFocused || storyRibbonTab === 'scene');
 
       if (modKey && e.key === 'z') {
         e.preventDefault();
@@ -1875,12 +1882,21 @@ export default function EIcerikEditor() {
         canvasRef.current.deleteSelected();
       } else if (modKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
-        if (useSlideClipboard && slideClipboardCommandsRef.current.copySlide?.()) return;
-        canvasRef.current.copySelected?.();
+        if (useSlideClipboard && slideClipboardCommandsRef.current.copySlide?.()) {
+          clipboardKindRef.current = 'slide';
+          return;
+        }
+        if (canvasRef.current.copySelected?.()) clipboardKindRef.current = 'objects';
       } else if (modKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
-        if (useSlideClipboard && slideClipboardCommandsRef.current.pasteSlide?.()) return;
-        canvasRef.current.pasteClipboard?.();
+        // En son kopyalanan türe göre yapıştır. Slayt kopyalandıysa önce slaytı
+        // dene; aksi halde (nesne kopyalandıysa) nesneyi yapıştır — bu yol
+        // slaytlar arası nesne yapıştırmayı da kapsar.
+        if (clipboardKindRef.current === 'slide') {
+          if (slideClipboardCommandsRef.current.pasteSlide?.()) return;
+        }
+        if (canvasRef.current.pasteClipboard?.()) return;
+        slideClipboardCommandsRef.current.pasteSlide?.();
       } else if (modKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         canvasRef.current.duplicateSelected();

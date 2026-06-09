@@ -62,17 +62,18 @@ function upgradeDragDropStyle(type, style = {}) {
   const borderColor = normalizeStyleToken(style.borderColor);
   const color = normalizeStyleToken(style.color);
   const borderStyle = normalizeStyleToken(style.borderStyle);
+  // Not: '#ffffff' kasıtlı olarak listede yok — kullanıcı bir öğeyi açıkça beyaz
+  // yaptığında bu "legacy/boş" sayılıp güçlü varsayılana (turuncu/mavi) dönmesin.
   const legacyBackgrounds =
     type === 'draggable'
       ? new Set([
           '',
           'transparent',
           '#dbeafe',
-          '#ffffff',
           'rgba(255,255,255,.14)',
           'rgba(255,255,255,.92)',
         ])
-      : new Set(['', 'transparent', '#fed7aa', '#ffffff', 'rgba(255,255,255,.92)']);
+      : new Set(['', 'transparent', '#fed7aa', 'rgba(255,255,255,.92)']);
   const legacyBorderColors =
     type === 'draggable'
       ? new Set(['', '#2563eb', '#ec4899'])
