@@ -14,7 +14,6 @@ const RIGHT_PANEL_BY_RIBBON = {
   view: 'view',
   publish: 'publish',
   help: 'help',
-  'object-design': 'format',
   'object-format': 'format',
 };
 

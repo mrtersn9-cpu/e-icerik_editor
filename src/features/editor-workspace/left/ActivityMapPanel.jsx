@@ -178,11 +178,16 @@ export function LayerManager({ activity, onSelectionChange, onUpdateActivity }) 
     // Eskiden base'e taşınıyordu; bu yüzden silinen katmanın dim (karartma)
     // şekli ve içeriği base'e düşüp sahnede kalıyor / sahneyi karartıyordu.
     const nextObjects = objects.filter((object) => (object.layerId || 'base') !== layerId);
-    const nextTriggers = (activity.triggers || []).map((trigger) =>
-      trigger.action === 'KatmanaGec' && trigger.value === layerId
-        ? { ...trigger, value: 'base' }
-        : trigger
+    const deletedIds = new Set(
+      objects.filter((o) => (o.layerId || 'base') === layerId).map((o) => o.id)
     );
+    const nextTriggers = (activity.triggers || [])
+      .filter((trigger) => !deletedIds.has(trigger.target) && !deletedIds.has(trigger.value))
+      .map((trigger) =>
+        trigger.action === 'KatmanaGec' && trigger.value === layerId
+          ? { ...trigger, value: 'base' }
+          : trigger
+      );
     patchActivity({
       activeLayerId: activeLayerId === layerId ? 'base' : activeLayerId,
       layers: nextLayers,

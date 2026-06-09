@@ -50,7 +50,6 @@ import usePresence from './features/presence/usePresence';
 import ActivityMapPanel, { LayerManager } from './features/editor-workspace/left/ActivityMapPanel';
 import ContextRightPanel from './features/editor-workspace/right/ContextRightPanel';
 import EditorWorkspaceShell from './features/editor-workspace/EditorWorkspaceShell';
-import EditorScenesPanel from './features/editor-workspace/EditorScenesPanel';
 import ButtonPackageIntroDiagram from './features/editor-workspace/ButtonPackageIntroDiagram';
 import useWorkspaceChromeController from './features/editor-workspace/useWorkspaceChromeController';
 import useLayoutResize from './features/editor-workspace/useLayoutResize';

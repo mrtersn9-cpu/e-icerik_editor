@@ -1,6 +1,7 @@
 import { ANSWER_LAYER_STYLE_PRESETS } from '../constants';
 import { contrastSafeButtonStyle, ensureTtkbButtonTextContrast } from '../editor-logic/colorUtils';
 import { uid } from '../utils/editorHelpers';
+import { getSemanticSvgIcon } from '../utils/iconSvg';
 import {
   isGeneratedAnswerTemplateObject,
   normalizeRuntimeActionLabel,
@@ -300,6 +301,9 @@ function buildButtonIntroSceneTemplateObjects(
       { label: item.icon, runtimeAction: item.action, soundOffIcon: item.soundOffIcon },
       { label: item.label, runtimeAction: item.action }
     );
+    const pairIconSvg = item.action !== 'toggle-mute'
+      ? getSemanticSvgIcon(item.action, item.label, { strokeWidth: 2.5 })
+      : '';
     const iconButton = pushButton(pairIcon, x, y, iconWidth, btnHeight, item.tone, {
       sceneTemplateSlotId: `${templateId}:${slotPrefix}-icon`,
       fontSize: options.iconFontSize || EDUCATION_BUTTON_ICON_SIZE,
@@ -316,7 +320,7 @@ function buildButtonIntroSceneTemplateObjects(
           }
         : {}),
       style: {
-        padding: 0,
+        padding: pairIconSvg ? '16%' : 0,
         lineHeight: 1,
         display: 'flex',
         alignItems: 'center',
@@ -326,6 +330,10 @@ function buildButtonIntroSceneTemplateObjects(
         borderRadius: Number(options.iconRadius ?? 999),
       },
     });
+    if (pairIconSvg) {
+      iconButton.icon = { svg: pairIconSvg };
+      iconButton.iconPosition = 'only';
+    }
     const labelButton = pushButton(
       item.label,
       x + labelOffset,
@@ -1008,6 +1016,8 @@ function buildLaunchPageSceneTemplate(
       buttons: 'cards',
     },
   };
+  // TODO: kaldırılacak — intro sadeleştirmesinden sonra artık çağrılmıyor
+  // eslint-disable-next-line no-unused-vars
   const drawDecorativeSide = (profile, x, y, w, h) => {
     const side = profile.side;
     if (side === 'ticket') {

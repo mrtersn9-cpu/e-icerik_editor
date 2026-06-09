@@ -890,7 +890,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           tone: 'success',
           icon: themeIcons.complete || '✓',
           width: 240,
-          runtimeAction: 'complete',
+          runtimeAction: launchSlideId ? '' : 'complete',
           trigger: launchSlideId ? { action: 'SliderGec', value: launchSlideId } : null,
         },
         {
@@ -917,7 +917,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           tone: 'success',
           icon: '✎',
           width: 250,
-          runtimeAction: 'show-answer',
+          runtimeAction: answerLayerId ? '' : 'show-answer',
           trigger: answerLayerId ? { action: 'KatmanaGec', value: answerLayerId } : null,
         },
         {

@@ -101,8 +101,9 @@ export default function CanvasWorkspaceCenter({
           position: 'relative',
           minHeight: 0,
           overflow: 'hidden',
-          background:
-            'linear-gradient(180deg,#eef4fb 0%,#e7eef7 100%)',
+          background: 'linear-gradient(180deg,#dbe5f0,#cfd9e6)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {stageContent}

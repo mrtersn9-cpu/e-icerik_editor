@@ -64,6 +64,7 @@ import {
   sanitizeSvgMarkup,
   uid,
 } from '../../utils/editorHelpers';
+import { getSemanticSvgIcon } from '../../utils/iconSvg';
 
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
@@ -181,12 +182,16 @@ export default function useRibbonController({
       const file = event.target.files?.[0];
       input.remove();
       if (!file) return;
-      await handler(file);
+      try {
+        await handler(file);
+      } catch (error) {
+        showToast?.(`Medya eklenemedi: ${error?.message || 'Bilinmeyen hata'}`, 'error');
+      }
     };
     input.oncancel = () => input.remove();
     document.body.appendChild(input);
     input.click();
-  }, []);
+  }, [showToast]);
 
   const commitRibbonObject = useCallback(
     (object) => {
@@ -825,14 +830,22 @@ export default function useRibbonController({
         soundIconMode: preset.id === 'mute' ? 'icon-only' : '',
         sceneTemplateSlotId: `ready-button:${preset.id}-icon`,
       });
+      const iconSvg =
+        preset.id !== 'mute'
+          ? getSemanticSvgIcon(preset.runtimeAction || preset.id, preset.label, { strokeWidth: 2.5 })
+          : '';
       iconObject.style = {
         ...(iconObject.style || {}),
         borderRadius: 999,
         fontSize: READY_BUTTON_ICON_SIZE,
-        padding: 0,
+        padding: iconSvg ? '16%' : 0,
         textAlign: 'center',
         whiteSpace: 'nowrap',
       };
+      if (iconSvg) {
+        iconObject.icon = { svg: iconSvg };
+        iconObject.iconPosition = 'only';
+      }
       const labelObject = makeReadyButton({
         label: preset.label,
         x: x + iconWidth + iconLabelGap,

@@ -43,6 +43,7 @@ import {
   createTimelineKeyframe,
   getTimelineItemForObject,
 } from '../../logic/timeline';
+import { buildChartSvg } from '../../utils/chartSvg';
 import {
   clamp,
   sanitizeSvgMarkup,
@@ -65,6 +66,7 @@ import {
   getStorylineRuntimeDropResultStates,
   getStorylineRuntimeCommandsForObject,
 } from '../../utils/storylineRuntimeEngine';
+import { buildTableHtml } from '../../utils/tableHtml';
 import WidgetHost from '../../widgets/WidgetHost';
 import { buildWidgetIframeSrc } from '../../widgets/WidgetRegistry';
 import RuntimeVideoElement from '../editor/RuntimeVideoElement';
@@ -1944,12 +1946,50 @@ function StorylinePreviewObjectLayer({
               </span>
             )}
           </>
+        ) : obj.type === 'table' ? (
+          <div
+            style={{ pointerEvents: 'none', width: '100%', height: '100%', overflow: 'auto' }}
+            dangerouslySetInnerHTML={{
+              __html: buildTableHtml(obj, { fontSize: (st.fontSize || 14) * scale }),
+            }}
+          />
+        ) : obj.type === 'chart' ? (
+          <div
+            style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
+            dangerouslySetInnerHTML={{ __html: buildChartSvg(obj) }}
+          />
         ) : isImage ? (
           <img
             src={obj.imageData}
             alt={obj.accessibility?.altText || accessibility.ariaLabel || obj.label || obj.type}
             style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
           />
+        ) : obj.icon?.svg && obj.iconPosition && obj.iconPosition !== 'none' ? (
+          <span
+            style={{
+              pointerEvents: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: obj.iconPosition === 'only' ? 0 : '.4em',
+              padding: '0 6px',
+              width: '100%',
+            }}
+          >
+            {(obj.iconPosition === 'left' || obj.iconPosition === 'only') && (
+              <span
+                style={{ width: '1.15em', height: '1.15em', flexShrink: 0, display: 'inline-flex' }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(obj.icon.svg) }}
+              />
+            )}
+            {obj.iconPosition !== 'only' && <span>{renderedDisplayLabel}</span>}
+            {obj.iconPosition === 'right' && (
+              <span
+                style={{ width: '1.15em', height: '1.15em', flexShrink: 0, display: 'inline-flex' }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(obj.icon.svg) }}
+              />
+            )}
+          </span>
         ) : (
           <span
             style={{
