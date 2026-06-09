@@ -11,6 +11,7 @@ import {
 import ChartEditorModal from '../../ChartEditorModal';
 import TableEditorModal from '../../TableEditorModal';
 import { ShapePreviewIcon } from '../../ui';
+import FontPicker from '../FontPicker';
 import {
   CompactRibbonButton,
   RibbonColorInput,
@@ -19,7 +20,6 @@ import {
   RibbonNumberInput,
   RibbonPopoverButton,
   RibbonRow,
-  RibbonSelect,
   RibbonStack,
 } from '../RibbonPrimitives';
 
@@ -55,12 +55,11 @@ export default function BicimRibbon({ controller }) {
       <RibbonGroup title="Metin" width={368}>
         <RibbonStack>
           <RibbonRow>
-            <RibbonSelect
-              value={object?.style?.fontFamily || 'Humst777 BlkCn BT'}
-              onChange={(event) => commands.setObjectStyle({ fontFamily: event.target.value })}
-              options={galleries.fonts.map((font) => ({ value: font, label: font }))}
+            <FontPicker
+              value={object?.style?.fontFamily || 'Arial'}
+              onChange={(font) => commands.setObjectStyle({ fontFamily: font })}
               disabled={disabled}
-              width={126}
+              width={132}
             />
             <RibbonNumberInput
               value={object?.style?.fontSize || 36}

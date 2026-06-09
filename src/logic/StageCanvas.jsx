@@ -65,6 +65,7 @@ import WidgetHost from '../widgets/WidgetHost';
 import { buildWidgetIframeSrc } from '../widgets/WidgetRegistry';
 import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
 import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
+import { fontFamilyCss, ensureGoogleFontsLoaded } from '../constants/fonts';
 import ObjectContextMenu from './ObjectContextMenu';
 
 // Yeni eklenen nesneye verilecek zIndex: mevcut tüm nesnelerin en üstündekinin
@@ -131,6 +132,11 @@ const StageCanvas = forwardRef(function StageCanvas(
   useEffect(() => {
     if (!interactionDraftRef.current) latestRef.current = activity;
   }, [activity]);
+
+  // Kayıtlı içerikteki Google fontları editörde göstermek için stylesheet'i yükle.
+  useEffect(() => {
+    ensureGoogleFontsLoaded();
+  }, []);
 
   const setLiveInteractionActivity = useCallback((nextActivity) => {
     interactionDraftRef.current = nextActivity;
@@ -1754,6 +1760,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                     outlineOffset: usesShapeSvg ? 2 : 0,
                     boxSizing: 'border-box',
                     fontSize: (st.fontSize || 13) * scale,
+                    fontFamily: st.fontFamily ? fontFamilyCss(st.fontFamily) : undefined,
                     color: st.color || '#111',
                     fontWeight: 600,
                     overflow: usesShapeSvg ? 'visible' : 'hidden',
