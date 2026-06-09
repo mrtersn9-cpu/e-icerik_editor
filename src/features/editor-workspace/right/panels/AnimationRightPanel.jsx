@@ -29,8 +29,8 @@ export default function AnimationRightPanel({ controller }) {
   const galleries = controller.galleries || {};
   const disabled = !selectedObject;
 
-  const updateTimeline = (patch) => {
-    if (!disabled) commands.updateSelectedTimeline?.(patch);
+  const updateTimeline = (patch, options) => {
+    if (!disabled) commands.updateSelectedTimeline?.(patch, options);
   };
 
   return (
@@ -88,14 +88,14 @@ export default function AnimationRightPanel({ controller }) {
               Başlangıç
               <NumberInput
                 value={selectedTimelineItem?.start ?? 0}
-                onChange={(value) => updateTimeline({ start: Math.max(0, value || 0) })}
+                onChange={(value) => updateTimeline({ start: Math.max(0, value || 0) }, { preview: false })}
               />
             </FieldLabel>
             <FieldLabel>
               Süre
               <NumberInput
                 value={selectedTimelineItem?.duration ?? 2}
-                onChange={(value) => updateTimeline({ duration: Math.max(0.2, value || 0.2) })}
+                onChange={(value) => updateTimeline({ duration: Math.max(0.2, value || 0.2) }, { preview: false })}
               />
             </FieldLabel>
           </div>
@@ -147,6 +147,7 @@ export default function AnimationRightPanel({ controller }) {
         <ButtonGrid
           actions={[
             { label: 'Oynat', onClick: commands.restartAnimationPreview, disabled },
+            { label: 'Durdur', onClick: commands.stopAnimationPreview, disabled },
             { label: 'Kopyala', onClick: commands.copySelectedAnimation, disabled },
             { label: 'Yapıştır', onClick: commands.pasteSelectedAnimation, disabled },
             {

@@ -1,3 +1,4 @@
+import { TIMELINE_DIRECTION_OPTIONS, TIMELINE_EASING_OPTIONS } from '../../../constants';
 import {
   CompactRibbonButton,
   RibbonButton,
@@ -15,8 +16,11 @@ export default function AnimasyonRibbon({ controller }) {
 
   return (
     <>
-      <RibbonGroup title="Önizleme" width={84}>
-        <RibbonButton label="Önizle" icon="play" onClick={commands.restartAnimationPreview} tone="slate" width={62} />
+      <RibbonGroup title="Önizleme" width={140}>
+        <RibbonRow>
+          <RibbonButton label="Önizle" icon="play" onClick={commands.restartAnimationPreview} tone="slate" width={62} />
+          <RibbonButton label="Durdur" icon="none" onClick={commands.stopAnimationPreview} tone="slate" width={62} />
+        </RibbonRow>
       </RibbonGroup>
 
       <RibbonGroup title="Giriş" width={282}>
@@ -50,7 +54,7 @@ export default function AnimasyonRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <RibbonGroup title="Vurgu" width={276}>
+      <RibbonGroup title="Sürükle Efekti" width={276}>
         <RibbonRow>
           {galleries.dragAnimations.slice(0, 3).map((preset) => (
             <RibbonButton
@@ -159,7 +163,7 @@ export default function AnimasyonRibbon({ controller }) {
             <span style={{ fontSize: 10, width: 54, color: '#475569' }}>Süre</span>
             <RibbonNumberInput
               value={selectedTimelineItem?.duration || 2}
-              onChange={(event) => commands.updateSelectedTimeline({ duration: Math.max(0.2, Number(event.target.value) || 2) })}
+              onChange={(event) => commands.updateSelectedTimeline({ duration: Math.max(0.2, Number(event.target.value) || 2) }, { preview: false })}
               disabled={!can.selection}
               width={58}
               step={0.1}
@@ -168,11 +172,36 @@ export default function AnimasyonRibbon({ controller }) {
             <span style={{ fontSize: 10, width: 42, color: '#475569' }}>Gecikme</span>
             <RibbonNumberInput
               value={selectedTimelineItem?.start || 0}
-              onChange={(event) => commands.updateSelectedTimeline({ start: Math.max(0, Number(event.target.value) || 0) })}
+              onChange={(event) => commands.updateSelectedTimeline({ start: Math.max(0, Number(event.target.value) || 0) }, { preview: false })}
               disabled={!can.selection}
               width={52}
               step={0.1}
               min={0}
+            />
+          </RibbonRow>
+        </RibbonStack>
+      </RibbonGroup>
+
+      <RibbonGroup title="Yön & Geçiş" width={250}>
+        <RibbonStack>
+          <RibbonRow>
+            <span style={{ fontSize: 10, width: 54, color: '#475569' }}>Yön</span>
+            <RibbonSelect
+              value={selectedTimelineItem?.direction || 'left'}
+              onChange={(event) => commands.updateSelectedTimeline({ direction: event.target.value })}
+              options={TIMELINE_DIRECTION_OPTIONS}
+              disabled={!can.selection}
+              width={132}
+            />
+          </RibbonRow>
+          <RibbonRow>
+            <span style={{ fontSize: 10, width: 54, color: '#475569' }}>Easing</span>
+            <RibbonSelect
+              value={selectedTimelineItem?.easing || 'easeOut'}
+              onChange={(event) => commands.updateSelectedTimeline({ easing: event.target.value })}
+              options={TIMELINE_EASING_OPTIONS}
+              disabled={!can.selection}
+              width={132}
             />
           </RibbonRow>
         </RibbonStack>

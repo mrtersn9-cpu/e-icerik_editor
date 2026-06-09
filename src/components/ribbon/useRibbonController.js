@@ -115,6 +115,9 @@ export default function useRibbonController({
   setIsSlidePanelCollapsed,
   setPanelScale,
   setRibbonAnimationPreviewKey,
+  setTimelineCurrentTime,
+  setTimelinePlaying,
+  setTimelineVisualization,
   setSelectedIds,
   setShowBranchDiagram,
   setShowGlossaryEditor,
@@ -448,8 +451,27 @@ export default function useRibbonController({
     setSelectedIds(new Set(targetIds));
   }, [activity, setSelectedIds, targetIds, updateActivity]);
 
+  // Canlı önizleme: görselleştirmeyi aç, zamanı sıfırla, bir sonraki frame'de oynat.
+  // "Önizle"/"Oynat" butonları ve efekt/yön/easing seçimi bunu tetikler.
+  const triggerAnimationPreview = useCallback(() => {
+    setTimelineVisualization?.(true);
+    setTimelineCurrentTime?.(0);
+    setTimelinePlaying?.(false);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => setTimelinePlaying?.(true));
+    } else {
+      setTimelinePlaying?.(true);
+    }
+    setRibbonAnimationPreviewKey?.((current) => current + 1);
+  }, [
+    setRibbonAnimationPreviewKey,
+    setTimelineCurrentTime,
+    setTimelinePlaying,
+    setTimelineVisualization,
+  ]);
+
   const updateSelectedTimeline = useCallback(
-    (patch) => {
+    (patch, options = {}) => {
       if (!activity || !primaryObject) return;
       const timeline = syncTimelineWithObjects(activity);
       const nextTimeline = timeline.map((item, index) =>
@@ -458,8 +480,10 @@ export default function useRibbonController({
           : item
       );
       updateActivity({ ...activity, timeline: nextTimeline });
+      // Efekt/yön/easing/preset seçilince canvas'ta anında oynat (kullanıcı tercihi).
+      if (options.preview !== false) triggerAnimationPreview();
     },
-    [activity, primaryObject, updateActivity]
+    [activity, primaryObject, triggerAnimationPreview, updateActivity]
   );
 
   const setDragAnimationPreset = useCallback(
@@ -472,9 +496,9 @@ export default function useRibbonController({
           dragAnimationPreset: presetId,
         },
       });
-      setRibbonAnimationPreviewKey((current) => current + 1);
+      triggerAnimationPreview();
     },
-    [activity, dragDropSettings, setRibbonAnimationPreviewKey, updateActivity]
+    [activity, dragDropSettings, triggerAnimationPreview, updateActivity]
   );
 
   const patchLms = useCallback(
@@ -828,6 +852,10 @@ export default function useRibbonController({
             fontSize: patch.fontSize,
             lineHeight: patch.lineHeight || 1.1,
             padding: 0,
+            // Aktivitede "Buton yazı rengi" ayarlıysa yeni buton da onu kilitli alsın.
+            ...(activity.readyButtonTextColor
+              ? { color: activity.readyButtonTextColor, colorLocked: true }
+              : {}),
           },
           ...(motion ? { buttonMotion: { ...motion } } : {}),
           ...(patch.sceneTemplateSlotId ? { sceneTemplateSlotId: patch.sceneTemplateSlotId } : {}),
@@ -1131,7 +1159,8 @@ export default function useRibbonController({
       previewTransition: handleOpenStorylinePreview,
       redo: history?.redo,
       resetLayout,
-      restartAnimationPreview: () => setRibbonAnimationPreviewKey((current) => current + 1),
+      restartAnimationPreview: triggerAnimationPreview,
+      stopAnimationPreview: () => setTimelinePlaying?.(false),
       saveProject: manualSaveProject || (() => showToast?.('Proje otomatik kayıtla güncel tutuluyor.', 'success')),
       scaleUi: (direction) =>
         setPanelScale((value) =>

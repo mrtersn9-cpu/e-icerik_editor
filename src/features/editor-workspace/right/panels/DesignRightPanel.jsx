@@ -511,6 +511,34 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
                   onClick={() => commands.applyButtonMotion?.(profileId)}
                   tone={inspectorChrome.blue}
                 >
+                  {/* Hover'da profilin gerçek değerleriyle (scale/lift/süre) hareket eden mini demo */}
+                  <div
+                    onMouseEnter={(event) => {
+                      const el = event.currentTarget;
+                      el.style.transition = `transform ${Math.max(120, Number(motion.duration) || 180)}ms ${motion.easing || 'ease-out'}`;
+                      el.style.transform = `translateY(-${Math.max(0, Number(motion.liftY) || 0)}px) scale(${Math.max(1, Number(motion.hoverScale) || 1.02)})`;
+                      if (motion.hoverShadow) el.style.boxShadow = motion.hoverShadow;
+                    }}
+                    onMouseLeave={(event) => {
+                      event.currentTarget.style.transform = 'none';
+                      event.currentTarget.style.boxShadow = 'none';
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '100%',
+                      padding: '5px 0',
+                      borderRadius: 7,
+                      background: inspectorChrome.blue,
+                      color: '#ffffff',
+                      fontSize: 11,
+                      fontWeight: 900,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Aa
+                  </div>
                   <div style={{ color: '#64748b', fontSize: 9.5, fontWeight: 780 }}>
                     {motion.duration}ms · {Number(motion.hoverScale || 1).toFixed(3)}x
                   </div>

@@ -1,14 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { FONT_FAMILIES, ensureGoogleFontsLoaded, fontFamilyCss } from '../../constants/fonts';
+import { FONT_FAMILIES, ensureGoogleFontsLoaded, fontFamilyCss, loadGoogleFont } from '../../constants/fonts';
 
 // Biçim ribbon'unda font seçici: aranabilir, her font kendi yazı tipiyle ÖNİZLENİR.
 // Google fontları picker ilk açıldığında tembel yüklenir.
 export default function FontPicker({ value, onChange, disabled = false, width = 150 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Gerçekten indirilmiş fontlar; satır yalnızca yüklenince kendi tipiyle önizlenir
+  // (yüklenmeden önce nötr fallback → tofu/bozuk glif yok).
+  const [loadedFonts, setLoadedFonts] = useState(() => new Set());
+  const requestedRef = useRef(new Set());
   const rootRef = useRef(null);
   const current = value || 'Arial';
+
+  const markLoaded = (name) =>
+    setLoadedFonts((prev) => {
+      if (prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.add(name);
+      return next;
+    });
 
   useEffect(() => {
     if (!open) return undefined;
@@ -33,6 +45,21 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
     return FONT_FAMILIES.filter((name) => name.toLocaleLowerCase('tr-TR').includes(q));
   }, [query]);
 
+  // Seçili font her zaman; açıkken görünür fontlar — her birini bir kez yükle, inince işaretle.
+  // markLoaded koşulsuz çağrılır (idempotent Set + fonksiyonel setState): bir effect run'ında
+  // istenen font, sonraki run temizlense bile çözülünce işaretlenir (bayat-fallback önlenir).
+  useEffect(() => {
+    const request = (name) => {
+      if (!name || requestedRef.current.has(name)) return;
+      requestedRef.current.add(name);
+      loadGoogleFont(name).then(markLoaded);
+    };
+    request(current);
+    if (open) filtered.forEach(request);
+  }, [open, filtered, current]);
+
+  const previewFamily = (name) => (loadedFonts.has(name) ? fontFamilyCss(name) : undefined);
+
   return (
     <div ref={rootRef} style={{ position: 'relative', width }}>
       <button
@@ -49,7 +76,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
           color: '#1f2937',
           cursor: disabled ? 'default' : 'pointer',
           fontSize: 12,
-          fontFamily: fontFamilyCss(current),
+          fontFamily: previewFamily(current),
           textAlign: 'left',
           padding: '0 8px',
           display: 'flex',
@@ -117,7 +144,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
                     textAlign: 'left',
                     padding: '7px 8px',
                     fontSize: 15,
-                    fontFamily: fontFamilyCss(name),
+                    fontFamily: previewFamily(name),
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',

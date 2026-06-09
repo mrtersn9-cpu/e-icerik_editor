@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   OBJECT_STATE_OPTIONS,
@@ -511,14 +512,17 @@ export default function InteractionBuilderDialog({ controller, onClose, open }) 
     },
   ];
 
-  return (
+  // Portal ile document.body'ye render edilir — böylece sağ-panel ağacının
+  // stacking context'inde kalıp StageCanvas overlay'inin (zIndex ~99999000)
+  // ALTINDA gizlenmez. Çok yüksek zIndex ile her zaman üstte ve tıklanabilir.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 1400,
+        zIndex: 2147483000,
         background: 'rgba(15,23,42,.32)',
         display: 'flex',
         alignItems: 'center',
@@ -1065,6 +1069,7 @@ export default function InteractionBuilderDialog({ controller, onClose, open }) 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

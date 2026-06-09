@@ -139,12 +139,13 @@ export function fontFamilyCss(name = '') {
   return /\s/.test(safe) ? `'${safe}', sans-serif` : `${safe}, sans-serif`;
 }
 
-let googleFontsInjected = false;
+let googleFontsLinkPromise = null;
 
 // Google fontlarını tek bir stylesheet ile (tembel) yükle. Yalnızca bir kez enjekte edilir.
+// Stylesheet <link> yüklenince resolve olan bir Promise döndürür (idempotent).
 export function ensureGoogleFontsLoaded() {
-  if (googleFontsInjected || typeof document === 'undefined') return;
-  googleFontsInjected = true;
+  if (typeof document === 'undefined') return Promise.resolve();
+  if (googleFontsLinkPromise) return googleFontsLinkPromise;
   const families = GOOGLE_FONTS.map(
     (name) => `family=${encodeURIComponent(name).replace(/%20/g, '+')}:wght@400;700`
   ).join('&');
@@ -152,5 +153,32 @@ export function ensureGoogleFontsLoaded() {
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
   link.setAttribute('data-eicerik-fonts', 'true');
+  googleFontsLinkPromise = new Promise((resolve) => {
+    link.onload = () => resolve();
+    link.onerror = () => resolve();
+  });
   document.head.appendChild(link);
+  return googleFontsLinkPromise;
+}
+
+// Tek bir fontun GERÇEKTEN indirildiğini garanti eder (CSS Font Loading API).
+// Picker önizlemesi için: font inene kadar satır nötr fallback'te tutulur, inince
+// kendi tipine geçer (tofu/bozuk glif sorununu çözer). Font adıyla resolve olur.
+export function loadGoogleFont(name = '') {
+  const safe = String(name || '').trim();
+  if (!safe || typeof document === 'undefined') return Promise.resolve(safe);
+  // Sistem fontları zaten hazır.
+  if (!isGoogleFont(safe)) return Promise.resolve(safe);
+  const family = /\s/.test(safe) ? `'${safe}'` : safe;
+  const afterSheet = ensureGoogleFontsLoaded();
+  if (!document.fonts || !document.fonts.load) return afterSheet.then(() => safe);
+  return afterSheet
+    .then(() =>
+      Promise.all([
+        document.fonts.load(`400 16px ${family}`),
+        document.fonts.load(`700 16px ${family}`),
+      ])
+    )
+    .then(() => safe)
+    .catch(() => safe);
 }

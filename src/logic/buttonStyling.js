@@ -719,9 +719,13 @@ function restyleReadyButtonsForPreset(
     if (!tone) {
       // Tonu olmayan (kullanıcının kendi eklediği) butonlar: yalnızca yazı rengi
       // override'ı uygulanır — böylece "Buton yazı rengi" etkinlikteki TÜM butonların
-      // yazı rengini değiştirir. Renk boşsa (Temaya bırak) buton değişmeden kalır.
+      // yazı rengini değiştirir. colorLocked → normalize'daki TTKB kontrast düzeltmesi
+      // bu rengi EZMESİN. Renk boşsa (Temaya bırak) kilit kaldırılır.
       if (textColor) {
-        return { ...object, style: { ...(object.style || {}), color: textColor } };
+        return { ...object, style: { ...(object.style || {}), color: textColor, colorLocked: true } };
+      }
+      if (object.style?.colorLocked) {
+        return { ...object, style: { ...object.style, colorLocked: false } };
       }
       return object;
     }
@@ -742,7 +746,9 @@ function restyleReadyButtonsForPreset(
         ...(object.style || {}),
         ...built,
         ...(keepRound ? { borderRadius: prevRadius } : {}),
-        ...(textColor ? { color: textColor } : {}),
+        // textColor varsa kullanıcı rengini kilitle (TTKB ezmesin); yoksa kilidi kaldır
+        // ki tema rengine (built.color) dönebilsin.
+        ...(textColor ? { color: textColor, colorLocked: true } : { colorLocked: false }),
       },
       ...(motion ? { buttonMotion: { ...motion } } : {}),
     };
@@ -897,7 +903,8 @@ function restyleAnswerLayerObjectsForPreset(
         ...layerButtonStyle,
         fontWeight: 900,
         textAlign: 'center',
-        ...(buttonTextColor ? { color: buttonTextColor } : {}),
+        // Kullanıcı yazı rengi: kilitle (TTKB kontrast ezmesin); boşsa kilidi kaldır.
+        ...(buttonTextColor ? { color: buttonTextColor, colorLocked: true } : { colorLocked: false }),
       },
     };
   };

@@ -22,7 +22,10 @@ function normalizeObject(obj = {}) {
     obj.type === 'draggable' || obj.type === 'dropzone'
       ? upgradeDragDropStyle(obj.type, mergedStyle)
       : mergedStyle;
-  const contrastSafeStyle = obj.type === 'button' ? ensureTtkbButtonTextContrast(style) : style;
+  // Kullanıcı buton yazı rengini elle kilitlediyse (colorLocked) TTKB otomatik
+  // kontrast düzeltmesini atla — seçilen renk aynen korunur.
+  const contrastSafeStyle =
+    obj.type === 'button' && !style.colorLocked ? ensureTtkbButtonTextContrast(style) : style;
   const playPausePatch = isPlayPauseReadyButton(obj) ? getPlayPauseButtonPatch(obj) : {};
   return {
     ...preset,

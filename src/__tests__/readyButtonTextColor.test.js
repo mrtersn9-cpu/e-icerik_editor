@@ -1,4 +1,5 @@
 import { restyleReadyButtonsForPreset } from '../logic/buttonStyling';
+import { normalizeObject } from '../logic/normalize';
 
 // "Buton yazı rengi" (readyButtonTextColor) ayarlandığında etkinlikteki TÜM
 // butonların yazı rengi değişmeli — yalnızca tonlu hazır butonlar değil,
@@ -49,6 +50,9 @@ describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
     expect(byId.toned.style.color).toBe('#ff0000');
     // Kritik: tonsuz (manuel) buton da yazı rengini almalı.
     expect(byId.plain.style.color).toBe('#ff0000');
+    // colorLocked işareti konmalı → normalize'daki TTKB kontrast düzeltmesi ezmesin.
+    expect(byId.toned.style.colorLocked).toBe(true);
+    expect(byId.plain.style.colorLocked).toBe(true);
     // Buton olmayan nesneler etkilenmez.
     expect(byId.note.style.color).toBe('#112233');
   });
@@ -67,5 +71,25 @@ describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
     expect(byId.toned.style.color).not.toBe('#ff0000');
     expect(typeof byId.toned.style.color).toBe('string');
     expect(byId.toned.style.color.length).toBeGreaterThan(0);
+    // Kilit kalkar → tema rengine dönebilir / TTKB kontrastı tekrar uygulanabilir.
+    expect(byId.toned.style.colorLocked).toBe(false);
+  });
+});
+
+describe('normalizeObject — colorLocked ile TTKB kontrast atlaması (Hata 1)', () => {
+  test('colorLocked buton: seçilen renk (düşük kontrast olsa bile) korunur', () => {
+    const out = normalizeObject({
+      type: 'button',
+      style: { background: '#2563eb', color: '#861919', colorLocked: true },
+    });
+    expect(out.style.color).toBe('#861919');
+  });
+
+  test('colorLocked yoksa düşük kontrastlı renk TTKB tarafından okunur renge zorlanır', () => {
+    const out = normalizeObject({
+      type: 'button',
+      style: { background: '#2563eb', color: '#1e3a8a' },
+    });
+    expect(out.style.color).not.toBe('#1e3a8a');
   });
 });
