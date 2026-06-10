@@ -1,8 +1,10 @@
 import { uid } from '../../../utils/editorHelpers';
 import { patchActivity } from '../cevapActions';
-import { CevapCard, Field, MiniTable, PanelGrid, SelectInput, SmallButton, TextArea, ToggleRow } from '../components/CevapControls';
+import { CevapCard, Field, MiniTable, PanelGrid, SelectInput, SmallButton, TextArea, TextInput, ToggleRow } from '../components/CevapControls';
 
-import { ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+
+const DEFAULT_LIKERT_OPTIONS = ['Kesinlikle katılmıyorum', 'Katılmıyorum', 'Kararsızım', 'Katılıyorum', 'Kesinlikle katılıyorum'];
 
 export default function AnketCevapPanel({ activity, onUpdate }) {
   const questions = activity.surveyQuestions || [];
@@ -20,7 +22,57 @@ export default function AnketCevapPanel({ activity, onUpdate }) {
           {questions.map((question, index) => (
             <div key={question.id} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
               <Field label={`Soru ${index + 1}`}><TextArea value={question.prompt} onChange={(value) => patchQuestion(question.id, { prompt: value })} /></Field>
-              <Field label="Tip"><SelectInput value={question.type || 'likert'} onChange={(value) => patchQuestion(question.id, { type: value })} options={[{ value: 'likert', label: 'Likert' }, { value: 'open-text', label: 'Açık metin' }, { value: 'choice', label: 'Seçenekli' }]} /></Field>
+              <Field label="Tip">
+                <SelectInput
+                  value={question.type || 'likert'}
+                  onChange={(value) => {
+                    // Likert/seçenekli tipe geçilince ve seçenek yoksa makul varsayılan doldur.
+                    const nextOptions =
+                      (value === 'likert' || value === 'choice') && !(question.options || []).length
+                        ? (value === 'likert' ? [...DEFAULT_LIKERT_OPTIONS] : ['Seçenek 1', 'Seçenek 2'])
+                        : question.options;
+                    patchQuestion(question.id, { type: value, options: nextOptions });
+                  }}
+                  options={[{ value: 'likert', label: 'Likert' }, { value: 'open-text', label: 'Açık metin' }, { value: 'choice', label: 'Seçenekli' }]}
+                />
+              </Field>
+              {(question.type === 'likert' || question.type === 'choice') && (
+                <Field label="Seçenekler">
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {(question.options || []).map((opt, optIndex) => (
+                      <div key={optIndex} style={{ display: 'grid', gridTemplateColumns: '1fr 28px', gap: 6 }}>
+                        <TextInput
+                          value={opt}
+                          onChange={(value) =>
+                            patchQuestion(question.id, {
+                              options: (question.options || []).map((o, i) => (i === optIndex ? value : o)),
+                            })
+                          }
+                        />
+                        <SmallButton
+                          variant="danger"
+                          onClick={() =>
+                            patchQuestion(question.id, {
+                              options: (question.options || []).filter((_, i) => i !== optIndex),
+                            })
+                          }
+                        >
+                          ×
+                        </SmallButton>
+                      </div>
+                    ))}
+                    <SmallButton
+                      onClick={() =>
+                        patchQuestion(question.id, {
+                          options: [...(question.options || []), `Seçenek ${(question.options || []).length + 1}`],
+                        })
+                      }
+                    >
+                      + Seçenek Ekle
+                    </SmallButton>
+                  </div>
+                </Field>
+              )}
               <SmallButton
                 variant="danger"
                 onClick={() => patch({ surveyQuestions: questions.filter((item) => item.id !== question.id) })}
@@ -29,7 +81,7 @@ export default function AnketCevapPanel({ activity, onUpdate }) {
               </SmallButton>
             </div>
           ))}
-          <SmallButton variant="primary" onClick={() => patch({ surveyQuestions: [...questions, { id: uid(), prompt: `Soru ${questions.length + 1}`, type: 'likert', options: [] }] })}>
+          <SmallButton variant="primary" onClick={() => patch({ surveyQuestions: [...questions, { id: uid(), prompt: `Soru ${questions.length + 1}`, type: 'likert', options: [...DEFAULT_LIKERT_OPTIONS] }] })}>
             + Soru Ekle
           </SmallButton>
         </div>
@@ -41,11 +93,12 @@ export default function AnketCevapPanel({ activity, onUpdate }) {
       <GeriBildirimCard number="4" activity={activity} onUpdate={onUpdate} />
       <YanitKontrolCard number="5" activity={activity} onUpdate={onUpdate} />
       <PuanlamaCard number="6" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="7" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="8" title="Anket Özeti" wide>
+      <CanCard number="7" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="8" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="9" title="Anket Özeti" wide>
         <MiniTable columns={['#', 'Soru', 'Tip']} rows={questions.map((question, index) => ({ id: question.id, cells: [index + 1, question.prompt || '-', question.type || 'likert'] }))} />
       </CevapCard>
-      <CevapCard number="9" title="Yanıt Dağılımı (Önizleme)" wide>
+      <CevapCard number="10" title="Yanıt Dağılımı (Önizleme)" wide>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {questions.map((q, idx) => (
             <div key={q.id}>

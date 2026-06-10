@@ -67,6 +67,13 @@ import useMobileCanvasGestures from '../mobile/useMobileCanvasGestures';
 import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
 import { fontFamilyCss, ensureGoogleFontsLoaded } from '../constants/fonts';
 import ObjectContextMenu from './ObjectContextMenu';
+import {
+  alignActivitySelection,
+  distributeActivitySelection,
+  getSelectionGroupState,
+  groupActivitySelection,
+  ungroupActivitySelection,
+} from './objectLayout';
 
 // Yeni eklenen nesneye verilecek zIndex: mevcut tüm nesnelerin en üstündekinin
 // bir fazlası. Sayım (length) yerine gerçek en yüksek zIndex baz alınır; böylece
@@ -545,6 +552,10 @@ const StageCanvas = forwardRef(function StageCanvas(
     try {
       sessionStorage.setItem('eicerik_obj_clipboard', JSON.stringify(clipboardRef.current));
     } catch { /* kota aşıldıysa sessizce geç */ }
+    // Ribbon/sağ tık "Yapıştır" disabled durumunun güncellenmesi için pano değişimini duyur.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('eicerik:clipboard-change'));
+    }
     return true;
   }, [clipboardRef]);
 
@@ -1435,6 +1446,73 @@ const StageCanvas = forwardRef(function StageCanvas(
               />
             </div>
           )}
+          {/* Cetveller: sahne kenarlarında 100px aralıklı ölçek (Görünüm → Cetveller) */}
+          {canvasActivity.viewOptions?.showRulers &&
+            (() => {
+              const rulerSw = Number(canvasActivity.stageWidth) || 1920;
+              const rulerSh = Number(canvasActivity.stageHeight) || 1080;
+              const rulerStep = 100;
+              const xTicks = [];
+              for (let x = 0; x <= rulerSw; x += rulerStep) xTicks.push(x);
+              const yTicks = [];
+              for (let y = 0; y <= rulerSh; y += rulerStep) yTicks.push(y);
+              return (
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4 }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 14,
+                      background: 'rgba(248,250,252,.82)',
+                      borderBottom: '1px solid rgba(15,23,42,.14)',
+                    }}
+                  >
+                    {xTicks.map((x) => (
+                      <div
+                        key={`rx-${x}`}
+                        style={{
+                          position: 'absolute',
+                          left: x * scale,
+                          top: 0,
+                          bottom: 0,
+                          borderLeft: '1px solid rgba(15,23,42,.28)',
+                        }}
+                      >
+                        <span style={{ fontSize: 8, color: '#475569', paddingLeft: 2, lineHeight: '14px' }}>{x}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      bottom: 0,
+                      width: 14,
+                      background: 'rgba(248,250,252,.82)',
+                      borderRight: '1px solid rgba(15,23,42,.14)',
+                    }}
+                  >
+                    {yTicks.map((y) => (
+                      <div
+                        key={`ry-${y}`}
+                        style={{
+                          position: 'absolute',
+                          top: y * scale,
+                          left: 0,
+                          right: 0,
+                          borderTop: '1px solid rgba(15,23,42,.28)',
+                        }}
+                      >
+                        <span style={{ fontSize: 8, color: '#475569', paddingLeft: 1, display: 'block' }}>{y}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           {/* SVG zemin */}
           {canvasActivity.svgMarkup && (
             <div
@@ -2543,6 +2621,18 @@ const StageCanvas = forwardRef(function StageCanvas(
             const target = contextMenu.objectId
               ? objects.find((o) => o.id === contextMenu.objectId)
               : null;
+            // Menüdeki çoklu işlemler için güncel seçim (öge seçili değilse hedefe indir).
+            const selForMenu =
+              latestSelectedIdsRef.current?.size > 0
+                ? latestSelectedIdsRef.current
+                : new Set(target ? [target.id] : []);
+            const groupState = getSelectionGroupState(canvasActivity, selForMenu);
+            const multiSel = selForMenu.size > 1;
+            const hasClip = !!(clipboardRef.current && (clipboardRef.current.objects || []).length);
+            const activeLayerId = canvasActivity.activeLayerId || 'base';
+            const moveLayers = (canvasActivity.layers || []).filter(
+              (layer) => layer?.id && layer.id !== (target?.layerId || 'base')
+            );
             const items = [];
             if (target) {
               const isImageLike = !!target.imageData;
@@ -2611,9 +2701,81 @@ const StageCanvas = forwardRef(function StageCanvas(
                 });
               }
               if (items.length) items.push({ separator: true });
+              // Pano işlemleri
+              items.push({
+                label: 'Kes',
+                onClick: () => {
+                  if (copySelected() !== false) deleteSelected();
+                },
+              });
+              items.push({ label: 'Kopyala', onClick: () => copySelected() });
               items.push({ label: 'Çoğalt', onClick: duplicateSelected });
+              items.push({ label: 'Yapıştır', disabled: !hasClip, onClick: () => pasteClipboard() });
+              items.push({ separator: true });
+              // Bağlam duyarlı Grupla/Ayır (dinamik tek madde)
+              if (groupState.canGroup || groupState.canUngroup) {
+                items.push(
+                  groupState.canUngroup
+                    ? {
+                        label: 'Ayır',
+                        onClick: () => {
+                          onUpdate(ungroupActivitySelection(latestRef.current, selForMenu));
+                          onSelectionChange(new Set(selForMenu));
+                        },
+                      }
+                    : {
+                        label: 'Grupla',
+                        onClick: () => {
+                          onUpdate(groupActivitySelection(latestRef.current, selForMenu));
+                          onSelectionChange(new Set(selForMenu));
+                        },
+                      }
+                );
+              }
+              // Çoklu seçimde hizala/dağıt alt menüsü
+              if (multiSel) {
+                const alignItem = (label, mode) => ({
+                  label,
+                  onClick: () => onUpdate(alignActivitySelection(latestRef.current, selForMenu, mode)),
+                });
+                items.push({
+                  label: 'Hizala',
+                  submenu: [
+                    alignItem('Sola', 'left'),
+                    alignItem('Yatay Ortala', 'center'),
+                    alignItem('Sağa', 'right'),
+                    alignItem('Üste', 'top'),
+                    alignItem('Dikey Ortala', 'middle'),
+                    alignItem('Alta', 'bottom'),
+                    { separator: true },
+                    {
+                      label: 'Yatay Dağıt',
+                      disabled: selForMenu.size < 3,
+                      onClick: () =>
+                        onUpdate(distributeActivitySelection(latestRef.current, selForMenu, 'horizontal')),
+                    },
+                    {
+                      label: 'Dikey Dağıt',
+                      disabled: selForMenu.size < 3,
+                      onClick: () =>
+                        onUpdate(distributeActivitySelection(latestRef.current, selForMenu, 'vertical')),
+                    },
+                  ],
+                });
+              }
               items.push({ label: 'Öne Getir', onClick: bringFront });
               items.push({ label: 'Arkaya Gönder', onClick: sendBack });
+              if (moveLayers.length) {
+                items.push({
+                  label: 'Katmana Taşı',
+                  submenu: moveLayers.map((layer, index) => ({
+                    label:
+                      layer.name ||
+                      (layer.kind === 'base' ? 'Temel Katman' : `${index + 1}. Katman`),
+                    onClick: () => patchObj(target.id, { layerId: layer.id }),
+                  })),
+                });
+              }
               items.push({
                 label: target.locked ? 'Kilidi Aç' : 'Kilitle',
                 onClick: () => patchObj(target.id, { locked: !target.locked }),
@@ -2648,10 +2810,24 @@ const StageCanvas = forwardRef(function StageCanvas(
               }
               items.push({
                 label: 'Yapıştır',
-                disabled: !(
-                  clipboardRef.current && (clipboardRef.current.objects || []).length
-                ),
+                disabled: !hasClip,
                 onClick: () => pasteClipboard(),
+              });
+              const layerObjectIds = (objects || [])
+                .filter((o) => (o.layerId || 'base') === activeLayerId)
+                .map((o) => o.id);
+              items.push({
+                label: 'Tümünü Seç',
+                disabled: layerObjectIds.length === 0,
+                onClick: () => onSelectionChange(new Set(layerObjectIds)),
+              });
+              items.push({
+                label: 'Hızlı Ekle',
+                submenu: [
+                  { label: 'Metin', onClick: () => addObject('text') },
+                  { label: 'Şekil', onClick: () => addObject('shape') },
+                  { label: 'Resim', onClick: () => imgRef.current?.click() },
+                ],
               });
             }
             return (

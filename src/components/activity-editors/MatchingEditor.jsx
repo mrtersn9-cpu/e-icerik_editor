@@ -82,7 +82,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
               }
               style={{
                 height: 28,
-                border: '1px solid #e2e8f0',
+                border: `1px solid ${String(pair.left || '').trim() ? '#e2e8f0' : '#fca5a5'}`,
                 borderRadius: 8,
                 fontSize: 12,
                 padding: '0 8px',
@@ -101,7 +101,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
               }
               style={{
                 height: 28,
-                border: '1px solid #e2e8f0',
+                border: `1px solid ${String(pair.right || '').trim() ? '#e2e8f0' : '#fca5a5'}`,
                 borderRadius: 8,
                 fontSize: 12,
                 padding: '0 8px',
@@ -122,6 +122,11 @@ export default function MatchingEditor({ activity, onUpdate }) {
             </button>
           </div>
         ))}
+        {pairs.some((p) => !String(p.left || '').trim() || !String(p.right || '').trim()) && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginTop: 2, marginBottom: 6 }}>
+            Boş sol/sağ öğe içeren çiftler öğrenciye gösterilmez; lütfen doldurun veya silin.
+          </div>
+        )}
         <button
           onClick={add}
           style={{

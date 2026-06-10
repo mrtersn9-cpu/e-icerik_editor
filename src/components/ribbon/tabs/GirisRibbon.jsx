@@ -28,7 +28,7 @@ export default function GirisRibbon({ controller }) {
 
       <RibbonGroup title="Pano" width={262}>
         <RibbonRow>
-          <RibbonButton label="Yapıştır" icon="clipboard" onClick={commands.paste} tone="amber" />
+          <RibbonButton label="Yapıştır" icon="clipboard" onClick={commands.paste} disabled={!can.pasteObject} tone="amber" />
           <RibbonStack>
             <CompactRibbonButton label="Kes" icon="cut" onClick={commands.cut} disabled={!can.selection} />
             <CompactRibbonButton label="Kopyala" icon="copy" onClick={commands.copy} disabled={!can.selection} />
@@ -36,7 +36,7 @@ export default function GirisRibbon({ controller }) {
           </RibbonStack>
           <RibbonStack>
             <CompactRibbonButton label="Biçim Kopyala" icon="brush" onClick={commands.copyObjectStyle} disabled={!can.selection} width={102} />
-            <CompactRibbonButton label="Biçim Yapıştır" icon="brush" onClick={commands.pasteObjectStyle} disabled={!can.selection} width={102} />
+            <CompactRibbonButton label="Biçim Yapıştır" icon="brush" onClick={commands.pasteObjectStyle} disabled={!can.selection || !can.pasteStyle} width={102} />
           </RibbonStack>
         </RibbonRow>
       </RibbonGroup>
@@ -71,7 +71,13 @@ export default function GirisRibbon({ controller }) {
       <RibbonGroup title="Seçim Araçları" width={178}>
         <RibbonRow>
           <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.multiSelection} width={64} />
-          <CompactRibbonButton label="Grupla" icon="group" onClick={commands.groupSelection} disabled={!can.group} width={64} />
+          <CompactRibbonButton
+            label={can.ungroup ? 'Ayır' : 'Grupla'}
+            icon={can.ungroup ? 'ungroup' : 'group'}
+            onClick={can.ungroup ? commands.ungroupSelection : commands.groupSelection}
+            disabled={!can.group && !can.ungroup}
+            width={64}
+          />
           <RibbonPopoverButton label="Diğer" icon="more" width={58} disabled={!can.selection && !can.multiSelection}>
             <RibbonMenuGrid columns="repeat(2, 112px)">
               <CompactRibbonButton label="Ortala" icon="alignCenter" onClick={() => commands.align('center')} disabled={!can.multiSelection} width={106} />
@@ -80,9 +86,13 @@ export default function GirisRibbon({ controller }) {
               <CompactRibbonButton label="Alta Hizala" icon="alignBottom" onClick={() => commands.align('bottom')} disabled={!can.multiSelection} width={106} />
               <CompactRibbonButton label="Yatay Dağıt" icon="distributeH" onClick={() => commands.distribute('horizontal')} disabled={!can.distribute} width={106} />
               <CompactRibbonButton label="Dikey Dağıt" icon="distributeV" onClick={() => commands.distribute('vertical')} disabled={!can.distribute} width={106} />
-              <CompactRibbonButton label="Ayır" icon="ungroup" onClick={commands.ungroupSelection} disabled={!can.selection} width={106} />
-              <CompactRibbonButton label="Kilitle" icon="lock" onClick={() => commands.setSelectionLocked(true)} disabled={!can.selection} width={106} />
-              <CompactRibbonButton label="Kilidi Aç" icon="unlock" onClick={() => commands.setSelectionLocked(false)} disabled={!can.selection} width={106} />
+              <CompactRibbonButton
+                label={can.selectionLocked ? 'Kilidi Aç' : 'Kilitle'}
+                icon={can.selectionLocked ? 'unlock' : 'lock'}
+                onClick={() => commands.setSelectionLocked(!can.selectionLocked)}
+                disabled={!can.selection}
+                width={106}
+              />
               <CompactRibbonButton label="Öne Getir" icon="bringFront" onClick={commands.bringFront} disabled={!can.selection} width={106} />
               <CompactRibbonButton label="Arkaya Gönder" icon="sendBack" onClick={commands.sendBack} disabled={!can.selection} width={106} />
             </RibbonMenuGrid>

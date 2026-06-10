@@ -12,6 +12,7 @@ import { createTriggerConditionItem, createTriggerItem } from '../../../../logic
 import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
+  getTriggerTargetId,
 } from '../../../../logic/editorHelpers';
 import { validateFormula, detectCircularDependency } from '../../../../logic/formulaEngine';
 import {
@@ -50,7 +51,7 @@ const dialogTabs = [
 const runtimeActionOptions = [
   { value: 'runtime:restart', label: 'Yeniden Başlat', group: 'runtime' },
   { value: 'runtime:toggle-mute', label: 'Sesi Aç / Kapat', group: 'runtime' },
-  { value: 'runtime:toggle-play-pause', label: 'Play / Pause', group: 'runtime' },
+  { value: 'runtime:toggle-play-pause', label: 'Oynat / Duraklat', group: 'runtime' },
   { value: 'runtime:show-answer', label: 'Cevabı Göster', group: 'runtime' },
   { value: 'runtime:help', label: 'Menü / Yardım', group: 'runtime' },
   { value: 'runtime:complete', label: 'Etkinliği Kapat', group: 'runtime' },
@@ -58,10 +59,26 @@ const runtimeActionOptions = [
 
 const actionOptions = [...TRIGGER_ACTION_OPTIONS, ...runtimeActionOptions];
 
+// Operatörler değişken tipine göre filtrelenir: metne ">" gibi sayısal operatör sunmak
+// runtime'da her zaman false döndüğü için anlamsız ve kafa karıştırıcıdır.
+const OPERATORS_BY_VARIABLE_TYPE = {
+  number: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'],
+  text: ['eq', 'neq', 'contains'],
+  boolean: ['truthy', 'falsy', 'eq', 'neq'],
+};
+
+function getOperatorOptionsForCondition(condition, variables) {
+  if (!condition || condition.sourceType === 'objectState') return TRIGGER_OPERATOR_OPTIONS;
+  const variable = (variables || []).find((item) => item.id === condition.sourceId);
+  const allowed = OPERATORS_BY_VARIABLE_TYPE[variable?.type];
+  if (!allowed) return TRIGGER_OPERATOR_OPTIONS;
+  return TRIGGER_OPERATOR_OPTIONS.filter((option) => allowed.includes(option.value));
+}
+
 const triggerCategoryOptions = [
   { value: 'all', label: 'Tümü' },
   { value: 'Nesne', label: 'Nesne' },
-  { value: 'Layer', label: 'Layer' },
+  { value: 'Layer', label: 'Katman' },
   { value: 'Geçiş', label: 'Geçiş' },
   { value: 'Değişken', label: 'Değişken' },
   { value: 'Medya', label: 'Medya' },
@@ -133,16 +150,16 @@ function buildValueOptions(action, controller, variables) {
       value: layer.id,
       label:
         resolvedNames[layer.id] ||
-        (layer.kind === 'base' ? 'Base Layer' : layer.name || `Layer ${index + 1}`),
+        (layer.kind === 'base' ? 'Temel Katman' : layer.name || `${index + 1}. Katman`),
     }));
   }
   if (action === 'SliderGec') {
     return [
-      { value: '__next__', label: 'Sonraki slide' },
-      { value: '__prev__', label: 'Önceki slide' },
+      { value: '__next__', label: 'Sonraki sahne' },
+      { value: '__prev__', label: 'Önceki sahne' },
       ...slides.map((slide, index) => ({
         value: slide.id,
-        label: slide.name || slide.sceneName || `Slide ${index + 1}`,
+        label: slide.name || slide.sceneName || `${index + 1}. Sahne`,
       })),
     ];
   }
@@ -366,7 +383,7 @@ export default function InteractionBuilderDialog({ controller, onClose, open }) 
     const base = createTriggerItem(triggers.length);
     const nextTrigger = {
       ...base,
-      target: selectedPrimaryObjectId || controller.selectedObject?.id || 'TiklananNesne',
+      target: getTriggerTargetId(activity, controller.selectedObject?.id),
       ...patch,
     };
     if (!nextTrigger.value) {
@@ -1014,7 +1031,7 @@ export default function InteractionBuilderDialog({ controller, onClose, open }) 
                               Operatör
                               <NativeSelect
                                 value={condition.operator || 'eq'}
-                                options={TRIGGER_OPERATOR_OPTIONS}
+                                options={getOperatorOptionsForCondition(condition, variables)}
                                 onChange={(value) =>
                                   patchSelectedConditions((conditions) =>
                                     conditions.map((item) =>

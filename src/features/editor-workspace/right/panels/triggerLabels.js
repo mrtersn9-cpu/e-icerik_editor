@@ -17,7 +17,7 @@ const runtimeActionLabels = {
   'runtime:restart': 'Yeniden başlat',
   'runtime:show-answer': 'Cevabı göster',
   'runtime:toggle-mute': 'Sesi kapat/aç',
-  'runtime:toggle-play-pause': 'Play / Pause',
+  'runtime:toggle-play-pause': 'Oynat / Duraklat',
 };
 
 function safeText(value = '') {
@@ -39,12 +39,12 @@ function objectLabel(object = null) {
 
 function slideLabel(slide = null, index = 0) {
   if (!slide) return '';
-  return safeText(slide.name) || safeText(slide.sceneName) || `Slide ${index + 1}`;
+  return safeText(slide.name) || safeText(slide.sceneName) || `${index + 1}. Sahne`;
 }
 
 function layerLabel(layer = null, index = 0, resolvedNames = {}) {
   if (!layer) return '';
-  return resolvedNames[layer.id] || (layer.kind === 'base' ? 'Base Layer' : safeText(layer.name) || `Layer ${index + 1}`);
+  return resolvedNames[layer.id] || (layer.kind === 'base' ? 'Temel Katman' : safeText(layer.name) || `${index + 1}. Katman`);
 }
 
 function activityLabel(activity = null, index = 0) {
@@ -55,8 +55,8 @@ function activityLabel(activity = null, index = 0) {
 function specialValueLabel(value = '') {
   const text = safeText(value);
   if (!text) return 'Hedef seçilmemiş';
-  if (text === '__next__') return 'Sonraki slide';
-  if (text === '__prev__') return 'Önceki slide';
+  if (text === '__next__') return 'Sonraki sahne';
+  if (text === '__prev__') return 'Önceki sahne';
   if (text === '__activity__') return 'Sahne';
   if (text === 'Secili Nesne') return 'Seçili nesne';
   if (text === 'none') return 'Hedef yok';
@@ -67,8 +67,8 @@ export function getFriendlyTriggerSourceLabel(trigger = {}, context = {}) {
   const when = trigger.when || 'onClick';
   if (when === 'onLoad') return 'Sahne açılınca';
   if (when === 'onHover') return 'Üzerine gelince';
-  if (when === 'onTimelineStart') return 'Timeline başlangıcı';
-  if (when === 'onTimelineEnd') return 'Timeline sonu';
+  if (when === 'onTimelineStart') return 'Zaman çizelgesi başlangıcı';
+  if (when === 'onTimelineEnd') return 'Zaman çizelgesi sonu';
 
   const sourceValue = trigger.source || trigger.target || 'Secili Nesne';
   const special = specialValueLabel(sourceValue);
@@ -93,7 +93,7 @@ export function getFriendlyTriggerValueLabel(trigger = {}, context = {}) {
   if (trigger.action === 'SliderGec') {
     const slideIndex = (context.slides || []).findIndex((item) => item.id === value);
     if (slideIndex >= 0) return slideLabel(context.slides[slideIndex], slideIndex);
-    return value ? 'Silinmiş slide' : 'Slide seçilmemiş';
+    return value ? 'Silinmiş sahne' : 'Sahne seçilmemiş';
   }
 
   if (trigger.action === 'SayfaGec') {

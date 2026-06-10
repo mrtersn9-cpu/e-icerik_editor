@@ -3692,7 +3692,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
   const useSharedRuntimeDom = true;
   const layerName =
     layers.find((layer) => layer.id === activeLayerId)?.name ||
-    (activeLayerId === 'base' ? 'Base Layer' : 'Katman');
+    (activeLayerId === 'base' ? 'Temel Katman' : 'Katman');
   const previewPdfBackgroundObject =
     (previewActivity.objects || [])
       .filter((item) => (item?.isPdfBackground || item?.isStageBackground) && item?.imageData)
@@ -4105,7 +4105,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
               >
                 {layers.map((layer) => (
                   <option key={layer.id} value={layer.id}>
-                    {layer.kind === 'base' ? 'Base Layer' : layer.name || 'Katman'}
+                    {layer.kind === 'base' ? 'Temel Katman' : layer.name || 'Katman'}
                   </option>
                 ))}
               </select>

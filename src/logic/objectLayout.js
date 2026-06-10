@@ -1,3 +1,5 @@
+import { uid } from '../utils/editorHelpers';
+
 function getObjectSelectionBounds(items = []) {
   if (!items.length) return null;
   const left = Math.min(...items.map((item) => Number(item.x) || 0));
@@ -16,7 +18,58 @@ function getObjectSelectionBounds(items = []) {
   };
 }
 
-export { getObjectSelectionBounds, alignActivitySelection, distributeActivitySelection };
+export {
+  getObjectSelectionBounds,
+  alignActivitySelection,
+  distributeActivitySelection,
+  getSelectionGroupState,
+  groupActivitySelection,
+  ungroupActivitySelection,
+};
+
+// Seçimin grup durumunu tek yerde hesaplar; hem ribbon (`can`) hem sağ tık menüsü
+// aynı kararı kullansın diye paylaşılır.
+function getSelectionGroupState(activity = {}, selectedIds = new Set()) {
+  const ids = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+  const objects = Array.isArray(activity.objects) ? activity.objects : [];
+  const selected = objects.filter((item) => ids.has(item.id));
+  const groupIds = new Set(
+    selected.map((item) => String(item.groupId || '').trim()).filter(Boolean)
+  );
+  const groupedCount = selected.filter((item) => String(item.groupId || '').trim()).length;
+  const allOneGroup = selected.length > 1 && groupIds.size === 1 && groupedCount === selected.length;
+  return {
+    canGroup: selected.length > 1 && !allOneGroup,
+    canUngroup: groupedCount > 0,
+  };
+}
+
+function groupActivitySelection(activity = {}, selectedIds = new Set()) {
+  const ids = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+  if (ids.size < 2) return activity;
+  const groupId = uid();
+  return {
+    ...activity,
+    objects: (activity.objects || []).map((item) =>
+      ids.has(item.id) ? { ...item, groupId } : item
+    ),
+  };
+}
+
+function ungroupActivitySelection(activity = {}, selectedIds = new Set()) {
+  const ids = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+  if (!ids.size) return activity;
+  // Sadece groupId değil; hazır ikon/etiket butonları linkedHoverGroup ve
+  // linkedActionTargetId ile bağlı. Grubu gerçekten çözebilmek için bu bağları da temizliyoruz.
+  return {
+    ...activity,
+    objects: (activity.objects || []).map((item) =>
+      ids.has(item.id)
+        ? { ...item, groupId: '', linkedHoverGroup: '', linkedActionTargetId: '' }
+        : item
+    ),
+  };
+}
 
 function alignActivitySelection(activity = {}, selectedIds = new Set(), mode = 'left') {
   const ids = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);

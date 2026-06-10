@@ -46,6 +46,7 @@ const EFFECT_PRESETS = [
 export default function BicimRibbon({ controller }) {
   const { commands, object, can, galleries } = controller;
   const disabled = !can.selection;
+  const textDisabled = disabled || !can.textStyle;
   const [tableEditorOpen, setTableEditorOpen] = useState(false);
   const [chartEditorOpen, setChartEditorOpen] = useState(false);
   const patchTableData = (nextTableData) => commands.patchObject({ tableData: nextTableData });
@@ -75,9 +76,9 @@ export default function BicimRibbon({ controller }) {
             />
           </RibbonRow>
           <RibbonRow>
-            <CompactRibbonButton label="Kalın" icon="B" onClick={() => commands.toggleTextStyle('bold')} disabled={disabled} width={60} />
-            <CompactRibbonButton label="İtalik" icon="I" onClick={() => commands.toggleTextStyle('italic')} disabled={disabled} width={60} />
-            <CompactRibbonButton label="Altı" icon="U" onClick={() => commands.toggleTextStyle('underline')} disabled={disabled} width={58} />
+            <CompactRibbonButton label="Kalın" icon="B" onClick={() => commands.toggleTextStyle('bold')} disabled={textDisabled} width={60} />
+            <CompactRibbonButton label="İtalik" icon="I" onClick={() => commands.toggleTextStyle('italic')} disabled={textDisabled} width={60} />
+            <CompactRibbonButton label="Altı" icon="U" onClick={() => commands.toggleTextStyle('underline')} disabled={textDisabled} width={58} />
             <RibbonPopoverButton label="Hizala" icon="alignLeft" width={72} disabled={disabled}>
               <RibbonMenuGrid columns="repeat(2, 84px)">
                 <CompactRibbonButton label="Sol" icon="alignLeft" onClick={() => commands.setObjectStyle({ textAlign: 'left' })} width={78} />
@@ -206,7 +207,13 @@ export default function BicimRibbon({ controller }) {
           <RibbonRow>
             <CompactRibbonButton label="Öne Al" icon="bringFront" onClick={commands.bringFront} disabled={disabled} width={58} />
             <CompactRibbonButton label="Arkaya" icon="sendBack" onClick={commands.sendBack} disabled={disabled} width={58} />
-            <CompactRibbonButton label="Grupla" icon="group" onClick={commands.groupSelection} disabled={!can.group} width={58} />
+            <CompactRibbonButton
+              label={can.ungroup ? 'Ayır' : 'Grupla'}
+              icon={can.ungroup ? 'ungroup' : 'group'}
+              onClick={can.ungroup ? commands.ungroupSelection : commands.groupSelection}
+              disabled={!can.group && !can.ungroup}
+              width={58}
+            />
           </RibbonRow>
           <RibbonRow>
             <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.multiSelection} width={52} />
@@ -214,9 +221,9 @@ export default function BicimRibbon({ controller }) {
             <CompactRibbonButton label="Sağa" icon="alignRight" onClick={() => commands.align('right')} disabled={!can.multiSelection} width={52} />
             <RibbonPopoverButton label="Diğer" icon="more" width={54} disabled={!can.multiSelection}>
               <RibbonMenuGrid columns="repeat(2, 96px)">
-                <CompactRibbonButton label="Üste" icon="alignTop" onClick={() => commands.align('top')} width={88} />
-                <CompactRibbonButton label="Ortaya" icon="alignMiddle" onClick={() => commands.align('middle')} width={88} />
-                <CompactRibbonButton label="Alta" icon="alignBottom" onClick={() => commands.align('bottom')} width={88} />
+                <CompactRibbonButton label="Üste" icon="alignTop" onClick={() => commands.align('top')} disabled={!can.multiSelection} width={88} />
+                <CompactRibbonButton label="Ortaya" icon="alignMiddle" onClick={() => commands.align('middle')} disabled={!can.multiSelection} width={88} />
+                <CompactRibbonButton label="Alta" icon="alignBottom" onClick={() => commands.align('bottom')} disabled={!can.multiSelection} width={88} />
                 <CompactRibbonButton label="Yatay Dağıt" icon="distributeH" onClick={() => commands.distribute('horizontal')} disabled={!can.distribute} width={88} />
                 <CompactRibbonButton label="Dikey Dağıt" icon="distributeV" onClick={() => commands.distribute('vertical')} disabled={!can.distribute} width={88} />
               </RibbonMenuGrid>
@@ -236,27 +243,42 @@ export default function BicimRibbon({ controller }) {
             color: '#475569',
           }}
         >
-          <span>X</span>
-          <RibbonNumberInput value={Math.round(object?.x || 0)} onChange={(event) => commands.patchObject({ x: Number(event.target.value) || 0 })} disabled={disabled} width={44} />
-          <span>Y</span>
-          <RibbonNumberInput value={Math.round(object?.y || 0)} onChange={(event) => commands.patchObject({ y: Number(event.target.value) || 0 })} disabled={disabled} width={44} />
-          <span>R</span>
-          <RibbonNumberInput value={Math.round(object?.rotation || 0)} onChange={(event) => commands.patchObject({ rotation: Number(event.target.value) || 0 })} disabled={disabled} width={44} />
-          <span>G</span>
-          <RibbonNumberInput value={Math.round(object?.width || 0)} onChange={(event) => commands.patchObject({ width: Math.max(20, Number(event.target.value) || 20) })} disabled={disabled} width={44} />
-          <span>Y</span>
-          <RibbonNumberInput value={Math.round(object?.height || 0)} onChange={(event) => commands.patchObject({ height: Math.max(20, Number(event.target.value) || 20) })} disabled={disabled} width={44} />
-          <span>K</span>
-          <RibbonNumberInput value={Math.round(object?.style?.borderRadius || 0)} onChange={(event) => commands.setObjectStyle({ borderRadius: Math.max(0, Number(event.target.value) || 0) })} disabled={disabled} width={44} />
+          <span title="X konumu">X</span>
+          <RibbonNumberInput value={Math.round(object?.x || 0)} onChange={(event) => commands.patchObject({ x: Number(event.target.value) || 0 })} disabled={disabled} width={44} title="X konumu" />
+          <span title="Y konumu">Y</span>
+          <RibbonNumberInput value={Math.round(object?.y || 0)} onChange={(event) => commands.patchObject({ y: Number(event.target.value) || 0 })} disabled={disabled} width={44} title="Y konumu" />
+          <span title="Döndürme (derece)">D°</span>
+          <RibbonNumberInput value={Math.round(object?.rotation || 0)} onChange={(event) => commands.patchObject({ rotation: Number(event.target.value) || 0 })} disabled={disabled} width={44} title="Döndürme (derece)" />
+          <span title="Genişlik">G</span>
+          <RibbonNumberInput value={Math.round(object?.width || 0)} onChange={(event) => commands.patchObject({ width: Math.max(20, Number(event.target.value) || 20) })} disabled={disabled} width={44} title="Genişlik" />
+          <span title="Yükseklik">Yük</span>
+          <RibbonNumberInput value={Math.round(object?.height || 0)} onChange={(event) => commands.patchObject({ height: Math.max(20, Number(event.target.value) || 20) })} disabled={disabled} width={44} title="Yükseklik" />
+          <span title="Köşe yarıçapı">K</span>
+          <RibbonNumberInput value={Math.round(object?.style?.borderRadius || 0)} onChange={(event) => commands.setObjectStyle({ borderRadius: Math.max(0, Number(event.target.value) || 0) })} disabled={disabled} width={44} title="Köşe yarıçapı" />
         </div>
       </RibbonGroup>
 
       {object?.type === 'hotspot' && (
-        <RibbonGroup title="Hotspot" width={120}>
-          <RibbonStack>
-            <CompactRibbonButton label="Başlık" icon="text" onClick={() => commands.patchObject({ hotspotPopupTitle: object.hotspotPopupTitle || 'Bilgi' })} width={94} />
-            <CompactRibbonButton label="Açıklama" icon="note" onClick={() => commands.patchObject({ hotspotPopupBody: object.hotspotPopupBody || 'Açıklama metni' })} width={94} />
-          </RibbonStack>
+        <RibbonGroup title="Açılır İçerik" width={150}>
+          <RibbonPopoverButton label="Başlık / Açıklama" icon="note" width={120} variant="large" disabled={disabled}>
+            <RibbonStack>
+              <div style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>Açılır Başlık</div>
+              <input
+                value={object.hotspotPopupTitle || ''}
+                onChange={(event) => commands.patchObject({ hotspotPopupTitle: event.target.value })}
+                placeholder="Başlık"
+                style={{ height: 26, width: 240, border: '1px solid #cbd7e6', borderRadius: 6, fontSize: 11, padding: '0 8px' }}
+              />
+              <div style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>Açılır Metin</div>
+              <textarea
+                value={object.hotspotPopupBody || ''}
+                onChange={(event) => commands.patchObject({ hotspotPopupBody: event.target.value })}
+                placeholder="Açıklama metni"
+                rows={3}
+                style={{ width: 240, border: '1px solid #cbd7e6', borderRadius: 6, fontSize: 11, padding: '6px 8px', resize: 'vertical', fontFamily: 'inherit' }}
+              />
+            </RibbonStack>
+          </RibbonPopoverButton>
         </RibbonGroup>
       )}
 

@@ -57,7 +57,7 @@ export default function useWorkspaceChromeController({
       activeLayerId,
       activeLayerName:
         resolvedLayerNames[activeLayerId] ||
-        (activeLayer?.kind === 'base' ? 'Base Layer' : activeLayer?.name || 'Layer'),
+        (activeLayer?.kind === 'base' ? 'Temel Katman' : activeLayer?.name || 'Katman'),
       activePanel: RIGHT_PANEL_BY_RIBBON[ribbonTab] || 'home',
       activeRibbonTab: ribbonTab,
       activities,

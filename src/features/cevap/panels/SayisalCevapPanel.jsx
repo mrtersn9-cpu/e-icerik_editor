@@ -1,7 +1,7 @@
 import { patchActivity } from '../cevapActions';
 import { CevapCard, Field, MiniTable, PanelGrid, TextArea, TextInput, ToggleRow } from '../components/CevapControls';
 
-import { DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function SayisalCevapPanel({ activity, onUpdate }) {
   const patch = (p) => patchActivity(activity, onUpdate, p);
@@ -20,6 +20,9 @@ export default function SayisalCevapPanel({ activity, onUpdate }) {
         <Field label="Tolerans"><TextInput type="number" min="0" value={activity.numericTolerance ?? 0} onChange={(value) => patch({ numericTolerance: Number(value) || 0 })} /></Field>
         <Field label="Minimum"><TextInput type="number" value={activity.numericMin ?? ''} onChange={(value) => patch({ numericMin: value === '' ? null : Number(value) })} /></Field>
         <Field label="Maksimum"><TextInput type="number" value={activity.numericMax ?? ''} onChange={(value) => patch({ numericMax: value === '' ? null : Number(value) })} /></Field>
+        {Number.isFinite(activity.numericMin) && Number.isFinite(activity.numericMax) && activity.numericMin > activity.numericMax && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>Minimum, maksimumdan büyük olamaz.</div>
+        )}
       </CevapCard>
       <DogrulamaKurallariCard number="4" activity={activity} onUpdate={onUpdate}>
         <ToggleRow
@@ -32,8 +35,9 @@ export default function SayisalCevapPanel({ activity, onUpdate }) {
       <PuanlamaCard number="6" activity={activity} onUpdate={onUpdate} />
       <YanitKontrolCard number="7" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="8" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="9" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Sayısal Cevap Özeti" wide>
+      <CanCard number="9" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="10" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="11" title="Sayısal Cevap Özeti" wide>
         <MiniTable
           columns={['Doğru Değer', 'Tolerans', 'Minimum', 'Maksimum']}
           rows={[{

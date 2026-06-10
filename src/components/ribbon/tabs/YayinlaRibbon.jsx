@@ -66,7 +66,7 @@ export default function YayinlaRibbon({ controller }) {
         <RibbonPopoverButton label="İzleme / Player" icon="settings" width={112} variant="large" tone="slate">
           <RibbonStack>
             <RibbonRow>
-              <span style={{ fontSize: 10, color: '#475569' }}>Geçme</span>
+              <span style={{ fontSize: 10, color: '#475569' }}>Geçme (%)</span>
               <RibbonNumberInput
                 value={lms.passingScore ?? 70}
                 onChange={(event) => commands.patchLms({ passingScore: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })}
@@ -87,11 +87,7 @@ export default function YayinlaRibbon({ controller }) {
             <RibbonSelect
               value={lms.trackingMode || 'completion+score'}
               onChange={(event) => commands.patchLms({ trackingMode: event.target.value })}
-              options={[
-                { value: 'completion', label: 'Tamamlama' },
-                { value: 'score', label: 'Puan' },
-                { value: 'completion+score', label: 'Tamamlama + Puan' },
-              ]}
+              options={galleries.trackingModes}
               width={162}
             />
             <RibbonRow>
@@ -99,8 +95,8 @@ export default function YayinlaRibbon({ controller }) {
                 ['Menü', 'showMenu', true],
                 ['Notlar', 'showNotes', false],
                 ['Sözlük', 'showGlossary', false],
-                ['Seekbar', 'showSeekbar', true],
-                ['CC', 'closedCaptionsEnabled', false],
+                ['İlerleme Çubuğu', 'showSeekbar', true],
+                ['Altyazı', 'closedCaptionsEnabled', false],
               ].map(([label, key, defaultValue]) => (
                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#475569' }}>
                   <input

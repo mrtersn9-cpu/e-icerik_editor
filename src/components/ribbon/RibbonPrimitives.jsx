@@ -707,6 +707,8 @@ export function RibbonButton({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title || label}
+      aria-label={title || label}
+      aria-pressed={active ? true : undefined}
       style={{
         width,
         minWidth: width,
@@ -774,6 +776,8 @@ export function CompactRibbonButton({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title || label}
+      aria-label={title || label}
+      aria-pressed={active ? true : undefined}
       style={{
         width,
         minWidth: width,
@@ -853,7 +857,14 @@ export function RibbonNumberInput({
   min,
   max,
   step,
+  title,
 }) {
+  const clampToBounds = (num) => {
+    let next = num;
+    if (Number.isFinite(min)) next = Math.max(min, next);
+    if (Number.isFinite(max)) next = Math.min(max, next);
+    return next;
+  };
   // Odaktayken yerel taslak tutarız: kullanıcı alanı tamamen boşaltıp kendi
   // sayısını serbestçe yazabilsin. Aksi halde her tuşta değer dışarıdan
   // (Math.round/clamp ile) yeniden dayatıldığı için ilk haneler silinemiyordu.
@@ -881,7 +892,11 @@ export function RibbonNumberInput({
     if (draft === '' || !Number.isFinite(Number(draft))) {
       setDraft(value ?? '');
     } else {
-      emit(draft);
+      // Sınır dışı değer girildiyse blur'da kelepçele (min/max sadece görsel attribute
+      // olarak elle yazımı engellemiyordu).
+      const clamped = clampToBounds(Number(draft));
+      if (clamped !== Number(draft)) setDraft(String(clamped));
+      emit(String(clamped));
     }
   };
 
@@ -893,6 +908,7 @@ export function RibbonNumberInput({
       max={max}
       step={step}
       disabled={disabled}
+      title={title}
       onFocus={() => setFocused(true)}
       onChange={handleChange}
       onBlur={handleBlur}

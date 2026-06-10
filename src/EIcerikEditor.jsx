@@ -133,6 +133,7 @@ import {
   contrastSafeButtonStyle,
   ensureTtkbButtonTextContrast,
   cssColorWithAlpha,
+  readyButtonTextShadowForColor,
 } from './editor-logic/colorUtils';
 import CevapDrawer from './features/cevap/CevapDrawer';
 import {
@@ -558,7 +559,7 @@ function pickBookLayerPresetPayload(activity = {}) {
 }
 
 function normalizeLayerPreset(preset = {}, index = 0) {
-  const name = String(preset.name || '').trim() || `Layer Set ${index + 1}`;
+  const name = String(preset.name || '').trim() || `Katman Seti ${index + 1}`;
   const payload = pickBookLayerPresetPayload(
     normalizeButtonPairLayoutForActivity(
       normalizeActivity({
@@ -2761,6 +2762,16 @@ export default function EIcerikEditor() {
             item.type === 'draggable' || item.type === 'dropzone'
               ? upgradeDragDropStyle(item.type, { ...(item.style || {}), ...stylePatch })
               : { ...(item.style || {}), ...stylePatch };
+          // Butona elle renk verildiyse kilitle: TTKB kontrast düzeltmesi ve tema
+          // restyle'ı ezmesin; gölge de seçilen renge uyarlansın.
+          if (
+            item.type === 'button' &&
+            Object.prototype.hasOwnProperty.call(stylePatch, 'color')
+          ) {
+            nextItem.style.colorLocked = true;
+            const adaptedShadow = readyButtonTextShadowForColor(stylePatch.color);
+            if (adaptedShadow) nextItem.style.textShadow = adaptedShadow;
+          }
         }
         return nextItem;
       });

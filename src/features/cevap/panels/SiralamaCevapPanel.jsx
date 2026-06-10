@@ -12,7 +12,7 @@ import {
   ToggleRow,
 } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function SiralamaCevapPanel({ activity, onUpdate }) {
   const items = activity.sequenceItems || [];
@@ -76,8 +76,9 @@ export default function SiralamaCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="8" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Sıra Haritası" wide>
+      <CanCard number="11" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="12" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="13" title="Sıra Haritası" wide>
         <MiniTable columns={['Öğe', 'Doğru Sıra']} rows={items.map((item, index) => ({ id: item.id, cells: [item.label || '-', index + 1] }))} />
       </CevapCard>
     </PanelGrid>

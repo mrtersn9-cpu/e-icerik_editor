@@ -574,12 +574,19 @@ export function ToggleRow({ checked, disabled = false, hint, label, onChange }) 
   );
 }
 
-export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
+export function NumberInput({ disabled = false, onChange, step = 0.1, value, min, max, title }) {
   // Odaktayken yerel taslak tutarız: kullanıcı alanı tamamen boşaltıp kendi
   // sayısını serbestçe yazabilsin. Aksi halde her tuşta değer dışarıdan
   // yeniden dayatıldığı için ilk haneler silinemiyordu.
   const [draft, setDraft] = useState(value ?? '');
   const [focused, setFocused] = useState(false);
+
+  const clampToBounds = (num) => {
+    let next = num;
+    if (Number.isFinite(min)) next = Math.max(min, next);
+    if (Number.isFinite(max)) next = Math.min(max, next);
+    return next;
+  };
 
   useEffect(() => {
     if (!focused) setDraft(value ?? '');
@@ -591,7 +598,7 @@ export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
     // Ara durumlar (boş, "-", ".") commit edilmez; kullanıcı yazmaya devam edebilir.
     if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
     const numeric = Number(raw);
-    if (Number.isFinite(numeric)) onChange?.(numeric);
+    if (Number.isFinite(numeric)) onChange?.(clampToBounds(numeric));
   };
 
   const handleBlur = () => {
@@ -600,7 +607,10 @@ export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
     if (draft === '' || !Number.isFinite(numeric)) {
       setDraft(value ?? '');
     } else {
-      onChange?.(numeric);
+      // Sınır dışı değeri blur'da kelepçele (min/max attribute'u elle yazımı engellemiyor).
+      const clamped = clampToBounds(numeric);
+      if (clamped !== numeric) setDraft(String(clamped));
+      onChange?.(clamped);
     }
   };
 
@@ -608,6 +618,9 @@ export function NumberInput({ disabled = false, onChange, step = 0.1, value }) {
     <input
       type="number"
       step={step}
+      min={min}
+      max={max}
+      title={title}
       value={focused ? draft : value ?? ''}
       disabled={disabled}
       onFocus={() => setFocused(true)}

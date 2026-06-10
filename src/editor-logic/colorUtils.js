@@ -87,6 +87,19 @@ export function ensureTtkbButtonTextContrast(style = {}) {
   };
 }
 
+// Kullanıcının seçtiği buton yazı rengine uyumlu harf gölgesi üretir.
+// Tema gölgesi tema rengine göre hesaplandığından, kullanıcı rengi override
+// edilirken gölge de renge uyarlanmalı; aksi halde sert/uyumsuz kenar kalır.
+// Açık renk → yumuşak koyu gölge; koyu renk → hafif açık halo.
+// Boş/parse edilemeyen renk → '' (tema gölgesine karışılmaz).
+export function readyButtonTextShadowForColor(color = '') {
+  const samples = parseCssColorSamples(color);
+  if (!samples.length) return '';
+  return relativeLuminance(samples[0]) >= 0.45
+    ? '0 1px 2px rgba(0,0,0,.25)'
+    : '0 1px 0 rgba(255,255,255,.35)';
+}
+
 export function cssColorWithAlpha(value = '', alpha = 0.98, fallback = 'rgba(255,255,255,.98)') {
   const raw = String(value || '').trim();
   if (!raw) return fallback;

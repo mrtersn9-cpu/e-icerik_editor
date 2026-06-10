@@ -2,7 +2,7 @@ import { uid } from '../../../utils/editorHelpers';
 import { patchActivity } from '../cevapActions';
 import { CevapCard, Field, MiniTable, PanelGrid, SmallButton, TextArea, TextInput, ToggleRow } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
   const answers = activity.fillBlankAnswers || [];
@@ -37,7 +37,7 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
                 <TextInput value={answer.feedback || ''} placeholder="Bu bosluk icin ozel mesaj" onChange={(value) => patchBlank(answer.id, { feedback: value })} />
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <ToggleRow label="Buyuk/kucuk harf duyarli" checked={answer.caseSensitive} onChange={(checked) => patchBlank(answer.id, { caseSensitive: checked })} />
+                <ToggleRow label="Büyük/küçük harf duyarlı" checked={answer.caseSensitive} onChange={(checked) => patchBlank(answer.id, { caseSensitive: checked })} />
                 <Field label="Puan">
                   <TextInput type="number" min="0" value={answer.points || 1} onChange={(value) => patchBlank(answer.id, { points: Math.max(0, Number(value) || 0) })} />
                 </Field>
@@ -50,6 +50,11 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
               </SmallButton>
             </div>
           ))}
+          {answers.some((answer) => !(answer.acceptedValues || []).some((v) => String(v || '').trim())) && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+              En az bir boşlukta kabul edilen yanıt boş; öğrenci bu boşluğu doğru yapamaz.
+            </div>
+          )}
         </div>
       </CevapCard>
       <DogrulamaKurallariCard number="4" activity={activity} onUpdate={onUpdate}>
@@ -79,8 +84,9 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="7" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="8" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="9" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="10" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="11" title="Yanıt Eşleme Özeti" wide>
+      <CanCard number="10" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="12" title="Yanıt Eşleme Özeti" wide>
         <MiniTable columns={['#', 'Varsayılan Yanıt', 'Kabul Edilen Yanıtlar', 'Puan', 'Durum']} rows={answers.map((answer, index) => ({ id: answer.id, cells: [index + 1, answer.acceptedValues?.[0] || '-', (answer.acceptedValues || []).join(', '), answer.points || 1, 'Aktif'] }))} />
       </CevapCard>
     </PanelGrid>

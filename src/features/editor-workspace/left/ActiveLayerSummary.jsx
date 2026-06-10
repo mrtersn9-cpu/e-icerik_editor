@@ -123,10 +123,10 @@ export default function ActiveLayerSummary({
               textTransform: 'uppercase',
             }}
           >
-            Aktif Layer Özeti
+            Aktif Katman Özeti
           </div>
           <div style={{ fontSize: 10.5, color: '#334155', marginTop: 2, fontWeight: 800 }}>
-            {resolvedLayerNames[activeLayerId] || activeLayer?.name || 'Layer'}
+            {resolvedLayerNames[activeLayerId] || activeLayer?.name || 'Katman'}
           </div>
         </div>
         <IconButton
@@ -187,7 +187,7 @@ export default function ActiveLayerSummary({
                   fontWeight: 850,
                 }}
               >
-                {resolvedLayerNames[layerId] || layer.name || 'Layer'}
+                {resolvedLayerNames[layerId] || layer.name || 'Katman'}
               </span>
               <span style={{ color: '#64748b', fontSize: 10, fontWeight: 800 }}>
                 {layerObjects.length}

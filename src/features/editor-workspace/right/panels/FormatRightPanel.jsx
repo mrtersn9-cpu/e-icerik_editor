@@ -3,6 +3,7 @@ import { createTriggerItem } from '../../../../logic/activityFactory';
 import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
+  getTriggerTargetId,
 } from '../../../../logic/editorHelpers';
 import { SCENE_TEMPLATE_BUTTON_INTRO_ID } from '../../../../logic/sceneTemplates';
 
@@ -21,11 +22,40 @@ import {
   ToggleRow,
 } from './PanelPrimitives';
 
+// Çoklu seçimde bir alanın tüm öğelerde aynı olup olmadığını saptar; farklıysa
+// kullanıcıya "Karışık" gösterilir ki körlemesine ilk öğenin değeri yazılmasın.
+function getMixedFieldState(objects, accessor) {
+  if (!Array.isArray(objects) || objects.length <= 1) return { mixed: false };
+  const first = accessor(objects[0]);
+  const mixed = objects.some((item) => accessor(item) !== first);
+  return { mixed, value: first };
+}
+
+function MixedBadge({ show }) {
+  if (!show) return null;
+  return (
+    <span
+      title="Seçili öğelerde farklı değerler var. Değiştirirseniz tümüne uygulanır."
+      style={{
+        fontSize: 9,
+        fontWeight: 800,
+        color: '#b45309',
+        background: '#fef3c7',
+        borderRadius: 6,
+        padding: '1px 5px',
+        marginLeft: 6,
+      }}
+    >
+      Karışık
+    </span>
+  );
+}
+
 const actionOptions = [
   { value: 'none', label: 'Bir şey yapma' },
   { value: 'runtime:restart', label: 'Yeniden Başlat' },
   { value: 'runtime:toggle-mute', label: 'Sesi Aç / Kapat' },
-  { value: 'runtime:toggle-play-pause', label: 'Play / Pause' },
+  { value: 'runtime:toggle-play-pause', label: 'Oynat / Duraklat' },
   { value: 'runtime:show-answer', label: 'Cevabı Göster' },
   { value: 'runtime:complete', label: 'Etkinliği Kapat' },
   { value: 'runtime:help', label: 'Menü / Yardım' },
@@ -97,7 +127,7 @@ const buttonTaskPresets = [
   { id: 'menu', label: 'Menü', runtimeAction: 'help' },
   { id: 'prev', label: 'Geri', action: 'SliderGec', value: '__prev__' },
   { id: 'next', label: 'İleri', action: 'SliderGec', value: '__next__' },
-  { id: 'play-pause', label: 'Play / Pause', runtimeAction: 'toggle-play-pause' },
+  { id: 'play-pause', label: 'Oynat / Duraklat', runtimeAction: 'toggle-play-pause' },
   { id: 'mute', label: 'Sesi Kapat', runtimeAction: 'toggle-mute' },
   { id: 'show-answer', label: 'Cevabı Göster', runtimeAction: 'show-answer' },
   { id: 'restart', label: 'Yeniden Başlat', runtimeAction: 'restart' },
@@ -152,6 +182,7 @@ export function FormatRightPanelContent({ controller }) {
   const object = controller.selectedObject;
   const selectedObjects = controller.selectedObjects || [];
   const commands = controller.commands || {};
+  const can = controller.ribbonController?.can || {};
   const clickTrigger = findClickTrigger(activity, object);
   const style = object?.style || {};
   const layers = controller.layers || [];
@@ -175,7 +206,7 @@ export function FormatRightPanelContent({ controller }) {
   const buildClickTrigger = (action, value = '', label = 'tıklama görevi') => ({
     ...(clickTrigger || createTriggerItem((activity.triggers || []).length)),
     when: 'onClick',
-    target: getEditorPrimaryObjectId(activity, object.id) || object.id,
+    target: getTriggerTargetId(activity, object.id),
     action,
     value,
     name: `${objectTitle(object)} ${label}`,
@@ -310,7 +341,7 @@ export function FormatRightPanelContent({ controller }) {
             value: layer.id,
             label:
               resolvedNames[layer.id] ||
-              (layer.kind === 'base' ? 'Base Layer' : layer.name || `Layer ${index + 1}`),
+              (layer.kind === 'base' ? 'Temel Katman' : layer.name || `${index + 1}. Katman`),
           })),
           ]
           : ['Goster', 'Gizle', 'NesneToggle', 'NesneDurumuAyarla', 'SesCal', 'SesDurdur', 'VideoCal', 'VideoDurdur'].includes(clickTrigger?.action)
@@ -357,19 +388,26 @@ export function FormatRightPanelContent({ controller }) {
     const multiStyle = multi.style || {};
     const num = (val, fallback) => (Number.isFinite(Number(val)) ? Number(val) : fallback);
     const multiOpacityPct = Math.round((multi.opacity ?? multiStyle.opacity ?? 1) * 100);
+    // Anahtar alanlar için "Karışık" durumu (seçili öğeler farklı değer taşıyorsa).
+    const mixedLayer = getMixedFieldState(selectedObjects, (o) => o.layerId || 'base');
+    const mixedColor = getMixedFieldState(selectedObjects, (o) => o.style?.color || '');
+    const mixedBackground = getMixedFieldState(selectedObjects, (o) => o.style?.background || '');
+    const mixedOpacity = getMixedFieldState(selectedObjects, (o) => o.opacity ?? o.style?.opacity ?? 1);
+    const mixedFilter = getMixedFieldState(selectedObjects, (o) => o.style?.filter || '');
+    const mixedShadow = getMixedFieldState(selectedObjects, (o) => o.style?.boxShadow || '');
     return (
       <>
         <PanelCard title="1. Genel" collapsible>
           <div style={{ display: 'grid', gap: 7 }}>
             <FieldLabel>
-              Layer
+              <span>Katman <MixedBadge show={mixedLayer.mixed} /></span>
               <NativeSelect
                 value={multi.layerId || activity.activeLayerId || 'base'}
                 options={layers.map((layer, index) => ({
                   value: layer.id,
                   label:
                     resolvedNames[layer.id] ||
-                    (layer.kind === 'base' ? 'Base Layer' : layer.name || `Layer ${index + 1}`),
+                    (layer.kind === 'base' ? 'Temel Katman' : layer.name || `${index + 1}. Katman`),
                 }))}
                 onChange={(value) => patchObject({ layerId: value })}
               />
@@ -410,11 +448,11 @@ export function FormatRightPanelContent({ controller }) {
           <div style={{ display: 'grid', gap: 7 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
               <FieldLabel>
-                Metin rengi
+                <span>Metin rengi <MixedBadge show={mixedColor.mixed} /></span>
                 <ColorInput value={multiStyle.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
               </FieldLabel>
               <FieldLabel>
-                Zemin
+                <span>Zemin <MixedBadge show={mixedBackground.mixed} /></span>
                 <ColorInput value={multiStyle.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
               </FieldLabel>
               <FieldLabel>
@@ -436,10 +474,13 @@ export function FormatRightPanelContent({ controller }) {
             </div>
             <ButtonGrid
               actions={[
-                { label: 'Kalın', onClick: () => commands.toggleTextStyle?.('bold') },
-                { label: 'İtalik', onClick: () => commands.toggleTextStyle?.('italic') },
-                { label: 'Kilitle', onClick: () => commands.setSelectionLocked?.(true) },
-                { label: 'Kilidi Aç', onClick: () => commands.setSelectionLocked?.(false) },
+                { label: 'Kalın', onClick: () => commands.toggleTextStyle?.('bold'), disabled: !can.textStyle },
+                { label: 'İtalik', onClick: () => commands.toggleTextStyle?.('italic'), disabled: !can.textStyle },
+                {
+                  label: can.selectionLocked ? 'Kilidi Aç' : 'Kilitle',
+                  onClick: () => commands.setSelectionLocked?.(!can.selectionLocked),
+                  disabled: !can.selection,
+                },
               ]}
             />
           </div>
@@ -448,7 +489,7 @@ export function FormatRightPanelContent({ controller }) {
         <PanelCard title="3.5 Görünürlük ve efektler" collapsible>
           <div style={{ display: 'grid', gap: 7 }}>
             <FieldLabel>
-              Opaklık (%)
+              <span>Opaklık (%) <MixedBadge show={mixedOpacity.mixed} /></span>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px', gap: 8, alignItems: 'center' }}>
                 <input
                   type="range"
@@ -459,13 +500,15 @@ export function FormatRightPanelContent({ controller }) {
                   style={{ width: '100%', accentColor: '#2563eb' }}
                 />
                 <NumberInput
+                  min={0}
+                  max={100}
                   value={multiOpacityPct}
                   onChange={(value) => patchStyle({ opacity: Math.max(0, Math.min(100, Number(value) || 0)) / 100 })}
                 />
               </div>
             </FieldLabel>
             <FieldLabel>
-              Filtre
+              <span>Filtre <MixedBadge show={mixedFilter.mixed} /></span>
               <NativeSelect
                 value={currentFilterOption(multiStyle.filter)}
                 options={filterOptions}
@@ -473,7 +516,7 @@ export function FormatRightPanelContent({ controller }) {
               />
             </FieldLabel>
             <FieldLabel>
-              Gölge
+              <span>Gölge <MixedBadge show={mixedShadow.mixed} /></span>
               <NativeSelect
                 value={currentShadowOption(multiStyle.boxShadow)}
                 options={shadowPresets}
@@ -492,8 +535,11 @@ export function FormatRightPanelContent({ controller }) {
               { label: 'Üste Hizala', onClick: () => commands.align?.('top') },
               { label: 'Yatay Dağıt', onClick: () => commands.distribute?.('horizontal'), disabled: selectedObjects.length < 3 },
               { label: 'Dikey Dağıt', onClick: () => commands.distribute?.('vertical'), disabled: selectedObjects.length < 3 },
-              { label: 'Grupla', onClick: commands.groupSelection, disabled: !controller.ribbonController?.can?.group },
-              { label: 'Ayır', onClick: commands.ungroupSelection },
+              {
+                label: can.ungroup ? 'Ayır' : 'Grupla',
+                onClick: can.ungroup ? commands.ungroupSelection : commands.groupSelection,
+                disabled: !can.group && !can.ungroup,
+              },
             ]}
           />
         </PanelCard>
@@ -715,7 +761,7 @@ export function FormatRightPanelContent({ controller }) {
                 value: layer.id,
                 label:
                   resolvedNames[layer.id] ||
-                  (layer.kind === 'base' ? 'Base Layer' : layer.name || `Layer ${index + 1}`),
+                  (layer.kind === 'base' ? 'Temel Katman' : layer.name || `${index + 1}. Katman`),
               }))}
               onChange={(value) => patchObject({ layerId: value })}
             />
@@ -784,8 +830,11 @@ export function FormatRightPanelContent({ controller }) {
             actions={[
               { label: 'Kalın', onClick: () => commands.toggleTextStyle?.('bold'), disabled: object.type !== 'text' },
               { label: 'İtalik', onClick: () => commands.toggleTextStyle?.('italic'), disabled: object.type !== 'text' },
-              { label: 'Grupla', onClick: commands.groupSelection, disabled: !controller.ribbonController?.can?.group },
-              { label: 'Ayır', onClick: commands.ungroupSelection },
+              {
+                label: can.ungroup ? 'Ayır' : 'Grupla',
+                onClick: can.ungroup ? commands.ungroupSelection : commands.groupSelection,
+                disabled: !can.group && !can.ungroup,
+              },
             ]}
           />
         </div>
@@ -963,8 +1012,11 @@ export function FormatRightPanelContent({ controller }) {
             actions={[
               { label: 'Öne Getir', onClick: commands.bringFront },
               { label: 'Arkaya Gönder', onClick: commands.sendBack },
-              { label: 'Kilitle', onClick: () => commands.setSelectionLocked?.(true) },
-              { label: 'Kilidi Aç', onClick: () => commands.setSelectionLocked?.(false) },
+              {
+                label: can.selectionLocked ? 'Kilidi Aç' : 'Kilitle',
+                onClick: () => commands.setSelectionLocked?.(!can.selectionLocked),
+                disabled: !can.selection,
+              },
             ]}
           />
           <FieldLabel>

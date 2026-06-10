@@ -85,6 +85,13 @@ export function getEditorPrimaryObjectId(activity = {}, objectId = '') {
   return current.id;
 }
 
+// Tetikleyici hedefi için tek doğruluk kaynağı: önce mantıksal birincil nesne (hazır
+// ikon+etiket çiftlerinde etiket), yoksa nesnenin kendisi, o da yoksa "her tıklanan nesne".
+// FormatRightPanel ve InteractionBuilderDialog aynı kararı kullansın diye paylaşılır.
+export function getTriggerTargetId(activity = {}, objectId = '', fallback = 'TiklananNesne') {
+  return getEditorPrimaryObjectId(activity, objectId) || objectId || fallback;
+}
+
 export function getEditorGroupedObjectEntries(activity = {}, inputObjects = []) {
   const objects = Array.isArray(inputObjects) ? inputObjects : [];
   const seen = new Set();

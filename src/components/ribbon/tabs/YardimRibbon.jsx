@@ -48,7 +48,7 @@ export default function YardimRibbon({ controller }) {
       </RibbonGroup>
 
       <RibbonGroup title="Dokümantasyon" width={134}>
-        <RibbonButton label="Doküman" icon="note" onClick={() => commands.showHelpToast('Dokümantasyon paneli yardım sekmesinde hazır.')} tone="slate" width={92} />
+        <RibbonButton label="Doküman" icon="note" onClick={() => commands.setRibbonTab('help')} tone="slate" width={92} />
       </RibbonGroup>
 
       <RibbonGroup title="SSS" width={92}>

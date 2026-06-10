@@ -3,6 +3,7 @@ import { patchActivity } from '../cevapActions';
 import { CevapCard, Field, PanelGrid, SelectInput, SmallButton, TextInput, ToggleRow } from '../components/CevapControls';
 
 import {
+  CanCard,
   DenemeVeKisitlarCard,
   ErisilebilirlikCard,
   EtkinlikTuruCard,
@@ -300,7 +301,8 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="7" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="8" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="9" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="10" activity={activity} onUpdate={onUpdate} />
+      <CanCard number="10" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
     </PanelGrid>
   );
 }

@@ -6,13 +6,16 @@ export const VARIABLE_TYPES = [
   { value: 'boolean', label: 'Doğru/Yanlış' },
 ];
 
+// NOT: Yalnızca runtime motorunda (getCommandsForTrigger) gerçek bir karşılığı olan
+// eylemler sunulur. Daha önce listede olup runtime'da işlenmeyen (sessizce hiçbir şey
+// yapan) eylemler kaldırıldı: LightboxAc, AnimasyonBaslat, ZamanCizelgesiBaslat/Durdur/Atla,
+// ScrollTo. Runtime'a eklendiklerinde tekrar açılabilir.
 export const TRIGGER_ACTION_OPTIONS = [
   // Navigation
   { value: 'YenidenBaslat', label: 'Yeniden Başlat', group: 'nav' },
   { value: 'SliderGec', label: 'Sahneye Geç', group: 'nav' },
   { value: 'SayfaGec', label: 'Sayfaya Geç', group: 'nav' },
   { value: 'KatmanaGec', label: 'Katmana Geç', group: 'nav' },
-  { value: 'LightboxAc', label: 'Lightbox Aç', group: 'nav' },
   { value: 'URLAc', label: 'URL / Bağlantı Aç', group: 'nav' },
   // Visibility
   { value: 'Goster', label: 'Nesne Göster', group: 'viz' },
@@ -28,17 +31,11 @@ export const TRIGGER_ACTION_OPTIONS = [
   { value: 'SesDurdur', label: 'Ses Durdur', group: 'media' },
   { value: 'VideoCal', label: 'Video Oynat', group: 'media' },
   { value: 'VideoDurdur', label: 'Video Duraklat', group: 'media' },
-  { value: 'AnimasyonBaslat', label: 'Animasyon Başlat', group: 'media' },
-  // Timeline
-  { value: 'ZamanCizelgesiBaslat', label: 'Zaman Çizelgesini Başlat', group: 'timeline' },
-  { value: 'ZamanCizelgesiDurdur', label: 'Zaman Çizelgesini Durdur', group: 'timeline' },
-  { value: 'ZamanCizelgesiAtla', label: 'İşaret Noktasına Atla', group: 'timeline' },
   // LMS / Quiz
   { value: 'SonucGonder', label: 'Sonuç Gönder (LMS)', group: 'lms' },
   { value: 'TamamlaGonder', label: 'Tamamlama Gönder', group: 'lms' },
   // Advanced
   { value: 'Yazdir', label: 'Sayfayı Yazdır', group: 'advanced' },
-  { value: 'ScrollTo', label: 'Nesneye Kaydır', group: 'advanced' },
   // Widget
   { value: 'sendWidgetCommand', label: 'Widget Komut Gönder', group: 'widget' },
 ];

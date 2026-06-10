@@ -65,6 +65,13 @@ export default function NumericEditor({ activity, onUpdate }) {
               placeholder="Opsiyonel"
             />
           </div>
+          {Number.isFinite(activity.numericMin) &&
+            Number.isFinite(activity.numericMax) &&
+            activity.numericMin > activity.numericMax && (
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+                Min değeri Max değerinden büyük olamaz.
+              </div>
+            )}
         </div>
       </div>
     </div>

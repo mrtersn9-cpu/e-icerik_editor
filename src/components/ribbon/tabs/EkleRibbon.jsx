@@ -258,7 +258,7 @@ export default function EkleRibbon({ controller }) {
             <RibbonMenuGrid columns="repeat(2, 124px)">
               <CompactRibbonButton label="Ses" icon="audio" onClick={commands.insertAudio} width={118} />
               <CompactRibbonButton label="Video" icon="video" onClick={commands.insertVideo} width={118} />
-              <CompactRibbonButton label="Web Embed" icon="web" onClick={() => commands.insertObject('embed')} width={118} />
+              <CompactRibbonButton label="Web Gömme" icon="web" onClick={() => commands.insertObject('embed')} width={118} />
               <CompactRibbonButton label="Etiket" icon="tag" onClick={commands.insertLabel} width={118} />
               <CompactRibbonButton label="Bilgi Kutusu" icon="i" onClick={() => commands.insertComponent('info-box')} width={112} />
               <CompactRibbonButton label="Uyarı" icon="!" onClick={() => commands.insertComponent('warning-box')} width={112} />

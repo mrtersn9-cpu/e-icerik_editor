@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 import { DEFAULT_ACTIVITY_SETTINGS } from '../../constants';
+import { getLivesConfig } from '../../features/cevap/livesIcons';
 import { getAutoAnswerSummary, getCorrectSelectionIds } from '../../logic/activityScoring';
 import { ButtonPackageIntroDiagram } from '../../logic/buttonStyling';
 import {
@@ -42,8 +43,40 @@ import {
   isObjectTimelineActive,
 } from '../../logic/timeline';
 import { getPackageTheme, shuffleArray } from '../../logic/uiPrimitives';
+import { sanitizeSvgMarkup } from '../../utils/editorHelpers';
 import SlideTransitionView from '../editor/SlideTransitionView';
 import { LayerThumbnail } from '../SlideStrip';
+
+// Can/hak göstergesi — kalan can = livesCount - attempts. Dolu canlar seçilen
+// simge/resimle, biten canlar soluk gösterilir. Önizleme ve SCORM aynı veriyi kullanır.
+function LivesBar({ activity, attempts = 0 }) {
+  const lives = getLivesConfig(activity);
+  if (!lives.enabled) return null;
+  const remaining = Math.max(0, lives.count - attempts);
+  return (
+    <div
+      role="status"
+      aria-label={`Kalan can: ${remaining} / ${lives.count}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, lineHeight: 1 }}
+    >
+      {Array.from({ length: lives.count }).map((_, i) => {
+        const filled = i < remaining;
+        return lives.useCustom ? (
+          <img
+            key={i}
+            src={lives.customImage}
+            alt=""
+            style={{ width: 20, height: 20, objectFit: 'contain', opacity: filled ? 1 : 0.25, filter: filled ? 'none' : 'grayscale(1)' }}
+          />
+        ) : (
+          <span key={i} style={{ fontSize: 18, opacity: filled ? 1 : 0.25, filter: filled ? 'none' : 'grayscale(1)' }}>
+            {lives.glyph}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function PreviewDragDrop({ activity }) {
   const stageRef = useRef(null);
@@ -184,7 +217,7 @@ function PreviewDragDrop({ activity }) {
         {activity.svgMarkup && (
           <div
             style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-            dangerouslySetInnerHTML={{ __html: activity.svgMarkup }}
+            dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
           />
         )}
         {drops.map((dz) => {
@@ -859,7 +892,7 @@ function ManualLayerPreview({
                           fontWeight: 900,
                         }}
                       >
-                        {isBase ? 'Base Layer' : 'Layer'}
+                        {isBase ? 'Temel Katman' : 'Katman'}
                       </span>
                       <span
                         style={{
@@ -872,7 +905,7 @@ function ManualLayerPreview({
                         }}
                       >
                         {resolvedLayerNames[layer.id] ||
-                          (isBase ? 'Base Layer' : `Layer ${index + 1}`)}
+                          (isBase ? 'Temel Katman' : `${index + 1}. Katman`)}
                       </span>
                     </div>
                     <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
@@ -961,7 +994,7 @@ function ManualLayerPreview({
             {activity.svgMarkup && (
               <div
                 style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                dangerouslySetInnerHTML={{ __html: activity.svgMarkup }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
               />
             )}
             <RuntimeObjectLayer
@@ -1636,9 +1669,14 @@ function PreviewSelectionFlow({
       if (choices.length <= 1) return true;
       return sel.some((id) => choices.some((obj) => obj.id === id));
     });
+  // Can etkinse deneme sınırı = can sayısı (can = denemenin görsel katmanı).
+  const selectionLives = getLivesConfig(activity);
+  const selectionEffectiveMaxAttempts = selectionLives.enabled
+    ? selectionLives.count
+    : (answerControl.maxAttempts || settings.maxAttempts);
   const canRetry =
     settings.allowRetry !== false &&
-    ((answerControl.maxAttempts || settings.maxAttempts) === 0 || attempts < (answerControl.maxAttempts || settings.maxAttempts));
+    (selectionEffectiveMaxAttempts === 0 || attempts < selectionEffectiveMaxAttempts);
   const isSuccess = result === 'success';
   const nextAfterIntroAuto =
     settings.showButtonPackageIntro !== false && packageScreen.enabled !== false
@@ -1924,7 +1962,7 @@ function PreviewSelectionFlow({
                   pointerEvents: 'none',
                   overflow: 'hidden',
                 }}
-                dangerouslySetInnerHTML={{ __html: activity.svgMarkup }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
               />
             )}
             <div
@@ -2000,7 +2038,7 @@ function PreviewSelectionFlow({
             {phaseActivity.svgMarkup && (
               <div
                 style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                dangerouslySetInnerHTML={{ __html: phaseActivity.svgMarkup }}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(phaseActivity.svgMarkup) }}
               />
             )}
             <RuntimeObjectLayer
@@ -2464,7 +2502,7 @@ function PreviewSelectionFlow({
                 {activity.svgMarkup && (
                   <div
                     style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                    dangerouslySetInnerHTML={{ __html: activity.svgMarkup }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
                   />
                 )}
                 <RuntimeObjectLayer
@@ -2639,6 +2677,7 @@ function PreviewSelectionFlow({
               flexWrap: 'wrap',
             }}
           >
+            <LivesBar activity={activity} attempts={attempts} />
             {checking ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div
@@ -3272,7 +3311,7 @@ function PreviewDragDropFlow({
         {activity.svgMarkup && (
           <div
             style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-            dangerouslySetInnerHTML={{ __html: activity.svgMarkup }}
+            dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(activity.svgMarkup) }}
           />
         )}
         {drops.map((dz) => {
@@ -4115,6 +4154,7 @@ function PreviewDragDropFlow({
             justifyContent: 'flex-end',
           }}
         >
+          <LivesBar activity={activity} attempts={attempts} />
           {checking ? (
             <div
               style={{

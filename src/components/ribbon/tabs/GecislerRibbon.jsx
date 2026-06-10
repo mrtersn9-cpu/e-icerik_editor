@@ -104,11 +104,7 @@ export default function GecislerRibbon({ controller }) {
         <RibbonSelect
           value={currentSlide?.slideTransitionSound || 'none'}
           onChange={(event) => commands.patchCurrentSlide({ slideTransitionSound: event.target.value })}
-          options={[
-            { value: 'none', label: 'Yok' },
-            { value: 'soft', label: 'Yumuşak' },
-            { value: 'click', label: 'Tık' },
-          ]}
+          options={galleries.transitionSounds}
           width={74}
         />
       </RibbonGroup>

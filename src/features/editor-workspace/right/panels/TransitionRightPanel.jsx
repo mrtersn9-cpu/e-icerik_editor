@@ -6,21 +6,14 @@ import {
   PanelCard,
   PanelShell,
   PreviewTile,
-  ToggleRow,
   inspectorChrome,
 } from './PanelPrimitives';
-
-const transitionSoundOptions = [
-  { value: 'none', label: 'Ses yok' },
-  { value: 'soft-click', label: 'Yumuşak tık' },
-  { value: 'page', label: 'Sayfa geçişi' },
-  { value: 'chime', label: 'Kısa uyarı' },
-];
 
 export default function TransitionRightPanel({ controller }) {
   const commands = controller.commands || {};
   const galleries = controller.galleries || {};
   const currentSlide = controller.currentSlide || {};
+  const transitionSoundOptions = galleries.transitionSounds || [];
 
   const patchSlide = (patch) => commands.patchCurrentSlide?.(patch);
 
@@ -48,7 +41,7 @@ export default function TransitionRightPanel({ controller }) {
               />
             </FieldLabel>
             <FieldLabel>
-              Easing
+              Yumuşatma
               <NativeSelect
                 value={currentSlide.slideTransitionEasing || 'easeOut'}
                 options={galleries.easings || []}
@@ -93,16 +86,20 @@ export default function TransitionRightPanel({ controller }) {
         <div style={{ display: 'grid', gap: 7 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
             <FieldLabel>
-              Süre
+              Süre (sn)
               <NumberInput
                 value={currentSlide.slideTransitionDuration ?? 0.45}
+                min={0}
+                step={0.05}
                 onChange={(value) => patchSlide({ slideTransitionDuration: value })}
               />
             </FieldLabel>
             <FieldLabel>
-              Gecikme
+              Gecikme (sn)
               <NumberInput
                 value={currentSlide.slideTransitionDelay ?? 0}
+                min={0}
+                step={0.05}
                 onChange={(value) => patchSlide({ slideTransitionDelay: value })}
               />
             </FieldLabel>
@@ -115,12 +112,6 @@ export default function TransitionRightPanel({ controller }) {
               onChange={(value) => patchSlide({ slideTransitionSound: value })}
             />
           </FieldLabel>
-          <ToggleRow
-            label="Canlı önizleme"
-            hint="Önizle komutu seçili geçişle açılır."
-            checked={currentSlide.liveTransitionPreview !== false}
-            onChange={(checked) => patchSlide({ liveTransitionPreview: checked })}
-          />
         </div>
       </PanelCard>
 

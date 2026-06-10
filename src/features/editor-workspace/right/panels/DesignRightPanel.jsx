@@ -265,8 +265,13 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
   };
 
   // Tüm hazır butonların iç yazı rengini ayarla; boş = temadan gelen varsayılan.
+  // Tek kaynak controller komutu (ribbon ile ortak); eski projeler için yerel fallback.
   const applyReadyButtonTextColor = (color) => {
     if (!activity) return;
+    if (commands.applyReadyButtonTextColor) {
+      commands.applyReadyButtonTextColor(color);
+      return;
+    }
     const withColor = { ...activity, readyButtonTextColor: color || '' };
     controller.onUpdateActivity?.(applyGeneratedThemeToActivity(withColor, currentAnswerPresetId));
   };
@@ -433,42 +438,74 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
       {activeTab === 'buttons' && (
         <>
           <PanelCard title="Buton yazı rengi" collapsible>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="color"
-                value={activity.readyButtonTextColor || '#ffffff'}
-                onChange={(event) => applyReadyButtonTextColor(event.target.value)}
-                title="Tüm hazır butonların iç yazı rengi"
-                style={{
-                  width: 40,
-                  height: 30,
-                  border: '1px solid #cfd8e3',
-                  borderRadius: 8,
-                  background: '#fff',
-                  cursor: 'pointer',
-                  padding: 2,
-                }}
-              />
-              <span style={{ fontSize: 11, color: '#64748b', flex: 1, minWidth: 0 }}>
-                {activity.readyButtonTextColor || 'Temadan (varsayılan)'}
-              </span>
-              {activity.readyButtonTextColor ? (
-                <button
-                  type="button"
-                  onClick={() => applyReadyButtonTextColor('')}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: '#2563eb',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Temaya bırak
-                </button>
-              ) : null}
+            <div style={{ display: 'grid', gap: 8 }}>
+              {/* Hızlı renkler: doğrudan uygular — color input'un "değer değişmedi"
+                  tuzağına (boşken beyaz görünüp beyaz seçilememesi) takılmaz. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  ['#ffffff', 'Beyaz'],
+                  ['#0f172a', 'Siyah'],
+                  ['#fde047', 'Sarı'],
+                  ['#2563eb', 'Mavi'],
+                  ['#16a34a', 'Yeşil'],
+                  ['#ef4444', 'Kırmızı'],
+                ].map(([color, name]) => {
+                  const isActive =
+                    String(activity.readyButtonTextColor || '').toLowerCase() === color;
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => applyReadyButtonTextColor(color)}
+                      title={`Buton yazı rengi: ${name}`}
+                      aria-label={`Buton yazı rengi: ${name}`}
+                      aria-pressed={isActive}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 999,
+                        border: '1px solid #cbd5e1',
+                        outline: isActive ? '2px solid #2563eb' : 'none',
+                        outlineOffset: 1,
+                        background: color,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Boş durum sentinel'i #fefefe: beyazla çakışmaz → picker'dan beyaz
+                    seçimi de onChange tetikler. */}
+                <div style={{ width: 40, flexShrink: 0 }}>
+                  <ColorInput
+                    value={activity.readyButtonTextColor || '#fefefe'}
+                    onChange={(value) => applyReadyButtonTextColor(value)}
+                  />
+                </div>
+                <span style={{ fontSize: 11, color: '#64748b', flex: 1, minWidth: 0 }}>
+                  {activity.readyButtonTextColor || 'Temadan (varsayılan)'}
+                </span>
+                {activity.readyButtonTextColor ? (
+                  <button
+                    type="button"
+                    onClick={() => applyReadyButtonTextColor('')}
+                    aria-label="Buton yazı rengini temaya bırak"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#2563eb',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Temaya bırak
+                  </button>
+                ) : null}
+              </div>
             </div>
           </PanelCard>
           <PanelCard title={`Hazır butonlar (${readyButtons.length})`} collapsible>

@@ -8,6 +8,7 @@ import {
   contrastSafeButtonStyle,
   cssColorWithAlpha,
   parseCssColorSamples,
+  readyButtonTextShadowForColor,
 } from '../editor-logic/colorUtils';
 import { normalizeRuntimeActionLabel } from '../utils/storylineRuntime';
 
@@ -703,6 +704,9 @@ function restyleReadyButtonsForPreset(
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
   const motion = stylePreset?.motion || {};
   const textColor = String(options.textColor || '').trim();
+  // Kullanıcı rengiyle birlikte harf gölgesi de renge uyarlanır ("köşe rengi" sorunu):
+  // tema gölgesi tema rengine göre hesaplandığından override'da uyumsuz kalıyordu.
+  const userShadow = textColor ? readyButtonTextShadowForColor(textColor) : '';
   const list = objects || [];
   const byId = new Map(list.map((item) => [item?.id, item]));
   return list.map((object) => {
@@ -722,7 +726,15 @@ function restyleReadyButtonsForPreset(
       // yazı rengini değiştirir. colorLocked → normalize'daki TTKB kontrast düzeltmesi
       // bu rengi EZMESİN. Renk boşsa (Temaya bırak) kilit kaldırılır.
       if (textColor) {
-        return { ...object, style: { ...(object.style || {}), color: textColor, colorLocked: true } };
+        return {
+          ...object,
+          style: {
+            ...(object.style || {}),
+            color: textColor,
+            colorLocked: true,
+            ...(userShadow ? { textShadow: userShadow } : {}),
+          },
+        };
       }
       if (object.style?.colorLocked) {
         return { ...object, style: { ...object.style, colorLocked: false } };
@@ -746,9 +758,11 @@ function restyleReadyButtonsForPreset(
         ...(object.style || {}),
         ...built,
         ...(keepRound ? { borderRadius: prevRadius } : {}),
-        // textColor varsa kullanıcı rengini kilitle (TTKB ezmesin); yoksa kilidi kaldır
-        // ki tema rengine (built.color) dönebilsin.
-        ...(textColor ? { color: textColor, colorLocked: true } : { colorLocked: false }),
+        // textColor varsa kullanıcı rengini ve renge uyumlu gölgeyi kilitle (TTKB ezmesin);
+        // yoksa kilidi kaldır ki tema rengine/gölgesine (built.color/textShadow) dönebilsin.
+        ...(textColor
+          ? { color: textColor, colorLocked: true, ...(userShadow ? { textShadow: userShadow } : {}) }
+          : { colorLocked: false }),
       },
       ...(motion ? { buttonMotion: { ...motion } } : {}),
     };
@@ -828,6 +842,7 @@ function restyleAnswerLayerObjectsForPreset(
   options = {}
 ) {
   const buttonTextColor = String(options.textColor || '').trim();
+  const userButtonShadow = buttonTextColor ? readyButtonTextShadowForColor(buttonTextColor) : '';
   const preset =
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
@@ -903,8 +918,15 @@ function restyleAnswerLayerObjectsForPreset(
         ...layerButtonStyle,
         fontWeight: 900,
         textAlign: 'center',
-        // Kullanıcı yazı rengi: kilitle (TTKB kontrast ezmesin); boşsa kilidi kaldır.
-        ...(buttonTextColor ? { color: buttonTextColor, colorLocked: true } : { colorLocked: false }),
+        // Kullanıcı yazı rengi: renge uyumlu gölgeyle birlikte kilitle (TTKB kontrast
+        // ezmesin); boşsa kilidi kaldır.
+        ...(buttonTextColor
+          ? {
+              color: buttonTextColor,
+              colorLocked: true,
+              ...(userButtonShadow ? { textShadow: userButtonShadow } : {}),
+            }
+          : { colorLocked: false }),
       },
     };
   };
@@ -1026,8 +1048,15 @@ function restyleReadyButtonsForPackage(objects = [], pkgId = BUTTON_PACKAGES[0]?
   });
 }
 
-function restyleAllButtonsForPackage(objects = [], pkgId = BUTTON_PACKAGES[0]?.id || 'pkg-1') {
+function restyleAllButtonsForPackage(
+  objects = [],
+  pkgId = BUTTON_PACKAGES[0]?.id || 'pkg-1',
+  options = {}
+) {
   const packageMotion = getButtonPackageMotion(pkgId);
+  // Aktivitedeki "Buton yazı rengi" override'ı paket değişiminde de korunur.
+  const textColor = String(options.textColor || '').trim();
+  const userShadow = textColor ? readyButtonTextShadowForColor(textColor) : '';
   return (objects || []).map((object) => {
     if (object?.type !== 'button') return object;
     const tone = getButtonPackageTone(object);
@@ -1044,6 +1073,9 @@ function restyleAllButtonsForPackage(objects = [], pkgId = BUTTON_PACKAGES[0]?.i
           ...object,
           ...playPausePatch,
         }),
+        ...(textColor
+          ? { color: textColor, colorLocked: true, ...(userShadow ? { textShadow: userShadow } : {}) }
+          : { colorLocked: false }),
       },
     };
   });

@@ -36,7 +36,7 @@ const OBJECT_TYPE_ICONS = {
 function layerNameFor(activity = {}, layerId = 'base') {
   const layer = (activity.layers || []).find((item) => item.id === layerId);
   if (layer?.name) return layer.name;
-  return layerId === 'base' ? 'Base Layer' : layerId;
+  return layerId === 'base' ? 'Temel Katman' : layerId;
 }
 
 function nextObjectsWithZIndex(objects = []) {

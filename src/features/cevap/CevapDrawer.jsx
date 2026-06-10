@@ -65,8 +65,8 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
           boxShadow: '-18px 0 42px rgba(15,23,42,.18)',
           display: 'grid',
           gridTemplateRows: 'auto minmax(0,1fr) auto',
-          padding: 10,
-          gap: 5,
+          padding: 14,
+          gap: 10,
           overflow: 'hidden',
         }}
       >
@@ -97,7 +97,7 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
             x
           </button>
         </header>
-        <main style={{ minHeight: 0, overflow: 'auto', paddingRight: 1, background: '#ffffff' }}>
+        <main style={{ minHeight: 0, overflow: 'auto', paddingRight: 6, background: '#ffffff' }}>
           <CevapPanelRouter activity={activity} onUpdate={onUpdate} />
           <SahneyeUygulaCard activity={activity} onUpdate={onUpdate} number="Uygula" />
         </main>
@@ -120,7 +120,7 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
         >
           <span>Etkinlik ID: {meta.id}</span>
           <span style={{ textAlign: 'center' }}>Son düzenleme: {meta.lastSavedText}</span>
-          <span style={{ textAlign: 'right' }}>Version: {meta.version}</span>
+          <span style={{ textAlign: 'right' }}>Sürüm: {meta.version}</span>
         </footer>
       </aside>
     </div>

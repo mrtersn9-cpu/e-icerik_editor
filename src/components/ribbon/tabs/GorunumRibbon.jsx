@@ -26,7 +26,7 @@ export default function GorunumRibbon({ controller }) {
           <RibbonButton label="Izgara" icon="grid" onClick={() => commands.toggleViewOption('showGrid')} active={view.showGrid !== false} tone="slate" />
           <RibbonButton label="Kılavuzlar" icon="guides" onClick={() => commands.toggleViewOption('showGuides')} active={!!view.showGuides} tone="slate" />
           <RibbonButton label="Cetveller" icon="ruler" onClick={() => commands.toggleViewOption('showRulers')} active={!!view.showRulers} tone="slate" />
-          <RibbonButton label="Snap" icon="snap" onClick={() => commands.toggleViewOption('snapEnabled')} active={view.snapEnabled !== false} tone="slate" />
+          <RibbonButton label="Yapışma" icon="snap" onClick={() => commands.toggleViewOption('snapEnabled')} active={view.snapEnabled !== false} tone="slate" />
         </RibbonRow>
       </RibbonGroup>
 
@@ -36,8 +36,8 @@ export default function GorunumRibbon({ controller }) {
             <RibbonStack>
               <CompactRibbonButton label="Haritayı Göster" icon="panel" onClick={commands.showLeftPanel} width={132} />
               <CompactRibbonButton label="Haritayı Gizle" icon="panel" onClick={commands.hideLeftPanel} width={132} />
-              <CompactRibbonButton label="Timeline Göster" icon="ruler" onClick={commands.showTimeline} width={132} />
-              <CompactRibbonButton label="Timeline Kompakt" icon="ruler" onClick={commands.compactTimeline} width={132} />
+              <CompactRibbonButton label="Zaman Çizelgesi" icon="ruler" onClick={commands.showTimeline} width={132} />
+              <CompactRibbonButton label="Zaman Çizelgesi (Kompakt)" icon="ruler" onClick={commands.compactTimeline} width={132} />
               <CompactRibbonButton label="Arayüz Küçült" icon="zoomOut" onClick={() => commands.scaleUi(-1)} width={132} />
               <CompactRibbonButton label="Arayüz Büyüt" icon="zoomIn" onClick={() => commands.scaleUi(1)} width={132} />
               <CompactRibbonButton label="Düzeni Sıfırla" icon="undo" onClick={commands.resetLayout} width={132} />

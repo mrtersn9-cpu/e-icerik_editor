@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+
+import { fileToDataUrl } from '../../../api/apiClient';
 import { generateAnswerObjectsForActivity } from '../../../logic/activityObjectGenerators';
 import { changeActivityAnswerType, getAnswerTypeKey, patchActivity } from '../cevapActions';
 import {
@@ -20,6 +23,11 @@ import {
   TextInput,
   ToggleRow,
 } from '../components/CevapControls';
+import {
+  DEFAULT_LIVES_COUNT,
+  LIVES_ICON_PRESETS,
+  getLivesConfig,
+} from '../livesIcons';
 
 const ANSWER_TYPE_OPTIONS = [
   { value: 'selection', label: 'Çoktan Seçmeli' },
@@ -170,6 +178,148 @@ export function DenemeVeKisitlarCard({ number = '10', activity, onUpdate }) {
               onChange={(value) => patch({ settings: { ...settings, timeLimitMinutes: Math.max(1, Number(value) || 1) } })}
             />
           </Field>
+        )}
+      </div>
+    </CevapCard>
+  );
+}
+
+export function CanCard({ number = '12', activity, onUpdate }) {
+  const fileInputRef = useRef(null);
+  const lives = getLivesConfig(activity);
+  // Can ayarları answerControl'a yazılır — bu anahtar SCORM runtime'ına taşınır,
+  // böylece can hem editör önizlemesinde hem SCORM çıktısında çalışır.
+  const patchLives = (nextPatch) =>
+    patchActivity(activity, onUpdate, withAnswerControl(activity, nextPatch));
+
+  const handleCustomUpload = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    fileToDataUrl(file)
+      .then((dataUrl) => patchLives({ livesCustomImage: dataUrl, livesIconId: 'custom' }))
+      .catch(() => {});
+  };
+
+  return (
+    <CevapCard number={number} title="Can / Hak Sistemi">
+      <div style={{ display: 'grid', gap: 10 }}>
+        <ToggleRow
+          label="Can sistemini etkinleştir"
+          checked={lives.enabled}
+          onChange={(checked) => patchLives({ livesEnabled: checked })}
+        />
+        {lives.enabled && (
+          <>
+            <Field label="Can sayısı">
+              <TextInput
+                type="number"
+                min="1"
+                max="99"
+                value={lives.count}
+                onChange={(value) =>
+                  patchLives({ livesCount: Math.max(1, Math.min(99, Number(value) || DEFAULT_LIVES_COUNT)) })
+                }
+              />
+            </Field>
+            <Field label="Can simgesi">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+                {LIVES_ICON_PRESETS.map((preset) => {
+                  const active = lives.iconId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      title={preset.label}
+                      onClick={() => patchLives({ livesIconId: preset.id })}
+                      style={{
+                        height: 34,
+                        borderRadius: 8,
+                        border: `2px solid ${active ? '#2563eb' : '#e2e8f0'}`,
+                        background: active ? '#eff6ff' : '#ffffff',
+                        cursor: 'pointer',
+                        fontSize: 18,
+                        lineHeight: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {preset.glyph}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  title="Kendi resmini yükle"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    height: 34,
+                    borderRadius: 8,
+                    border: `2px solid ${lives.iconId === 'custom' ? '#2563eb' : '#e2e8f0'}`,
+                    background: lives.iconId === 'custom' ? '#eff6ff' : '#ffffff',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: '#475569',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {lives.useCustom ? (
+                    <img src={lives.customImage} alt="Özel can" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+                  ) : (
+                    '+ Resim'
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCustomUpload}
+                  style={{ display: 'none' }}
+                />
+              </div>
+            </Field>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 8px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                fontSize: 11,
+                color: '#475569',
+              }}
+            >
+              <span style={{ fontWeight: 800 }}>Önizleme:</span>
+              {Array.from({ length: Math.min(10, lives.count) }).map((_, i) =>
+                lives.useCustom ? (
+                  <img key={i} src={lives.customImage} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} />
+                ) : (
+                  <span key={i} style={{ fontSize: 15 }}>{lives.glyph}</span>
+                )
+              )}
+            </div>
+            <Field label="Can bitince">
+              <SelectInput
+                value={lives.behaviorOnZero}
+                onChange={(value) => patchLives({ livesBehaviorOnZero: value })}
+                options={[
+                  { value: 'lock', label: 'Etkinliği kilitle' },
+                  { value: 'restart', label: 'Yeniden başlat' },
+                  { value: 'show-answer', label: 'Cevabı göster' },
+                ]}
+              />
+            </Field>
+            <p style={{ margin: 0, color: '#64748b', fontSize: 10, lineHeight: 1.45 }}>
+              Öğrenci her yanlış cevapta bir can kaybeder. Can sayısı maksimum deneme hakkı olarak da çalışır.
+            </p>
+          </>
         )}
       </div>
     </CevapCard>

@@ -45,17 +45,40 @@ const ALLOWED_ORIGINS = new Set(
 );
 const BODY_LIMIT_BYTES = Number(process.env.EICERIK_BODY_LIMIT_BYTES || 10_000_000);
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
 if (!process.env.EICERIK_USER1_PASSWORD || !process.env.EICERIK_USER2_PASSWORD) {
-  console.warn("Uyari: Varsayilan gelistirme sifreleri aktif. Canli ortamda EICERIK_USER1_PASSWORD ve EICERIK_USER2_PASSWORD tanimlayin.");
+  const message =
+    "Varsayilan gelistirme sifreleri aktif. EICERIK_USER1_PASSWORD ve EICERIK_USER2_PASSWORD tanimlayin.";
+  if (IS_PRODUCTION) {
+    console.error(`Guvenlik hatasi: ${message}`);
+    process.exit(1);
+  }
+  console.warn(`Uyari: ${message} (canli ortamda zorunlu)`);
 }
 
 if (!process.env.EICERIK_SESSION_TOKEN_SECRET) {
-  console.warn("Uyari: Gelistirme session token secret'i aktif. Canli ortamda EICERIK_SESSION_TOKEN_SECRET tanimlayin.");
+  const message =
+    "Gelistirme session token secret'i (tahmin edilebilir) aktif. EICERIK_SESSION_TOKEN_SECRET tanimlayin.";
+  if (IS_PRODUCTION) {
+    console.error(`Guvenlik hatasi: ${message}`);
+    process.exit(1);
+  }
+  console.warn(`Uyari: ${message} (canli ortamda zorunlu)`);
 }
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+// Veri dizini ve DB dosyasi yalnizca sahibe okunur/yazilir olmali (POSIX). Windows'ta
+// mode argumani yok sayilir; orada NTFS ACL'leri ile korunmali.
+fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+try {
+  fs.chmodSync(DATA_DIR, 0o700);
+} catch { /* Windows / desteklenmeyen FS: sessizce gec */ }
 
 const db = new DatabaseSync(DB_PATH);
+try {
+  // SQLite verisi yalnizca sahibe okunur/yazilir (dunyaya acik olmasin).
+  fs.chmodSync(DB_PATH, 0o600);
+} catch { /* Windows / desteklenmeyen FS: sessizce gec */ }
 db.exec(`PRAGMA journal_mode = WAL;`);
 db.exec(`PRAGMA busy_timeout = 5000;`);
 db.exec(`
@@ -1930,9 +1953,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ─── Review Threads ─────────────────────────────────────────────────────────
+    // Güvenlik: tüm thread işlemleri yalnızca ilgili projenin SAHİBİ tarafından
+    // yapılabilir. Aksi halde başka kullanıcının projesinin yorumlarına erişim
+    // (IDOR) mümkün olurdu. projectExists(projectId, userId) sahiplik kontrolüdür.
     const threadsListMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads$/);
     if (threadsListMatch && req.method === "GET") {
       const projectId = decodeURIComponent(threadsListMatch[1]);
+      if (!projectExists(projectId, currentUser.id)) { sendJson(res, 403, { ok: false, error: "Forbidden" }); return; }
       const slideRef = url.searchParams.get("slideRef") || null;
       const rows = slideRef
         ? db.prepare("SELECT * FROM review_threads WHERE project_id = ? AND slide_ref = ? ORDER BY created_at ASC").all(projectId, slideRef)
@@ -1943,6 +1970,7 @@ const server = http.createServer(async (req, res) => {
 
     if (threadsListMatch && req.method === "POST") {
       const projectId = decodeURIComponent(threadsListMatch[1]);
+      if (!projectExists(projectId, currentUser.id)) { sendJson(res, 403, { ok: false, error: "Forbidden" }); return; }
       const body = await readBody(req);
       const message = String(body.message || "").trim();
       if (!message) { sendJson(res, 400, { ok: false, error: "Message required" }); return; }
@@ -1957,21 +1985,26 @@ const server = http.createServer(async (req, res) => {
 
     const threadMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads\/([^/]+)$/);
     if (threadMatch && req.method === "PATCH") {
+      const projectId = decodeURIComponent(threadMatch[1]);
+      if (!projectExists(projectId, currentUser.id)) { sendJson(res, 403, { ok: false, error: "Forbidden" }); return; }
       const tId = decodeURIComponent(threadMatch[2]);
-      const body = await readBody(req);
-      const thread = db.prepare("SELECT * FROM review_threads WHERE id = ?").get(tId);
+      // Thread gerçekten bu projeye mi ait — başka projenin thread id'siyle güncelleme engellenir.
+      const thread = db.prepare("SELECT * FROM review_threads WHERE id = ? AND project_id = ?").get(tId, projectId);
       if (!thread) { sendJson(res, 404, { ok: false, error: "Thread not found" }); return; }
+      const body = await readBody(req);
       const resolvedVal = typeof body.resolved === "boolean" ? (body.resolved ? 1 : 0) : thread.resolved;
       const messageVal = body.message !== undefined ? String(body.message).trim() : thread.message;
-      db.prepare("UPDATE review_threads SET resolved = ?, message = ? WHERE id = ?").run(resolvedVal, messageVal, tId);
+      db.prepare("UPDATE review_threads SET resolved = ?, message = ? WHERE id = ? AND project_id = ?").run(resolvedVal, messageVal, tId, projectId);
       const updated = db.prepare("SELECT * FROM review_threads WHERE id = ?").get(tId);
       sendJson(res, 200, { ok: true, thread: updated });
       return;
     }
 
     if (threadMatch && req.method === "DELETE") {
+      const projectId = decodeURIComponent(threadMatch[1]);
+      if (!projectExists(projectId, currentUser.id)) { sendJson(res, 403, { ok: false, error: "Forbidden" }); return; }
       const tId = decodeURIComponent(threadMatch[2]);
-      db.prepare("DELETE FROM review_threads WHERE id = ? OR parent_id = ?").run(tId, tId);
+      db.prepare("DELETE FROM review_threads WHERE (id = ? OR parent_id = ?) AND project_id = ?").run(tId, tId, projectId);
       sendJson(res, 200, { ok: true });
       return;
     }

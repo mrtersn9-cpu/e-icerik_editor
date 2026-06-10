@@ -42,7 +42,7 @@ export const OBJ_PRESETS = {
   shape: {
     w: 220,
     h: 120,
-    label: 'Sekil',
+    label: 'Şekil',
     style: {
       fontSize: 14,
       color: '#ffffff',
@@ -55,7 +55,7 @@ export const OBJ_PRESETS = {
   draggable: {
     w: 160,
     h: 50,
-    label: 'Surukle',
+    label: 'Sürükle',
     style: {
       fontSize: 13,
       color: '#eff6ff',
@@ -68,7 +68,7 @@ export const OBJ_PRESETS = {
   dropzone: {
     w: 180,
     h: 70,
-    label: 'Birak',
+    label: 'Bırak',
     style: {
       fontSize: 13,
       color: '#fff7ed',

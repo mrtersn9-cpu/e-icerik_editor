@@ -53,8 +53,8 @@ export default function ViewRightPanel({ controller }) {
             onChange={() => commands.toggleViewOption?.('showRulers')}
           />
           <ToggleRow
-            label="Snap"
-            hint="Nesne hareketini grid/kılavuza yaklaştırır."
+            label="Yapışma"
+            hint="Nesne hareketini ızgaraya/kılavuza yaklaştırır."
             checked={view.snapEnabled}
             onChange={() => commands.toggleViewOption?.('snapEnabled')}
           />
@@ -85,18 +85,27 @@ export default function ViewRightPanel({ controller }) {
             actions={[
               { label: 'Haritayı Göster', onClick: commands.showLeftPanel },
               { label: 'Haritayı Gizle', onClick: commands.hideLeftPanel },
-              { label: 'Timeline Göster', onClick: commands.showTimeline },
-              { label: 'Timeline Kompakt', onClick: commands.compactTimeline },
+              { label: 'Zaman Çizelgesi', onClick: commands.showTimeline },
+              { label: 'Zaman Çizelgesi (Kompakt)', onClick: commands.compactTimeline },
               { label: 'Dallanma Haritası', onClick: commands.openBranchReport, tone: '#7c3aed' },
             ]}
           />
           <ToggleRow
-            label="Base Layer"
-            hint="Overlay katmanda çalışırken ana sahneyi gösterir/gizler."
+            label="Temel Katman"
+            hint="Üst katmanda çalışırken ana sahneyi gösterir/gizler."
             checked={view.showBaseLayer !== false}
             onChange={commands.toggleBaseLayer}
           />
-          <ToggleRow label="Sağ inspector" checked disabled hint="Sağ panel ribbon sekmesine göre otomatik değişir." />
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              padding: '6px 2px',
+              lineHeight: 1.4,
+            }}
+          >
+            Sağ panel, seçili ribbon sekmesine göre otomatik değişir.
+          </div>
         </div>
       </PanelCard>
 

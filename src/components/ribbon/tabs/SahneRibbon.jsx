@@ -11,7 +11,7 @@ import {
 } from '../RibbonPrimitives';
 
 export default function SahneRibbon({ controller }) {
-  const { activity, currentSlide, commands, galleries } = controller;
+  const { activity, currentSlide, commands, can, galleries } = controller;
 
   return (
     <>
@@ -20,7 +20,7 @@ export default function SahneRibbon({ controller }) {
           <RibbonButton label="Yeni Sahne" icon="new" onClick={commands.addSlide} tone="slate" />
           <RibbonButton label="Çoğalt" icon="copy" onClick={commands.duplicateSlide} disabled={!currentSlide} tone="slate" />
           <RibbonButton label="Kopyala" icon="copy" onClick={commands.copySlide} disabled={!currentSlide} tone="slate" />
-          <RibbonButton label="Yapıştır" icon="copy" onClick={commands.pasteSlide} tone="slate" />
+          <RibbonButton label="Yapıştır" icon="copy" onClick={commands.pasteSlide} disabled={!can.pasteSlide} tone="slate" />
           <RibbonButton label="Sil" icon="trash" onClick={commands.deleteSlide} disabled={!currentSlide} tone="red" />
           <RibbonButton label="Bölüm" icon="template" onClick={commands.setSlideSection} disabled={!currentSlide} tone="slate" />
         </RibbonRow>
@@ -85,7 +85,7 @@ export default function SahneRibbon({ controller }) {
                   min={1}
                   step={1}
                 />
-                <CompactRibbonButton label="Geçiş Önizle" icon="play" onClick={() => commands.setRibbonTab('transitions')} width={94} />
+                <CompactRibbonButton label="Geçiş Ayarları" icon="transition" onClick={() => commands.setRibbonTab('transitions')} width={94} />
               </RibbonRow>
               <CompactRibbonButton label="Sahne Notları" icon="note" onClick={commands.openSceneNotes} width={150} />
             </RibbonStack>

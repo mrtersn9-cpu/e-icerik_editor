@@ -908,7 +908,11 @@ function getCommandsForTrigger(trigger = {}, slide = {}, context = {}) {
 
       evaluatedValue = parseAndEvaluate(trigger.extra, varMap);
     } catch (e) {
-      // Formül geçerli değilse veya parse hatası verirse, fallback olarak normalize edilmiş değeri kullan
+      // Formül geçerli değilse fallback olarak normalize edilmiş değeri kullan; ancak
+      // sessizce yutma — geliştirici/öğretmen hatalı formülü fark edebilsin diye uyar.
+      if (typeof console !== 'undefined') {
+        console.warn(`Tetikleyici formülü değerlendirilemedi: "${trigger.extra}" — ${e?.message || e}`);
+      }
     }
     return [
       {

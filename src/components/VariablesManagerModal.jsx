@@ -222,6 +222,19 @@ export default function VariablesManagerModal({
             <button
               onClick={() => {
                 if (!selectedProjectVariable) return;
+                // Kullanılan değişkeni silmek tetikleyicileri/koşulları öksüz bırakır;
+                // önce kullanıcıyı uyar.
+                const useCount = selectedProjectVariable.useCount || 0;
+                if (
+                  useCount > 0 &&
+                  typeof window !== 'undefined' &&
+                  !window.confirm(
+                    `"${selectedProjectVariable.name || 'Değişken'}" ${useCount} tetikleyici/koşulda kullanılıyor. ` +
+                      'Silinirse bu tetikleyiciler artık çalışmayabilir. Yine de silmek istiyor musunuz?'
+                  )
+                ) {
+                  return;
+                }
                 onChange(
                   variables.filter((variable) => variable.id !== selectedProjectVariable.id)
                 );

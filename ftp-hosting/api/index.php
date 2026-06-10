@@ -2,8 +2,24 @@
 
 declare(strict_types=1);
 
+$config = require __DIR__ . '/config.php';
+
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
+
+// CORS: wildcard yerine config['allowed_origins'] beyaz listesi. Liste boşsa
+// yalnızca aynı kökenden erişime izin verilir (CORS başlığı gönderilmez).
+// '*' yalnızca listede açıkça yer alıyorsa (geliştirme tercihi) kullanılır.
+$requestOrigin = trim((string) ($_SERVER['HTTP_ORIGIN'] ?? ''));
+$allowedOrigins = is_array($config['allowed_origins'] ?? null) ? $config['allowed_origins'] : [];
+if ($requestOrigin !== '') {
+    if (in_array('*', $allowedOrigins, true)) {
+        header('Access-Control-Allow-Origin: *');
+    } elseif (in_array($requestOrigin, $allowedOrigins, true)) {
+        header('Access-Control-Allow-Origin: ' . $requestOrigin);
+        header('Vary: Origin');
+        header('Access-Control-Allow-Credentials: true');
+    }
+}
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Admin-Token, X-User-Id, X-Session-Id');
 
@@ -20,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-$config = require __DIR__ . '/config.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $path = get_api_path();
 
@@ -377,6 +392,20 @@ try {
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0755, true);
         }
+        // Güvenlik (defense-in-depth): yuklenen klasorde PHP/CGI yurutmeyi kapat. Uzanti
+        // beyaz listesi zaten .php yazilmasini engelliyor; bu .htaccess ek koruma katmani.
+        $htaccessPath = $uploadDir . '/.htaccess';
+        if (!is_file($htaccessPath)) {
+            @file_put_contents(
+                $htaccessPath,
+                "php_flag engine off\n"
+                . "RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phar\n"
+                . "RemoveType .php .phtml .php3 .php4 .php5 .php7 .phar\n"
+                . "<FilesMatch \"\\.(php|phtml|php3|php4|php5|php7|phar|cgi|pl)$\">\n"
+                . "  Require all denied\n"
+                . "</FilesMatch>\n"
+            );
+        }
 
         $destination = $uploadDir . '/' . $newName;
 
@@ -487,17 +516,25 @@ try {
         $sessionId = trim((string) ($body['sessionId'] ?? ''));
         $sessionLabel = trim((string) ($body['sessionLabel'] ?? ''));
 
-        $users = $config['users'] ?? [
-            ['id' => 'kullanici1', 'name' => 'Kullanici 1', 'password' => '1234'],
-            ['id' => 'kullanici2', 'name' => 'Kullanici 2', 'password' => '1234'],
-        ];
+        // Güvenlik: hardcoded varsayilan sifre yok; kullanicilar yalnizca config'ten gelir.
+        $users = is_array($config['users'] ?? null) ? $config['users'] : [];
 
         $matchedUser = null;
         foreach ($users as $u) {
-            if ($u['id'] === $userId && $u['password'] === $password) {
-                $matchedUser = $u;
-                break;
+            if (($u['id'] ?? null) !== $userId) {
+                continue;
             }
+            $stored = (string) ($u['password'] ?? '');
+            // bcrypt/argon hash ise password_verify; degilse timing-safe hash_equals
+            // (duz metin sifreler icin bile zamanlama sizintisini engeller).
+            $info = password_get_info($stored);
+            $passwordOk = ($info['algo'] ?? null)
+                ? password_verify($password, $stored)
+                : hash_equals($stored, $password);
+            if ($passwordOk) {
+                $matchedUser = $u;
+            }
+            break;
         }
 
         if (!$matchedUser) {
@@ -650,7 +687,10 @@ try {
 
     send_json(404, ['ok' => false, 'error' => 'Not found']);
 } catch (Throwable $error) {
-    send_json(500, ['ok' => false, 'error' => $error->getMessage()]);
+    // Güvenlik: istisna detayi (dosya yolu, SQL, stack) istemciye sizdirilmaz; yalnizca
+    // sunucu loguna yazilir. Istemci genel bir mesaj gorur.
+    error_log('[e-icerik-api] ' . $error->getMessage() . ' @ ' . $error->getFile() . ':' . $error->getLine());
+    send_json(500, ['ok' => false, 'error' => 'Sunucu hatasi olustu.']);
 }
 
 function get_api_path(): string

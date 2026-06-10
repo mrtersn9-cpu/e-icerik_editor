@@ -1,5 +1,6 @@
 import { uid } from '../../../utils/editorHelpers';
 
+import { CanCard } from './OrtakCevapKartlari';
 import SecmeCevapPanel from './SecmeCevapPanel';
 import SurukleBirakCevapPanel from './SurukleBirakCevapPanel';
 
@@ -214,7 +215,12 @@ function MixedItemsEditor({ activity, onUpdate }) {
 
 export default function KarmaCevapPanel({ activity, onUpdate }) {
   if (activity.type === 'mixed') {
-    return <MixedItemsEditor activity={activity} onUpdate={onUpdate} />;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <MixedItemsEditor activity={activity} onUpdate={onUpdate} />
+        <CanCard number="2" activity={activity} onUpdate={onUpdate} />
+      </div>
+    );
   }
   const hasDragDrop = (activity.objects || []).some(
     (object) => object.type === 'draggable' || object.type === 'dropzone'

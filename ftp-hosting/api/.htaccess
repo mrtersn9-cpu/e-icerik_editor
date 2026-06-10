@@ -1,3 +1,9 @@
+# Güvenlik: hassas dosyalara doğrudan HTTP erişimini engelle (config.php parolaları,
+# .htaccess, log/yedek dosyaları). PHP parse edilmezse kaynak sızıntısını da önler.
+<FilesMatch "(^\.htaccess$|^config\.php$|\.(log|bak|sql|ini)$)">
+  Require all denied
+</FilesMatch>
+
 RewriteEngine On
 
 RewriteCond %{REQUEST_FILENAME} !-f

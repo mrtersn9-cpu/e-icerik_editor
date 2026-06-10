@@ -1,5 +1,21 @@
 import JSZip from 'jszip';
 
+// ZIP içindeki dosya yolları SCORM paketine yazıldığından zip-slip (../ ile dizin dışına
+// taşma) ve mutlak yol enjeksiyonu engellenmeli. Yalnızca paket köküne göreli, segmentleri
+// güvenli yollar kabul edilir.
+const MAX_WIDGET_UNCOMPRESSED_BYTES = 50 * 1024 * 1024; // 50 MB toplam açılma sınırı (zip bomb)
+
+export function isSafeWidgetPath(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return false;
+  if (raw.includes('\\')) return false; // ters bölü → Windows yol kaçışı
+  if (raw.startsWith('/')) return false; // mutlak yol
+  if (/^[a-zA-Z]:/.test(raw)) return false; // sürücü harfi (C:\...)
+  // Herhangi bir ".." segmenti dizin dışına taşma riskidir.
+  if (raw.split('/').some((segment) => segment === '..')) return false;
+  return true;
+}
+
 /**
  * manifest.json dosyasının şemasını ve alanlarını doğrular.
  * @param {Object} manifest - Doğrulanacak manifest JSON nesnesi.
@@ -209,9 +225,16 @@ export async function parseAndValidateWidgetZip(fileBlob) {
     // 5. Varlıkların Bellek Blob URL'lerine Çıkartılması
     const blobMap = {};
     const rawAssets = {}; // SCORM export'ta saf dosyaları saklamak için
+    let totalUncompressed = 0;
 
     for (const [path, file] of Object.entries(files)) {
       if (file.dir) continue;
+
+      // Güvenlik: zip-slip / mutlak yol içeren girdileri pakete dahil etme.
+      if (!isSafeWidgetPath(path)) {
+        securityWarnings.push(`Güvenli olmayan dosya yolu atlandı: ${path}`);
+        continue;
+      }
 
       const lowerPath = path.toLowerCase();
       let mimeType = 'application/octet-stream';
@@ -226,8 +249,14 @@ export async function parseAndValidateWidgetZip(fileBlob) {
       else if (lowerPath.endsWith('.json')) mimeType = 'application/json';
 
       const fileData = await file.async('blob');
-      rawAssets[path] = await file.async('uint8array'); // SCORM için saf byte'ları sakla
-      
+      const bytes = await file.async('uint8array'); // SCORM için saf byte'ları sakla
+      // Güvenlik: toplam açılan boyutu sınırla (zip bomb koruması).
+      totalUncompressed += bytes.byteLength;
+      if (totalUncompressed > MAX_WIDGET_UNCOMPRESSED_BYTES) {
+        throw new Error('Widget paketi açıldığında izin verilen boyutu (50 MB) aşıyor.');
+      }
+      rawAssets[path] = bytes;
+
       const blobUrl = URL.createObjectURL(fileData.slice(0, fileData.size, mimeType));
       blobMap[path] = blobUrl;
     }

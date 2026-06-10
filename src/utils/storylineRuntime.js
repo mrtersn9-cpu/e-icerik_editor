@@ -296,6 +296,18 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     numericMin: merged.numericMin ?? null,
     numericMax: merged.numericMax ?? null,
     surveyQuestions: Array.isArray(merged.surveyQuestions) ? merged.surveyQuestions : [],
+    // Yalnızca can/hak ayarları runtime'a taşınır (cevap anahtarı alanları taşınmaz).
+    answerControl: (() => {
+      const ac = merged.answerControl || activity.answerControl || {};
+      if (!ac.livesEnabled) return {};
+      return {
+        livesEnabled: true,
+        livesCount: ac.livesCount,
+        livesIconId: ac.livesIconId,
+        livesCustomImage: ac.livesCustomImage,
+        livesBehaviorOnZero: ac.livesBehaviorOnZero,
+      };
+    })(),
     slideAdvance: merged.slideAdvance || activity.slideAdvance || 'user',
     slideRevisit: merged.slideRevisit || activity.slideRevisit || 'resume',
     slideAutoAdvanceDelay: Number(merged.slideAutoAdvanceDelay ?? activity.slideAutoAdvanceDelay ?? 5) || 5,

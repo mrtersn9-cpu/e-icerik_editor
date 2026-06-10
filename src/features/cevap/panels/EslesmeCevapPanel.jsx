@@ -12,7 +12,7 @@ import {
   ToggleRow,
 } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function EslesmeCevapPanel({ activity, onUpdate }) {
   const pairs = activity.matchingPairs || [];
@@ -90,8 +90,9 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
       <PuanlamaCard number="8" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Eşleşme Haritası" wide>
+      <CanCard number="11" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="12" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="13" title="Eşleşme Haritası" wide>
         <MiniTable columns={['#', 'Sol Sütun', 'Sağ Sütun']} rows={pairs.map((pair, index) => ({ id: pair.id, cells: [index + 1, pair.left || '-', pair.right || '-'] }))} />
       </CevapCard>
     </PanelGrid>

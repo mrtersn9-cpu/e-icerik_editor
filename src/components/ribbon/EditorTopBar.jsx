@@ -139,13 +139,21 @@ export default function EditorTopBar({
         <div className={styles.editorActions}>
           <QuickAction icon={Undo2} label="Geri Al" onClick={undo} disabled={!history?.past?.length} title="Geri Al (Ctrl+Z)" />
           <QuickAction icon={Redo2} label="İleri Al" onClick={redo} disabled={!history?.future?.length} title="İleri Al (Ctrl+Y)" />
-          {onManualSave && (
+          {onManualSave ? (
             <QuickAction
               icon={Save}
               label={manualSaving ? 'Kaydediliyor…' : 'Kaydet'}
               onClick={onManualSave}
               disabled={manualSaving}
               title="Kaydet (veritabanına)"
+            />
+          ) : (
+            <QuickAction
+              icon={Save}
+              label="Otomatik kayıt"
+              onClick={undefined}
+              disabled
+              title="Değişiklikler otomatik olarak kaydediliyor."
             />
           )}
           <QuickAction icon={Download} label="Dışa Aktar" onClick={handleExport} />

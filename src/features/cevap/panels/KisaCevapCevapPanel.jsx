@@ -1,7 +1,7 @@
 import { patchActivity } from '../cevapActions';
 import { CevapCard, Field, MiniTable, PanelGrid, SelectInput, SmallButton, TextArea, TextInput, ToggleRow } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function KisaCevapCevapPanel({ activity, onUpdate }) {
   const answers = activity.textEntryAcceptedAnswers || [];
@@ -41,6 +41,11 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
               </SmallButton>
             </div>
           ))}
+          {answers.length > 0 && answers.some((answer) => !String(answer || '').trim()) && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+              Boş anahtar kelimeler değerlendirmede yok sayılır; doldurun veya silin.
+            </div>
+          )}
           <SmallButton variant="primary" onClick={() => patch({ textEntryAcceptedAnswers: [...answers, ''], textEntryAnswerWeights: [...(activity.textEntryAnswerWeights || []), 1] })}>
             + Anahtar Kelime Ekle
           </SmallButton>
@@ -67,8 +72,9 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="8" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="12" title="Rubrik Özeti" wide>
+      <CanCard number="11" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="12" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="13" title="Rubrik Özeti" wide>
         <MiniTable columns={['Anahtar Kelime', 'Ağırlık', 'Durum']} rows={answers.map((answer, index) => ({ id: index, cells: [answer || '-', (activity.textEntryAnswerWeights || [])[index] || 1, answer ? 'Aktif' : 'Eksik'] }))} />
       </CevapCard>
     </PanelGrid>

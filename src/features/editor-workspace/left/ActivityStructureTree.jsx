@@ -18,7 +18,7 @@ function safeLabel(value) {
 }
 
 export function getSlideDisplayName(slide, index = 0) {
-  return safeLabel(slide?.sceneName) || safeLabel(slide?.name) || `Slide ${index + 1}`;
+  return safeLabel(slide?.sceneName) || safeLabel(slide?.name) || `${index + 1}. Sahne`;
 }
 
 export default function ActivityStructureTree({
@@ -232,7 +232,7 @@ export default function ActivityStructureTree({
                   setEditingSlideId('');
                 }}
                 onCancel={() => setEditingSlideId('')}
-                placeholder={`Slide ${index + 1}`}
+                placeholder={`${index + 1}. Sahne`}
               />
             </div>
           );

@@ -115,4 +115,40 @@ describe('storyline runtime deck', () => {
       hotspotImageAlt: 'Türkiye haritası',
     });
   });
+
+  test('can/hak ayarlarını answerControl içinde SCORM deck’ine taşır', () => {
+    const [slide] = buildStorylineRuntimeDeck({
+      selActId: 'sel-1',
+      activities: [
+        {
+          id: 'sel-1',
+          type: 'selection',
+          answerControl: {
+            livesEnabled: true,
+            livesCount: 4,
+            livesIconId: 'star',
+            livesBehaviorOnZero: 'restart',
+            correctAnswers: ['A'],
+          },
+          mcOptions: [{ id: 'A', label: 'A', isCorrect: true }],
+        },
+      ],
+    });
+    expect(slide.answerControl).toMatchObject({
+      livesEnabled: true,
+      livesCount: 4,
+      livesIconId: 'star',
+      livesBehaviorOnZero: 'restart',
+    });
+    // Cevap anahtarı alanı (correctAnswers) runtime'a taşınmamalı.
+    expect(slide.answerControl.correctAnswers).toBeUndefined();
+  });
+
+  test('can kapalıyken answerControl boş taşınır', () => {
+    const [slide] = buildStorylineRuntimeDeck({
+      selActId: 'sel-2',
+      activities: [{ id: 'sel-2', type: 'selection', answerControl: { maxAttempts: 3 }, mcOptions: [] }],
+    });
+    expect(slide.answerControl).toEqual({});
+  });
 });

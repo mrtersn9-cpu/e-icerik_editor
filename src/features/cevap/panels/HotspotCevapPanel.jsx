@@ -1,7 +1,7 @@
 import { patchActivity } from '../cevapActions';
 import { CevapCard, MiniTable, PanelGrid } from '../components/CevapControls';
 
-import { ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function HotspotCevapPanel({ activity, onUpdate }) {
   const hotspots = (activity.objects || []).filter((object) => object.type === 'hotspot');
@@ -94,14 +94,20 @@ export default function HotspotCevapPanel({ activity, onUpdate }) {
               </button>
             </div>
           )}
+          {hotspots.length > 0 && !hotspots.some((hotspot) => hotspot.hotspotCorrect !== false) && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+              En az bir hotspot doğru olarak işaretlenmeli; aksi halde etkinlik puanlanamaz.
+            </div>
+          )}
         </div>
       </CevapCard>
       <GeriBildirimCard number="3" activity={activity} onUpdate={onUpdate} />
       <PuanlamaCard number="4" activity={activity} onUpdate={onUpdate} />
       <YanitKontrolCard number="5" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="6" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="7" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="8" title="Hotspot Haritası" wide>
+      <CanCard number="7" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="8" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="9" title="Hotspot Haritası" wide>
         <MiniTable columns={['#', 'Hotspot', 'Doğru']} rows={hotspots.map((hotspot, index) => ({ id: hotspot.id, cells: [index + 1, hotspot.label || hotspot.id, hotspot.hotspotCorrect !== false ? '✓' : ''] }))} />
       </CevapCard>
     </PanelGrid>

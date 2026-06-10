@@ -94,7 +94,12 @@ export default function ContextRightPanel({ controller, inspectorProps, register
   if (enhancedController.activePanel === 'design') {
     panel = <DesignRightPanel controller={enhancedController} inspectorProps={inspectorProps} />;
   }
-  if (enhancedController.activePanel === 'format') panel = <FormatRightPanel controller={enhancedController} />;
+  // Biçim paneli yalnızca seçili nesne varken anlamlı. Seçim kalkınca (Biçim sekmesi
+  // state'i hâlâ 'object-format' olsa bile) Giriş paneline düşülür — boş Biçim paneli
+  // yerine kullanıcıya tutarlı bir görünüm sunar.
+  if (enhancedController.activePanel === 'format' && enhancedController.selectedObject) {
+    panel = <FormatRightPanel controller={enhancedController} />;
+  }
   if (enhancedController.activePanel === 'insert') panel = <InsertRightPanel controller={enhancedController} />;
   if (enhancedController.activePanel === 'scene') panel = <SceneRightPanel controller={enhancedController} />;
   if (enhancedController.activePanel === 'transitions') {

@@ -240,3 +240,22 @@ const TTKB_SAFE_SLIDE_TRANSITION_VALUES = new Set([
 export const SLIDE_TRANSITION_OPTIONS = RAW_SLIDE_TRANSITION_OPTIONS.filter((option) =>
   TTKB_SAFE_SLIDE_TRANSITION_VALUES.has(option.value)
 ).map((option) => ({ ...option, ttkbCompliant: true, visualPolicy: 'ttkb-safe-editor' }));
+
+// Geçiş sesi: ribbon (Geçişler) ve sağ panel (Geçiş Ayarları) tek listeden beslensin;
+// daha önce iki yerde farklı değer kümeleri vardı ve seçimler birbirini tutmuyordu.
+export const SLIDE_TRANSITION_SOUND_OPTIONS = [
+  { value: 'none', label: 'Ses yok' },
+  { value: 'soft', label: 'Yumuşak' },
+  { value: 'click', label: 'Tık' },
+  { value: 'page', label: 'Sayfa geçişi' },
+  { value: 'chime', label: 'Kısa uyarı' },
+];
+
+// İzleme yöntemi: scormExport `completion`/`score`/`completion+score` değerlerini bekliyor
+// (varsayılan 'completion+score'). Ribbon ve sağ panel tek listeden beslensin; daha önce
+// panel farklı değerler (slides-viewed vb.) yazıp paketi yanlış yapılandırıyordu.
+export const LMS_TRACKING_MODE_OPTIONS = [
+  { value: 'completion', label: 'Tamamlama' },
+  { value: 'score', label: 'Puan' },
+  { value: 'completion+score', label: 'Tamamlama + Puan' },
+];

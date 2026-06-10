@@ -1,4 +1,8 @@
-import { restyleReadyButtonsForPreset } from '../logic/buttonStyling';
+import { readyButtonTextShadowForColor } from '../editor-logic/colorUtils';
+import {
+  restyleAnswerLayerObjectsForPreset,
+  restyleReadyButtonsForPreset,
+} from '../logic/buttonStyling';
 import { normalizeObject } from '../logic/normalize';
 
 // "Buton yazı rengi" (readyButtonTextColor) ayarlandığında etkinlikteki TÜM
@@ -38,6 +42,16 @@ function textObject() {
   };
 }
 
+describe('readyButtonTextShadowForColor — renge uyumlu harf gölgesi', () => {
+  test('açık renk → yumuşak koyu gölge; koyu renk → açık halo; boş → karışma', () => {
+    expect(readyButtonTextShadowForColor('#ffffff')).toBe('0 1px 2px rgba(0,0,0,.25)');
+    expect(readyButtonTextShadowForColor('#fde047')).toBe('0 1px 2px rgba(0,0,0,.25)');
+    expect(readyButtonTextShadowForColor('#0f172a')).toBe('0 1px 0 rgba(255,255,255,.35)');
+    expect(readyButtonTextShadowForColor('')).toBe('');
+    expect(readyButtonTextShadowForColor('gecersiz')).toBe('');
+  });
+});
+
 describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
   test('renk ayarlıyken hem tonlu hem tonsuz butonlar yazı rengini alır', () => {
     const result = restyleReadyButtonsForPreset(
@@ -57,6 +71,29 @@ describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
     expect(byId.note.style.color).toBe('#112233');
   });
 
+  test('BEYAZ seçilince beyaz uygulanır ve gölge renge uyarlanır ("köşe rengi" hatası)', () => {
+    const result = restyleReadyButtonsForPreset(
+      [tonedButton(), plainButton()],
+      'lise-akademik',
+      { textColor: '#ffffff' }
+    );
+    const byId = Object.fromEntries(result.map((item) => [item.id, item]));
+
+    expect(byId.toned.style.color).toBe('#ffffff');
+    expect(byId.plain.style.color).toBe('#ffffff');
+    // Tema gölgesi (sert '0 2px 0' / '0 1px 0') yerine renge uyumlu yumuşak gölge.
+    expect(byId.toned.style.textShadow).toBe('0 1px 2px rgba(0,0,0,.25)');
+    expect(byId.plain.style.textShadow).toBe('0 1px 2px rgba(0,0,0,.25)');
+    expect(byId.toned.style.colorLocked).toBe(true);
+  });
+
+  test('koyu renk seçilince açık halo gölgesi uygulanır', () => {
+    const result = restyleReadyButtonsForPreset([tonedButton()], 'lise-akademik', {
+      textColor: '#0f172a',
+    });
+    expect(result[0].style.textShadow).toBe('0 1px 0 rgba(255,255,255,.35)');
+  });
+
   test('renk boşken (Temaya bırak) tonsuz buton korunur, tonlu buton tema rengine döner', () => {
     const result = restyleReadyButtonsForPreset(
       [tonedButton(), plainButton()],
@@ -73,6 +110,66 @@ describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
     expect(byId.toned.style.color.length).toBeGreaterThan(0);
     // Kilit kalkar → tema rengine dönebilir / TTKB kontrastı tekrar uygulanabilir.
     expect(byId.toned.style.colorLocked).toBe(false);
+  });
+
+  test('"Temaya bırak" tonlu butonun gölgesini tema gölgesine döndürür', () => {
+    // Önce kullanıcı rengi uygula, sonra boş renkle temaya dön.
+    const colored = restyleReadyButtonsForPreset([tonedButton()], 'lise-akademik', {
+      textColor: '#ffffff',
+    });
+    expect(colored[0].style.textShadow).toBe('0 1px 2px rgba(0,0,0,.25)');
+    const reverted = restyleReadyButtonsForPreset(colored, 'lise-akademik', { textColor: '' });
+    // Tema gölgesi contrastSafeButtonStyle'dan gelir (renk-bazlı iki varyanttan biri).
+    expect(['0 1px 0 rgba(0,0,0,.34)', '0 1px 0 rgba(255,255,255,.72)']).toContain(
+      reverted[0].style.textShadow
+    );
+    expect(reverted[0].style.colorLocked).toBe(false);
+  });
+});
+
+describe('restyleAnswerLayerObjectsForPreset — cevap katmanı butonlarına renk + gölge', () => {
+  const layers = [
+    { id: 'layer-correct', name: 'Doğru' },
+    { id: 'layer-incorrect', name: 'Yanlış' },
+  ];
+  const resolvedLayerNames = { 'layer-correct': 'correct', 'layer-incorrect': 'incorrect' };
+
+  function layerButton() {
+    return {
+      id: 'layer-btn',
+      type: 'button',
+      label: 'DEVAM',
+      layerId: 'layer-correct',
+      width: 220,
+      height: 56,
+      style: { color: '#ffffff' },
+    };
+  }
+
+  test('options.textColor cevap katmanı butonuna renk, kilit ve uyumlu gölge basar', () => {
+    const result = restyleAnswerLayerObjectsForPreset(
+      [layerButton()],
+      layers,
+      resolvedLayerNames,
+      'lise-akademik',
+      { textColor: '#ffffff' }
+    );
+    const button = result.find((item) => item.id === 'layer-btn');
+    expect(button.style.color).toBe('#ffffff');
+    expect(button.style.colorLocked).toBe(true);
+    expect(button.style.textShadow).toBe('0 1px 2px rgba(0,0,0,.25)');
+  });
+
+  test('renk boşken kilit kalkar', () => {
+    const result = restyleAnswerLayerObjectsForPreset(
+      [layerButton()],
+      layers,
+      resolvedLayerNames,
+      'lise-akademik',
+      { textColor: '' }
+    );
+    const button = result.find((item) => item.id === 'layer-btn');
+    expect(button.style.colorLocked).toBe(false);
   });
 });
 

@@ -42,7 +42,7 @@ export default function AnimationRightPanel({ controller }) {
         {selectedObject ? (
           <>
             <InspectorRow label="Nesne" value={objectName(selectedObject)} />
-            <InspectorRow label="Layer" value={controller.activeLayerName || selectedObject.layerId || 'Base Layer'} />
+            <InspectorRow label="Katman" value={controller.activeLayerName || selectedObject.layerId || 'Temel Katman'} />
           </>
         ) : (
           <EmptyHint>Animasyon ayarlarını düzenlemek için sahnede bir nesne seç.</EmptyHint>

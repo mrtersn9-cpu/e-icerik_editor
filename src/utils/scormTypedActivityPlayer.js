@@ -97,6 +97,56 @@ function typedStore(key, fallback) {
   if (state[key] == null) state[key] = fallback;
   return state[key];
 }
+// Can/hak: editörde answerControl.livesX olarak saklanır (SCORM'a taşınan anahtar).
+function typedLivesConfig(current) {
+  const ac = (current && current.answerControl) || {};
+  if (!ac.livesEnabled) return { enabled: false };
+  const count = Math.max(1, Math.min(99, Number(ac.livesCount) || 3));
+  var glyphMap = { heart: "❤️", star: "⭐", diamond: "💎", apple: "🍎", bolt: "⚡", trophy: "🏆", crown: "👑", flower: "🌸", balloon: "🎈", medal: "🏅" };
+  var iconId = ac.livesIconId || "heart";
+  var useCustom = iconId === "custom" && !!ac.livesCustomImage;
+  return {
+    enabled: true,
+    count: count,
+    glyph: useCustom ? "" : (glyphMap[iconId] || glyphMap.heart),
+    useCustom: useCustom,
+    customImage: ac.livesCustomImage || "",
+    behaviorOnZero: ac.livesBehaviorOnZero || "lock",
+  };
+}
+function typedLivesAttempts(current) {
+  var store = typedStore("typedLivesAttempts", {});
+  return Number(store[current.id]) || 0;
+}
+function typedLivesRemaining(current) {
+  var cfg = typedLivesConfig(current);
+  if (!cfg.enabled) return null;
+  return Math.max(0, cfg.count - typedLivesAttempts(current));
+}
+function typedLivesBar(root, current) {
+  var cfg = typedLivesConfig(current);
+  if (!cfg.enabled) return;
+  var remaining = typedLivesRemaining(current);
+  var bar = typedEl("div", "typed-lives");
+  bar.setAttribute("role", "status");
+  bar.setAttribute("aria-label", "Kalan can: " + remaining + " / " + cfg.count);
+  bar.style.cssText = "display:inline-flex;align-items:center;gap:4px;margin:6px 0";
+  for (var i = 0; i < cfg.count; i++) {
+    var filled = i < remaining;
+    if (cfg.useCustom) {
+      var img = document.createElement("img");
+      img.src = cfg.customImage;
+      img.alt = "";
+      img.style.cssText = "width:22px;height:22px;object-fit:contain;opacity:" + (filled ? "1" : "0.25") + ";filter:" + (filled ? "none" : "grayscale(1)");
+      bar.appendChild(img);
+    } else {
+      var span = typedEl("span", "", cfg.glyph);
+      span.style.cssText = "font-size:20px;line-height:1;opacity:" + (filled ? "1" : "0.25") + ";filter:" + (filled ? "none" : "grayscale(1)");
+      bar.appendChild(span);
+    }
+  }
+  root.appendChild(bar);
+}
 function typedButton(label, onClick, secondary) {
   const button = typedEl("button", secondary ? "typed-btn secondary" : "typed-btn", label);
   button.type = "button";
@@ -205,8 +255,18 @@ function typedEvaluate(current) {
   return { success: false };
 }
 function typedCheck(current) {
+  const cfg = typedLivesConfig(current);
+  // Can etkin ve can bitmişse yeni kontrol kabul etme (kilit davranışı).
+  if (cfg.enabled && typedLivesRemaining(current) <= 0) {
+    return;
+  }
   const result = typedEvaluate(current);
   state.typedActivityResult = result;
+  // Can etkinse ve cevap yanlışsa bir can düş.
+  if (cfg.enabled && !result.success) {
+    const store = typedStore("typedLivesAttempts", {});
+    store[current.id] = (Number(store[current.id]) || 0) + 1;
+  }
   state.activityScores = state.activityScores || {};
   state.activityScores[current.id] = typedScore(result);
   const score = typedAggregateScore();
@@ -264,10 +324,24 @@ function typedClear(current) {
   }
 }
 function typedActions(root, current) {
+  typedLivesBar(root, current);
+  const cfg = typedLivesConfig(current);
+  const livesOut = cfg.enabled && typedLivesRemaining(current) <= 0;
   const actions = typedEl("div", "typed-actions");
-  actions.appendChild(typedButton("Kontrol Et", () => typedCheck(current), false));
+  const checkBtn = typedButton("Kontrol Et", () => typedCheck(current), false);
+  if (livesOut) {
+    checkBtn.disabled = true;
+    checkBtn.style.opacity = "0.45";
+    checkBtn.style.cursor = "not-allowed";
+  }
+  actions.appendChild(checkBtn);
   actions.appendChild(typedButton("Temizle", () => { typedClear(current); render(); }, true));
   root.appendChild(actions);
+  if (livesOut) {
+    const note = typedEl("div", "typed-feedback incorrect", "Canların bitti.");
+    note.style.marginTop = "12px";
+    root.appendChild(note);
+  }
   typedFeedback(root);
 }
 function typedFillBlankTokens(container, sentence, values, answers) {
@@ -767,7 +841,10 @@ function typedRenderCrossword(root, current) {
     else if (status === "revealed") { cls += " revealed"; icon = " ✎"; }
 
     const item = typedEl("div", cls);
-    item.innerHTML = "<strong>" + p.number + ".</strong> " + (p.question || p.clue || "") + icon;
+    // Güvenlik: soru/ipucu metni öğretmen kaynaklı; innerHTML yerine textContent ile
+    // kurularak öğrenciye giden SCORM paketinde XSS önlenir.
+    item.appendChild(typedEl("strong", "", p.number + "."));
+    item.appendChild(document.createTextNode(" " + (p.question || p.clue || "") + icon));
     item.addEventListener("click", () => openCrosswordModal(p, current, null));
     acrossSection.appendChild(item);
   });
@@ -786,7 +863,9 @@ function typedRenderCrossword(root, current) {
     else if (status === "revealed") { cls += " revealed"; icon = " ✎"; }
 
     const item = typedEl("div", cls);
-    item.innerHTML = "<strong>" + p.number + ".</strong> " + (p.question || p.clue || "") + icon;
+    // Güvenlik: bkz. yukarıdaki yatay sorular — textContent ile XSS önlenir.
+    item.appendChild(typedEl("strong", "", p.number + "."));
+    item.appendChild(document.createTextNode(" " + (p.question || p.clue || "") + icon));
     item.addEventListener("click", () => openCrosswordModal(p, current, null));
     downSection.appendChild(item);
   });

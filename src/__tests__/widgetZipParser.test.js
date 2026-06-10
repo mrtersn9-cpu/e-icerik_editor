@@ -5,9 +5,30 @@ import {
   scanWidgetSecurity,
   resolveLocalHtmlAssets,
   parseAndValidateWidgetZip,
+  isSafeWidgetPath,
 } from '../widgets/widgetZipParser';
 
 describe('Widget SDK V2.0 ZIP Ayrıştırıcı Birim Testleri', () => {
+
+  describe('Güvenli yol kontrolü (isSafeWidgetPath) — zip-slip', () => {
+    it('normal göreli yolları kabul eder', () => {
+      expect(isSafeWidgetPath('index.html')).toBe(true);
+      expect(isSafeWidgetPath('assets/img/logo.png')).toBe(true);
+    });
+    it('dizin dışına taşma (..) yollarını reddeder', () => {
+      expect(isSafeWidgetPath('../evil.js')).toBe(false);
+      expect(isSafeWidgetPath('assets/../../etc/passwd')).toBe(false);
+    });
+    it('mutlak yolları ve sürücü harflerini reddeder', () => {
+      expect(isSafeWidgetPath('/etc/passwd')).toBe(false);
+      expect(isSafeWidgetPath('C:\\win\\x.js')).toBe(false);
+      expect(isSafeWidgetPath('a\\b.js')).toBe(false);
+    });
+    it('boş yolu reddeder', () => {
+      expect(isSafeWidgetPath('')).toBe(false);
+      expect(isSafeWidgetPath(null)).toBe(false);
+    });
+  });
 
   describe('Manifest Doğrulama (validateWidgetManifest)', () => {
     it('geçerli bir manifesti başarıyla doğrulamalıdır', () => {

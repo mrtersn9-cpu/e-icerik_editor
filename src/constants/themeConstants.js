@@ -1301,7 +1301,7 @@ export const DEFAULT_THEME_PACKAGE_ITEMS = [
   {
     id: 'playpause',
     icon: '⏯',
-    label: 'Play / Pause',
+    label: 'Oynat / Duraklat',
     desc: 'Sahnedeki ses ve videoyu durdurup başlatır.',
   },
   {

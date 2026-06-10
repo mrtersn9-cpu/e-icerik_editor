@@ -9,16 +9,11 @@ import {
   ToggleRow,
 } from './PanelPrimitives';
 
-const trackingOptions = [
-  { value: 'slides-viewed', label: 'Slide görüntüleme' },
-  { value: 'quiz-score', label: 'Puan / cevap sonucu' },
-  { value: 'complete-on-finish', label: 'Bitince tamamla' },
-];
-
 export default function PublishRightPanel({ controller }) {
   const commands = controller.commands || {};
   const galleries = controller.galleries || {};
   const lms = controller.lms || {};
+  const trackingOptions = galleries.trackingModes || [];
 
   return (
     <PanelShell title="SCORM 1.2 / Paket Ayarları" subtitle="Ürün kuralı: yalnızca SCORM 1.2.">
@@ -67,9 +62,11 @@ export default function PublishRightPanel({ controller }) {
             </FieldLabel>
           </div>
           <FieldLabel>
-            Geçme puanı
+            Geçme puanı (%)
             <NumberInput
               step={1}
+              min={0}
+              max={100}
               value={lms.passingScore ?? 70}
               onChange={(value) => commands.patchLms?.({ passingScore: value })}
             />
@@ -82,7 +79,7 @@ export default function PublishRightPanel({ controller }) {
           <FieldLabel>
             İzleme yöntemi
             <NativeSelect
-              value={lms.trackingMode || 'slides-viewed'}
+              value={lms.trackingMode || 'completion+score'}
               options={trackingOptions}
               onChange={(value) => commands.patchLms?.({ trackingMode: value })}
             />
@@ -93,12 +90,26 @@ export default function PublishRightPanel({ controller }) {
             checked={lms.playerChrome !== false}
             onChange={(checked) => commands.patchLms?.({ playerChrome: checked })}
           />
-          <ToggleRow
-            label="Dış bağlantı uyarısı"
-            hint="SCORM paketleme öncesi TTKB/KVKK/telif kontrolü."
-            checked={lms.externalLinkWarning !== false}
-            onChange={(checked) => commands.patchLms?.({ externalLinkWarning: checked })}
-          />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 6,
+              fontSize: 10.5,
+              color: '#475569',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 7,
+              padding: '7px 9px',
+              lineHeight: 1.45,
+            }}
+          >
+            <span aria-hidden="true">🛡️</span>
+            <span>
+              Dış bağlantı/embed uyarısı TTKB/KVKK/telif politikası gereği her SCORM paketlemesinde
+              otomatik çalışır ve kapatılamaz.
+            </span>
+          </div>
         </div>
       </PanelCard>
 

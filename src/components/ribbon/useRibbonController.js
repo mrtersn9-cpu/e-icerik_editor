@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fileToDataUrl, uploadMediaFile } from '../../api/apiClient';
 import {
@@ -12,10 +12,13 @@ import {
   SHAPE_STYLE_PRESETS,
   SLIDE_MASTER_PRESETS,
   SLIDE_TRANSITION_OPTIONS,
+  SLIDE_TRANSITION_SOUND_OPTIONS,
+  LMS_TRACKING_MODE_OPTIONS,
   TIMELINE_DIRECTION_OPTIONS,
   TIMELINE_EASING_OPTIONS,
   TIMELINE_EFFECT_OPTIONS,
 } from '../../constants';
+import { readyButtonTextShadowForColor } from '../../editor-logic/colorUtils';
 import { createObjectFromActivity } from '../../logic/activityFactory';
 import {
   commitMaterializedActivity,
@@ -42,7 +45,12 @@ import {
   createShapeObject,
   createSlide,
 } from '../../logic/factories';
-import { alignActivitySelection, distributeActivitySelection } from '../../logic/objectLayout';
+import {
+  alignActivitySelection,
+  distributeActivitySelection,
+  groupActivitySelection,
+  ungroupActivitySelection,
+} from '../../logic/objectLayout';
 import {
   DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
   EDUCATION_BUTTON_TEXT_SIZE_SMALL,
@@ -51,6 +59,7 @@ import {
   getButtonPairSemanticIcon,
 } from '../../logic/sceneTemplates';
 import { normalizeSlide } from '../../logic/slideNormalization';
+import { applyGeneratedThemeToActivity } from '../../logic/themeApplication';
 import {
   getTimelineItemForObject,
   normalizeTimelineItem,
@@ -155,6 +164,49 @@ export default function useRibbonController({
   const styleClipboardRef = useRef(null);
   const localSlideClipboardRef = useRef(null);
   const slideClipboardRef = externalSlideClipboardRef || localSlideClipboardRef;
+
+  // Pano durumlarının (slide/animasyon/stil/nesne) buton disabled bayraklarına yansıması
+  // için reaktif bir sayaç. Ref'ler değişince render tetiklenmez; bu sayaç bumplandığında
+  // hook yeniden çalışıp can.paste* bayraklarını taze hesaplar. Nesne panosu StageCanvas'ta
+  // tutulduğundan, oradan yayınlanan 'eicerik:clipboard-change' olayı da bunu bumplar.
+  const [clipboardTick, setClipboardTick] = useState(0);
+  const bumpClipboard = useCallback(() => setClipboardTick((tick) => tick + 1), []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = () => setClipboardTick((tick) => tick + 1);
+    window.addEventListener('eicerik:clipboard-change', handler);
+    return () => window.removeEventListener('eicerik:clipboard-change', handler);
+  }, []);
+
+  const hasObjectClipboard = useMemo(() => {
+    void clipboardTick;
+    if (typeof sessionStorage === 'undefined') return false;
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem('eicerik_obj_clipboard') || 'null');
+      return Array.isArray(parsed?.objects) && parsed.objects.length > 0;
+    } catch {
+      return false;
+    }
+  }, [clipboardTick]);
+
+  // Seçimin grup/kilit durumundan türeyen bağlam bayrakları (dinamik tek düğme için).
+  const selectionMeta = useMemo(() => {
+    const objects = Array.isArray(activity?.objects) ? activity.objects : [];
+    const selected = objects.filter((item) => targetIds.has(item.id));
+    const groupIds = new Set(
+      selected.map((item) => String(item.groupId || '').trim()).filter(Boolean)
+    );
+    const groupedCount = selected.filter((item) => String(item.groupId || '').trim()).length;
+    const lockedCount = selected.filter((item) => item.locked).length;
+    const allOneGroup =
+      selected.length > 1 && groupIds.size === 1 && groupedCount === selected.length;
+    return {
+      canGroup: selected.length > 1 && !allOneGroup,
+      canUngroup: groupedCount > 0,
+      allLocked: selected.length > 0 && lockedCount === selected.length,
+      anyLocked: lockedCount > 0,
+    };
+  }, [activity, targetIds]);
 
   const patchActivity = useCallback(
     (patch) => {
@@ -360,9 +412,10 @@ export default function useRibbonController({
   const copySlide = useCallback(() => {
     if (!currentSlide) return false;
     slideClipboardRef.current = currentSlide;
+    bumpClipboard();
     showToast?.(`"${currentSlide.sceneName || currentSlide.name || 'Sahne'}" kopyalandı.`, 'success');
     return true;
-  }, [currentSlide, showToast, slideClipboardRef]);
+  }, [bumpClipboard, currentSlide, showToast, slideClipboardRef]);
 
   const pasteSlide = useCallback(() => {
     if (!activity || !slideClipboardRef.current) {
@@ -425,29 +478,13 @@ export default function useRibbonController({
 
   const groupSelection = useCallback(() => {
     if (!activity || targetIds.size < 2) return;
-    const groupId = uid();
-    updateActivity({
-      ...activity,
-      objects: (activity.objects || []).map((item) =>
-        targetIds.has(item.id) ? { ...item, groupId } : item
-      ),
-    });
+    updateActivity(groupActivitySelection(activity, targetIds));
     setSelectedIds(new Set(targetIds));
   }, [activity, setSelectedIds, targetIds, updateActivity]);
 
   const ungroupSelection = useCallback(() => {
     if (!activity || !targetIds.size) return;
-    updateActivity({
-      ...activity,
-      objects: (activity.objects || []).map((item) =>
-        // Sadece groupId değil; hazır ikon/etiket butonları linkedHoverGroup ve
-        // linkedActionTargetId ile bağlı. Grubu gerçekten çözebilmek (öğeleri
-        // ayrı ayrı sürükleyebilmek) için bu bağları da temizliyoruz.
-        targetIds.has(item.id)
-          ? { ...item, groupId: '', linkedHoverGroup: '', linkedActionTargetId: '' }
-          : item
-      ),
-    });
+    updateActivity(ungroupActivitySelection(activity, targetIds));
     setSelectedIds(new Set(targetIds));
   }, [activity, setSelectedIds, targetIds, updateActivity]);
 
@@ -522,7 +559,9 @@ export default function useRibbonController({
       const slides = getActivitySlides(committed);
       const currentSlideId = committed.currentSlideId || slides[0]?.id || '';
       const nextSlides = slides.map((slide, index) => {
-        const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId).map((object) =>
+        const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId, {
+          textColor: committed.readyButtonTextColor || '',
+        }).map((object) =>
           object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
         );
         return normalizeSlide(
@@ -582,6 +621,25 @@ export default function useRibbonController({
       );
     },
     [activity, updateActivity]
+  );
+
+  // Tüm hazır/üretilmiş butonların iç yazı rengi (boş = temadan gelen varsayılan).
+  // Tek kaynak: hem Tasarım ribbonu hem Tasarım sağ paneli bu komutu kullanır.
+  const applyReadyButtonTextColor = useCallback(
+    (color) => {
+      if (!activity) return;
+      const presetId =
+        activity.answerLayerStylePresetId ||
+        bookDefaultStylePresetId ||
+        DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID;
+      updateActivity(
+        applyGeneratedThemeToActivity(
+          { ...activity, readyButtonTextColor: color || '' },
+          presetId
+        )
+      );
+    },
+    [activity, bookDefaultStylePresetId, updateActivity]
   );
 
   const applySlideMaster = useCallback(
@@ -721,7 +779,7 @@ export default function useRibbonController({
       {
         id: 'playpause',
         icon: '▶',
-        label: 'Play / Pause',
+        label: 'Oynat / Duraklat',
         width: 300,
         tone: 'theme',
         runtimeAction: 'toggle-play-pause',
@@ -852,9 +910,16 @@ export default function useRibbonController({
             fontSize: patch.fontSize,
             lineHeight: patch.lineHeight || 1.1,
             padding: 0,
-            // Aktivitede "Buton yazı rengi" ayarlıysa yeni buton da onu kilitli alsın.
+            // Aktivitede "Buton yazı rengi" ayarlıysa yeni buton da onu (renge uyumlu
+            // gölgesiyle birlikte) kilitli alsın.
             ...(activity.readyButtonTextColor
-              ? { color: activity.readyButtonTextColor, colorLocked: true }
+              ? {
+                  color: activity.readyButtonTextColor,
+                  colorLocked: true,
+                  ...(readyButtonTextShadowForColor(activity.readyButtonTextColor)
+                    ? { textShadow: readyButtonTextShadowForColor(activity.readyButtonTextColor) }
+                    : {}),
+                }
               : {}),
           },
           ...(motion ? { buttonMotion: { ...motion } } : {}),
@@ -971,7 +1036,15 @@ export default function useRibbonController({
       selection: !!primaryObject || targetIds.size > 0,
       multiSelection: targetIds.size > 1,
       distribute: targetIds.size > 2,
-      group: targetIds.size > 1,
+      group: selectionMeta.canGroup,
+      ungroup: selectionMeta.canUngroup,
+      selectionLocked: selectionMeta.allLocked,
+      selectionGrouped: selectionMeta.canUngroup,
+      textStyle: !!primaryObject && primaryObject.type === 'text',
+      pasteObject: hasObjectClipboard,
+      pasteSlide: !!slideClipboardRef.current,
+      pasteAnimation: !!animationClipboardRef.current,
+      pasteStyle: !!styleClipboardRef.current,
       undo: !!history?.past?.length,
       redo: !!history?.future?.length,
     },
@@ -989,6 +1062,7 @@ export default function useRibbonController({
       align: (mode) => activity && updateActivity(alignActivitySelection(activity, selectedIds, mode)),
       applyButtonPackage,
       applyButtonMotion,
+      applyReadyButtonTextColor,
       applyMasterLayoutObjects,
       applyMasterLayout,
       applySceneTemplate,
@@ -1010,7 +1084,10 @@ export default function useRibbonController({
         updateActivity(selectActivitySlide({ ...activity, slides: nextSlides }, currentSlide.id));
       },
       bringFront: () => canvasRef.current?.bringFront?.(),
-      copy: () => canvasRef.current?.copySelected?.(),
+      copy: () => {
+        const copied = canvasRef.current?.copySelected?.();
+        if (copied !== false) bumpClipboard();
+      },
       copySlide,
       copySelectedAnimation: () => {
         if (!selectedTimelineItem) {
@@ -1025,11 +1102,15 @@ export default function useRibbonController({
           duration: selectedTimelineItem.duration ?? 2,
           startMode: selectedTimelineItem.startMode || 'with-previous',
         };
+        bumpClipboard();
         showToast?.('Animasyon ayarları kopyalandı.', 'success');
       },
       cut: () => {
         const copied = canvasRef.current?.copySelected?.();
-        if (copied !== false) canvasRef.current?.deleteSelected?.();
+        if (copied !== false) {
+          bumpClipboard();
+          canvasRef.current?.deleteSelected?.();
+        }
       },
       deleteSelection: () => canvasRef.current?.deleteSelected?.(),
       deleteSlide,
@@ -1178,6 +1259,7 @@ export default function useRibbonController({
       copyObjectStyle: () => {
         if (!primaryObject) return;
         styleClipboardRef.current = { ...(primaryObject.style || {}) };
+        bumpClipboard();
         showToast?.('Biçim kopyalandı');
       },
       convertToEditablePoints: () => {
@@ -1403,6 +1485,8 @@ export default function useRibbonController({
       shapeStyles: SHAPE_STYLE_PRESETS,
       slideMasters: SLIDE_MASTER_PRESETS,
       transitions: SLIDE_TRANSITION_OPTIONS,
+      transitionSounds: SLIDE_TRANSITION_SOUND_OPTIONS,
+      trackingModes: LMS_TRACKING_MODE_OPTIONS,
       characters: CHARACTER_LIBRARY,
     },
     hasObjectSelection,

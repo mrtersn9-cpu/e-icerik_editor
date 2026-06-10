@@ -58,17 +58,17 @@ export default function CustomInteractionRightPanel({ controller }) {
               label: 'Önizleme',
               disabled: false,
               title: 'Önizleme penceresinde widgetlari test edin.',
-              onClick: controller.commands?.previewActivity,
+              onClick: controller.commands?.openPreview,
             },
             {
-              label: 'SCORM ZIP',
+              label: 'SCORM ZIP (Yakında)',
               disabled: true,
-              title: 'Özel etkileşim runtime henüz aktif değil.',
+              title: 'Özel etkileşim runtime henüz aktif değil (sonraki faz).',
             },
             {
-              label: 'Cevap Merkezi',
+              label: 'Cevap Merkezi (Yakında)',
               disabled: true,
-              title: 'Özel etkileşim runtime henüz aktif değil.',
+              title: 'Özel etkileşim runtime henüz aktif değil (sonraki faz).',
             },
           ]}
         />

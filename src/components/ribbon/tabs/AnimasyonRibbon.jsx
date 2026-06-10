@@ -195,7 +195,7 @@ export default function AnimasyonRibbon({ controller }) {
             />
           </RibbonRow>
           <RibbonRow>
-            <span style={{ fontSize: 10, width: 54, color: '#475569' }}>Easing</span>
+            <span style={{ fontSize: 10, width: 54, color: '#475569' }}>Yumuşatma</span>
             <RibbonSelect
               value={selectedTimelineItem?.easing || 'easeOut'}
               onChange={(event) => commands.updateSelectedTimeline({ easing: event.target.value })}
@@ -207,8 +207,11 @@ export default function AnimasyonRibbon({ controller }) {
         </RibbonStack>
       </RibbonGroup>
 
-      <RibbonGroup title="Zaman Çizelgesine Ekle" width={128}>
-        <RibbonButton label="Animasyonu Kopyala" icon="copy" onClick={commands.copySelectedAnimation} disabled={!can.selection} tone="slate" width={92} />
+      <RibbonGroup title="Animasyon Panosu" width={128}>
+        <RibbonStack>
+          <CompactRibbonButton label="Animasyonu Kopyala" icon="copy" onClick={commands.copySelectedAnimation} disabled={!can.selection} width={108} />
+          <CompactRibbonButton label="Animasyonu Yapıştır" icon="clipboard" onClick={commands.pasteSelectedAnimation} disabled={!can.selection || !can.pasteAnimation} width={108} />
+        </RibbonStack>
       </RibbonGroup>
     </>
   );

@@ -23,6 +23,9 @@ const WidgetHost = forwardRef(function WidgetHost(
     while (queueRef.current.length) {
       const msg = queueRef.current.shift();
       try {
+        // targetOrigin '*' bilinçli: iframe sandbox'ta allow-same-origin yok, bu yüzden
+        // widget'ın origin'i opak (null). Belirli bir origin verilirse mesaj teslim edilmez.
+        // Güvenlik alıcı tarafında sağlanır: event.source + widgetInstanceId + şema doğrulanır.
         win.postMessage(msg, '*');
       } catch {
         // ignore postMessage errors

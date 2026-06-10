@@ -12,7 +12,7 @@ import {
   TextArea,
 } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
   useEffect(() => ensureTrueFalseOptions(activity, onUpdate), [activity, onUpdate]);
@@ -95,8 +95,9 @@ export default function DogruYanlisCevapPanel({ activity, onUpdate }) {
       <YanitKontrolCard number="8" activity={activity} onUpdate={onUpdate} />
       <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
       <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
-      <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-      <CevapCard number="10" title="Cevap Anahtarı Özeti" wide>
+      <CanCard number="11" activity={activity} onUpdate={onUpdate} />
+      <ErisilebilirlikCard number="12" activity={activity} onUpdate={onUpdate} />
+      <CevapCard number="13" title="Cevap Anahtarı Özeti" wide>
         <MiniTable columns={['İfade', 'Doğru Cevap']} rows={options.map((option) => ({ id: option.id, cells: [option.label || '-', option.isCorrect ? 'Doğru' : 'Yanlış'] }))} />
       </CevapCard>
     </PanelGrid>

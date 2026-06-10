@@ -27,6 +27,7 @@ import {
 } from '../components/CevapControls';
 
 import {
+  CanCard,
   DenemeVeKisitlarCard,
   DogrulamaKurallariCard,
   ErisilebilirlikCard,
@@ -553,7 +554,8 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
           <YanitKontrolCard number="13" activity={activity} onUpdate={onUpdate} />
           <IpucuCard number="14" activity={activity} onUpdate={onUpdate} />
           <DenemeVeKisitlarCard number="15" activity={activity} onUpdate={onUpdate} />
-          <ErisilebilirlikCard number="16" activity={activity} onUpdate={onUpdate} />
+          <CanCard number="16" activity={activity} onUpdate={onUpdate} />
+          <ErisilebilirlikCard number="17" activity={activity} onUpdate={onUpdate} />
         </>
       )}
     </div>

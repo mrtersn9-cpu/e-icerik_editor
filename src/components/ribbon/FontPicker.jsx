@@ -7,11 +7,14 @@ import { FONT_FAMILIES, ensureGoogleFontsLoaded, fontFamilyCss, loadGoogleFont }
 export default function FontPicker({ value, onChange, disabled = false, width = 150 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Klavye ile gezilen aktif satır indeksi (yukarı/aşağı ok + Enter).
+  const [activeIndex, setActiveIndex] = useState(0);
   // Gerçekten indirilmiş fontlar; satır yalnızca yüklenince kendi tipiyle önizlenir
   // (yüklenmeden önce nötr fallback → tofu/bozuk glif yok).
   const [loadedFonts, setLoadedFonts] = useState(() => new Set());
   const requestedRef = useRef(new Set());
   const rootRef = useRef(null);
+  const listRef = useRef(null);
   const current = value || 'Arial';
 
   const markLoaded = (name) =>
@@ -44,6 +47,45 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
     if (!q) return FONT_FAMILIES;
     return FONT_FAMILIES.filter((name) => name.toLocaleLowerCase('tr-TR').includes(q));
   }, [query]);
+
+  // Açılışta/aramada aktif satırı seçili fonta ya da ilk sonuca getir.
+  useEffect(() => {
+    if (!open) return;
+    const idx = filtered.indexOf(current);
+    setActiveIndex(idx >= 0 ? idx : 0);
+  }, [open, filtered, current]);
+
+  // Aktif satırı görünür alanda tut.
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    const node = listRef.current.querySelector(`[data-font-index="${activeIndex}"]`);
+    node?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, open]);
+
+  const commitFont = (name) => {
+    if (!name) return;
+    onChange?.(name);
+    setOpen(false);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((i) => Math.min(filtered.length - 1, i + 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((i) => Math.max(0, i - 1));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      commitFont(filtered[activeIndex]);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setActiveIndex(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setActiveIndex(Math.max(0, filtered.length - 1));
+    }
+  };
 
   // Seçili font her zaman; açıkken görünür fontlar — her birini bir kez yükle, inince işaretle.
   // markLoaded koşulsuz çağrılır (idempotent Set + fonksiyonel setState): bir effect run'ında
@@ -113,7 +155,8 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Font ara…"
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Font ara… (↑/↓ ve Enter)"
             style={{
               height: 28,
               border: '1px solid #cfd8e3',
@@ -123,42 +166,39 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
               outline: 'none',
             }}
           />
-          <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div ref={listRef} style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
             {filtered.length === 0 ? (
               <div style={{ padding: 8, fontSize: 12, color: '#94a3b8' }}>Sonuç yok</div>
             ) : (
-              filtered.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    onChange?.(name);
-                    setOpen(false);
-                  }}
-                  style={{
-                    border: 'none',
-                    borderRadius: 6,
-                    background: name === current ? '#eef2ff' : 'transparent',
-                    color: '#1f2937',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    padding: '7px 8px',
-                    fontSize: 15,
-                    fontFamily: previewFamily(name),
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                  onMouseEnter={(event) => {
-                    if (name !== current) event.currentTarget.style.background = '#f1f6fc';
-                  }}
-                  onMouseLeave={(event) => {
-                    event.currentTarget.style.background = name === current ? '#eef2ff' : 'transparent';
-                  }}
-                >
-                  {name}
-                </button>
-              ))
+              filtered.map((name, index) => {
+                const isActive = index === activeIndex;
+                const isCurrent = name === current;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    data-font-index={index}
+                    onClick={() => commitFont(name)}
+                    onMouseMove={() => setActiveIndex(index)}
+                    style={{
+                      border: 'none',
+                      borderRadius: 6,
+                      background: isActive ? '#dbe9ff' : isCurrent ? '#eef2ff' : 'transparent',
+                      color: '#1f2937',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      padding: '7px 8px',
+                      fontSize: 15,
+                      fontFamily: previewFamily(name),
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {name}
+                  </button>
+                );
+              })
             )}
           </div>
         </div>

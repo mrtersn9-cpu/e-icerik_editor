@@ -21,7 +21,7 @@ import {
   ToggleRow,
 } from '../components/CevapControls';
 
-import { DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
 
 export default function SecmeCevapPanel({ activity, onUpdate }) {
   const summary = getAnswerSummary(activity);
@@ -59,16 +59,17 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
   };
 
   return (
-    <div style={{ display: 'flex', gap: 12 }}>
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
       {savedQuestions.length > 0 && (
         <div
           style={{
-            width: 220,
-            flexShrink: 0,
+            flex: '1 1 200px',
+            minWidth: 180,
+            maxWidth: 260,
             display: 'flex',
             flexDirection: 'column',
             gap: 8,
-            maxHeight: 'calc(100vh - 140px)',
+            maxHeight: 'min(60vh, calc(100vh - 160px))',
             overflow: 'auto',
           }}
         >
@@ -105,7 +106,7 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
           ))}
         </div>
       )}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '999 1 320px', minWidth: 0 }}>
         <PanelGrid>
           <EtkinlikTuruCard
             activity={activity}
@@ -200,6 +201,11 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
                 empty="Henüz doğru seçenek seçilmedi"
                 tone={summary.correctOptions.length ? 'green' : 'slate'}
               />
+              {summary.options.length > 0 && summary.correctOptions.length === 0 && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+                  En az bir doğru seçenek işaretlenmeli; aksi halde soru puanlanamaz.
+                </div>
+              )}
             </div>
           </CevapCard>
           <DogrulamaKurallariCard number="5" activity={activity} onUpdate={onUpdate} />
@@ -208,8 +214,9 @@ export default function SecmeCevapPanel({ activity, onUpdate }) {
           <PuanlamaCard number="8" activity={activity} onUpdate={onUpdate} />
           <IpucuCard number="9" activity={activity} onUpdate={onUpdate} />
           <DenemeVeKisitlarCard number="10" activity={activity} onUpdate={onUpdate} />
-          <ErisilebilirlikCard number="11" activity={activity} onUpdate={onUpdate} />
-          <CevapCard number="10" title="Seçenek Haritası" wide>
+          <CanCard number="11" activity={activity} onUpdate={onUpdate} />
+          <ErisilebilirlikCard number="12" activity={activity} onUpdate={onUpdate} />
+          <CevapCard number="13" title="Seçenek Haritası" wide>
             <MiniTable
               columns={['Seçenek', 'Metin', 'Doğru', 'Puan']}
               rows={summary.options.map((option, index) => ({ id: option.id, cells: [String.fromCharCode(65 + index), option.label || '-', option.isCorrect ? '✓' : '', option.points || 1] }))}
