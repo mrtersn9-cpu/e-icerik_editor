@@ -9,6 +9,7 @@ import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine';
 import { getActivityContentLanguage, runtimeText } from '../logic/contentLanguage';
 
+import { resolveCornerRadiusPx } from './cornerRadius';
 import { getRuntimeButtonAction, normalizeRuntimeActionLabel } from './storylineRuntime';
 import { isStorylineRuntimeDropTargetLikeObject } from './storylineRuntimeEngine';
 
@@ -486,16 +487,9 @@ export function buildStorylineObjectRenderModel(
           : 4)
     ) || 1
   );
+  // Piksel tabanlı köşe yuvarlaklığı: editör/önizleme/SCORM aynı formülü kullanır
   const shapeCornerRadius = usesShapeSvg
-    ? Math.max(
-        0,
-        Math.min(
-          34,
-          ((Number(style.borderRadius || 0) || 0) /
-            Math.max(1, Math.min(Number(obj.width) || 1, Number(obj.height) || 1))) *
-            100
-        )
-      )
+    ? resolveCornerRadiusPx(style.borderRadius, obj.width, obj.height)
     : 0;
   const shapeVectorPath =
     shapeKind === 'customPath' && typeof getVectorPath === 'function'

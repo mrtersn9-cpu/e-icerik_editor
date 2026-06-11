@@ -8,6 +8,9 @@ export function ShapePreviewIcon({
   strokeLinejoin = 'round',
   strokeLinecap = 'round',
   cornerRadius = null,
+  cornerRadiusPx = null,
+  boxWidth = 0,
+  boxHeight = 0,
   nonScalingStroke = false,
   fullBleed = false,
   vectorPath = '',
@@ -17,6 +20,19 @@ export function ShapePreviewIcon({
   const vectorEffect = nonScalingStroke ? 'non-scaling-stroke' : undefined;
   const lineProps = { stroke, strokeWidth, strokeLinecap, strokeLinejoin, fill: 'none', vectorEffect };
   const solidProps = { stroke, strokeWidth, strokeLinejoin, fill, vectorEffect };
+  // Px modu (yalnız roundedRect + fullBleed): viewBox nesnenin gerçek piksel
+  // boyutuyla kurulur, rx gerçek piksel değeriyle çizilir. 100×100 viewBox'ın
+  // eşit olmayan gerilmesi (preserveAspectRatio="none") köşeleri dikdörtgen
+  // şekillerde eliptikleştiriyordu — px modu köşeleri daima dairesel tutar.
+  const pxMode =
+    kind === 'roundedRect' &&
+    fullBleed &&
+    cornerRadiusPx != null &&
+    Number(boxWidth) > 0 &&
+    Number(boxHeight) > 0;
+  const pxRadius = pxMode
+    ? Math.max(0, Math.min(Number(cornerRadiusPx) || 0, Math.min(boxWidth, boxHeight) / 2))
+    : 0;
   const roundedRectRadius = Math.max(0, Math.min(34, Number(cornerRadius ?? 12) || 0));
   const box = fullBleed
     ? { x: 0, y: 0, w: 100, h: 100, rx: roundedRectRadius, ellipseRx: 50, ellipseRy: 50 }
@@ -103,6 +119,9 @@ export function ShapePreviewIcon({
       case 'calloutCloud':
         return <path d="M 26 72 C 13 72, 8 62, 13 52 C 3 41, 13 25, 29 29 C 36 13, 62 12, 68 29 C 85 26, 97 42, 88 56 C 93 66, 84 76, 70 73 H 58 L 44 90 L 46 73 Z" {...solidProps} />;
       case 'roundedRect':
+        if (pxMode) {
+          return <rect x={0} y={0} width={boxWidth} height={boxHeight} rx={pxRadius} {...solidProps} />;
+        }
         return <rect x={box.x} y={box.y} width={box.w} height={box.h} rx={box.rx} {...solidProps} />;
       case 'customPath':
         return <path d={String(vectorPath || 'M 10 90 L 50 10 L 90 90 Z')} {...solidProps} />;
@@ -114,7 +133,7 @@ export function ShapePreviewIcon({
 
   return (
     <svg
-      viewBox="0 0 100 100"
+      viewBox={pxMode ? `0 0 ${boxWidth} ${boxHeight}` : '0 0 100 100'}
       preserveAspectRatio={preserveAspectRatio}
       shapeRendering="geometricPrecision"
       style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible', ...style }}

@@ -62,6 +62,7 @@ import {
   getSnapshotBounds,
 } from './resizeGeometry';
 import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
+import { resolveCornerRadiusPx } from '../utils/cornerRadius';
 import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
 import { upgradeDragDropStyle } from './factories';
 import { ShapePreviewIcon } from '../components/ui';
@@ -1139,11 +1140,10 @@ const StageCanvas = forwardRef(function StageCanvas(
     );
     const strokeLinejoin = st.strokeLinejoin || 'round';
     const strokeLinecap = st.strokeLinecap || 'round';
-    const minShapeSide = Math.max(1, Math.min(Number(o.width) || 1, Number(o.height) || 1));
-    const cornerRadius = Math.max(
-      0,
-      Math.min(34, ((Number(st.borderRadius || 0) || 0) / minShapeSide) * 100)
-    );
+    // Köşe yuvarlaklığı piksel cinsinden kelepçelenir; px modunda ShapePreviewIcon
+    // gerçek boyutlu viewBox kullanarak köşeleri dairesel tutar (eski %34 formülü
+    // gerilme nedeniyle köşeleri eliptikleştiriyordu).
+    const cornerRadiusPx = resolveCornerRadiusPx(st.borderRadius, o.width, o.height);
     const vectorPath =
       kind === 'customPath'
         ? buildVectorPathFromPoints(getObjectVectorPoints(o), true)
@@ -1162,7 +1162,9 @@ const StageCanvas = forwardRef(function StageCanvas(
           strokeWidth={strokeWidth}
           strokeLinejoin={strokeLinejoin}
           strokeLinecap={strokeLinecap}
-          cornerRadius={cornerRadius}
+          cornerRadiusPx={cornerRadiusPx}
+          boxWidth={Number(o.width) || 0}
+          boxHeight={Number(o.height) || 0}
           nonScalingStroke
           fullBleed
           vectorPath={vectorPath}

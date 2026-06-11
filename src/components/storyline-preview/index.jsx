@@ -44,6 +44,7 @@ import {
   getTimelineItemForObject,
 } from '../../logic/timeline';
 import { buildChartSvg } from '../../utils/chartSvg';
+import { resolveCornerRadiusPx } from '../../utils/cornerRadius';
 import {
   clamp,
   sanitizeSvgMarkup,
@@ -636,16 +637,9 @@ function RuntimeObjectLayer({
             : 4)
       ) || 1
     );
+    // Piksel tabanlı köşe yuvarlaklığı: editör ve SCORM ile aynı formül
     const shapeCornerRadius = usesShapeSvg
-      ? Math.max(
-          0,
-          Math.min(
-            34,
-            ((Number(st.borderRadius || 0) || 0) /
-              Math.max(1, Math.min(Number(obj.width) || 1, Number(obj.height) || 1))) *
-              100
-          )
-        )
+      ? resolveCornerRadiusPx(st.borderRadius, obj.width, obj.height)
       : 0;
     const shapeVectorPath =
       shapeKind === 'customPath'
@@ -850,7 +844,9 @@ function RuntimeObjectLayer({
               strokeWidth={shapeStrokeWidth}
               strokeLinejoin={st.strokeLinejoin || 'round'}
               strokeLinecap={st.strokeLinecap || 'round'}
-              cornerRadius={shapeCornerRadius}
+              cornerRadiusPx={shapeCornerRadius}
+              boxWidth={Number(obj.width) || 0}
+              boxHeight={Number(obj.height) || 0}
               nonScalingStroke
               fullBleed
               vectorPath={shapeVectorPath}
@@ -1924,7 +1920,9 @@ function StorylinePreviewObjectLayer({
               strokeWidth={shapeStrokeWidth}
               strokeLinejoin={st.strokeLinejoin || 'round'}
               strokeLinecap={st.strokeLinecap || 'round'}
-              cornerRadius={shapeCornerRadius}
+              cornerRadiusPx={shapeCornerRadius}
+              boxWidth={Number(obj.width) || 0}
+              boxHeight={Number(obj.height) || 0}
               nonScalingStroke
               fullBleed
               vectorPath={shapeVectorPath}
