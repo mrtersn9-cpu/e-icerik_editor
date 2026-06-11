@@ -216,14 +216,15 @@ export default function BicimRibbon({ controller }) {
             />
           </RibbonRow>
           <RibbonRow>
-            <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.multiSelection} width={52} />
-            <CompactRibbonButton label="Orta" icon="alignCenter" onClick={() => commands.align('center')} disabled={!can.multiSelection} width={52} />
-            <CompactRibbonButton label="Sağa" icon="alignRight" onClick={() => commands.align('right')} disabled={!can.multiSelection} width={52} />
-            <RibbonPopoverButton label="Diğer" icon="more" width={54} disabled={!can.multiSelection}>
+            {/* Tek öge seçiliyken hizalama sahneye göre çalışır (can.align) */}
+            <CompactRibbonButton label="Sola" icon="alignLeft" onClick={() => commands.align('left')} disabled={!can.align} width={52} />
+            <CompactRibbonButton label="Orta" icon="alignCenter" onClick={() => commands.align('center')} disabled={!can.align} width={52} />
+            <CompactRibbonButton label="Sağa" icon="alignRight" onClick={() => commands.align('right')} disabled={!can.align} width={52} />
+            <RibbonPopoverButton label="Diğer" icon="more" width={54} disabled={!can.align}>
               <RibbonMenuGrid columns="repeat(2, 96px)">
-                <CompactRibbonButton label="Üste" icon="alignTop" onClick={() => commands.align('top')} disabled={!can.multiSelection} width={88} />
-                <CompactRibbonButton label="Ortaya" icon="alignMiddle" onClick={() => commands.align('middle')} disabled={!can.multiSelection} width={88} />
-                <CompactRibbonButton label="Alta" icon="alignBottom" onClick={() => commands.align('bottom')} disabled={!can.multiSelection} width={88} />
+                <CompactRibbonButton label="Üste" icon="alignTop" onClick={() => commands.align('top')} disabled={!can.align} width={88} />
+                <CompactRibbonButton label="Ortaya" icon="alignMiddle" onClick={() => commands.align('middle')} disabled={!can.align} width={88} />
+                <CompactRibbonButton label="Alta" icon="alignBottom" onClick={() => commands.align('bottom')} disabled={!can.align} width={88} />
                 <CompactRibbonButton label="Yatay Dağıt" icon="distributeH" onClick={() => commands.distribute('horizontal')} disabled={!can.distribute} width={88} />
                 <CompactRibbonButton label="Dikey Dağıt" icon="distributeV" onClick={() => commands.distribute('vertical')} disabled={!can.distribute} width={88} />
               </RibbonMenuGrid>

@@ -529,12 +529,15 @@ export function FormatRightPanelContent({ controller }) {
         <PanelCard title="4. Hizala ve düzenle" collapsible>
           <ButtonGrid
             actions={[
-              { label: 'Sola Hizala', onClick: () => commands.align?.('left') },
-              { label: 'Ortala', onClick: () => commands.align?.('center') },
-              { label: 'Sağa Hizala', onClick: () => commands.align?.('right') },
-              { label: 'Üste Hizala', onClick: () => commands.align?.('top') },
-              { label: 'Yatay Dağıt', onClick: () => commands.distribute?.('horizontal'), disabled: selectedObjects.length < 3 },
-              { label: 'Dikey Dağıt', onClick: () => commands.distribute?.('vertical'), disabled: selectedObjects.length < 3 },
+              { label: 'Sola Hizala', onClick: () => commands.align?.('left'), disabled: !can.align },
+              { label: 'Ortala', onClick: () => commands.align?.('center'), disabled: !can.align },
+              { label: 'Sağa Hizala', onClick: () => commands.align?.('right'), disabled: !can.align },
+              { label: 'Üste Hizala', onClick: () => commands.align?.('top'), disabled: !can.align },
+              { label: 'Ortaya Hizala', onClick: () => commands.align?.('middle'), disabled: !can.align },
+              { label: 'Alta Hizala', onClick: () => commands.align?.('bottom'), disabled: !can.align },
+              // Dağıtma eşiği ribbon ile aynı: en az 3 birim (grup = tek birim)
+              { label: 'Yatay Dağıt', onClick: () => commands.distribute?.('horizontal'), disabled: !can.distribute },
+              { label: 'Dikey Dağıt', onClick: () => commands.distribute?.('vertical'), disabled: !can.distribute },
               {
                 label: can.ungroup ? 'Ayır' : 'Grupla',
                 onClick: can.ungroup ? commands.ungroupSelection : commands.groupSelection,
@@ -1035,6 +1038,25 @@ export function FormatRightPanelContent({ controller }) {
             />
           </FieldLabel>
         </div>
+      </PanelCard>
+
+      <PanelCard title="7. Hizala" collapsible>
+        {/* Tek öge (veya hazır buton çifti) sahneye göre hizalanır; çiftlerde Ayır görünür */}
+        <ButtonGrid
+          actions={[
+            { label: 'Sola Hizala', onClick: () => commands.align?.('left'), disabled: !can.align },
+            { label: 'Ortala', onClick: () => commands.align?.('center'), disabled: !can.align },
+            { label: 'Sağa Hizala', onClick: () => commands.align?.('right'), disabled: !can.align },
+            { label: 'Üste Hizala', onClick: () => commands.align?.('top'), disabled: !can.align },
+            { label: 'Ortaya Hizala', onClick: () => commands.align?.('middle'), disabled: !can.align },
+            { label: 'Alta Hizala', onClick: () => commands.align?.('bottom'), disabled: !can.align },
+            {
+              label: can.ungroup ? 'Ayır' : 'Grupla',
+              onClick: can.ungroup ? commands.ungroupSelection : commands.groupSelection,
+              disabled: !can.group && !can.ungroup,
+            },
+          ]}
+        />
       </PanelCard>
     </>
   );

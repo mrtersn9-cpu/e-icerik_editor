@@ -48,6 +48,7 @@ import {
 import {
   alignActivitySelection,
   distributeActivitySelection,
+  getSelectionGroupState,
   groupActivitySelection,
   ungroupActivitySelection,
 } from '../../logic/objectLayout';
@@ -194,19 +195,14 @@ export default function useRibbonController({
   }, [clipboardTick]);
 
   // Seçimin grup/kilit durumundan türeyen bağlam bayrakları (dinamik tek düğme için).
+  // Grup kararı objectLayout.getSelectionGroupState ile ortak: linkedHoverGroup'lu
+  // hazır buton çiftleri de gruplu sayılır, birim sayısı (unitCount) da oradan gelir.
   const selectionMeta = useMemo(() => {
     const objects = Array.isArray(activity?.objects) ? activity.objects : [];
     const selected = objects.filter((item) => targetIds.has(item.id));
-    const groupIds = new Set(
-      selected.map((item) => String(item.groupId || '').trim()).filter(Boolean)
-    );
-    const groupedCount = selected.filter((item) => String(item.groupId || '').trim()).length;
     const lockedCount = selected.filter((item) => item.locked).length;
-    const allOneGroup =
-      selected.length > 1 && groupIds.size === 1 && groupedCount === selected.length;
     return {
-      canGroup: selected.length > 1 && !allOneGroup,
-      canUngroup: groupedCount > 0,
+      ...getSelectionGroupState(activity || {}, targetIds),
       allLocked: selected.length > 0 && lockedCount === selected.length,
       anyLocked: lockedCount > 0,
     };
@@ -1040,7 +1036,10 @@ export default function useRibbonController({
     can: {
       selection: !!primaryObject || targetIds.size > 0,
       multiSelection: targetIds.size > 1,
-      distribute: targetIds.size > 2,
+      // Tek öge seçiliyken de hizalama aktif: hedef sahnenin kendisidir.
+      align: !!primaryObject || targetIds.size > 0,
+      // Dağıtma birim sayısına bakar: bir grup tek birim sayılır.
+      distribute: selectionMeta.unitCount > 2,
       group: selectionMeta.canGroup,
       ungroup: selectionMeta.canUngroup,
       selectionLocked: selectionMeta.allLocked,
@@ -1064,7 +1063,7 @@ export default function useRibbonController({
         if (title === null) return;
         patchCurrentSlide({ sectionTitle: title.trim() });
       },
-      align: (mode) => activity && updateActivity(alignActivitySelection(activity, selectedIds, mode)),
+      align: (mode) => activity && updateActivity(alignActivitySelection(activity, targetIds, mode)),
       applyButtonPackage,
       applyButtonMotion,
       applyReadyButtonTextColor,
@@ -1121,7 +1120,7 @@ export default function useRibbonController({
       },
       deleteSelection: () => canvasRef.current?.deleteSelected?.(),
       deleteSlide,
-      distribute: (axis) => activity && updateActivity(distributeActivitySelection(activity, selectedIds, axis)),
+      distribute: (axis) => activity && updateActivity(distributeActivitySelection(activity, targetIds, axis)),
       duplicateSlide,
       expandCanvas: () => setCanvasExpanded(true),
       exportProject: handleExport,
