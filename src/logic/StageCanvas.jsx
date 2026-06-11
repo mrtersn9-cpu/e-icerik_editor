@@ -92,6 +92,10 @@ function nextTopZIndex(objects = []) {
   return maxZ + 1;
 }
 
+// Çift tık veya sağ tık "Metni Düzenle" ile satır içi metni düzenlenebilen öge
+// tipleri (tek doğruluk kaynağı — iki kullanım noktası da bunu okur).
+const INLINE_TEXT_EDITABLE_TYPES = ['button', 'text', 'shape', 'draggable', 'dropzone'];
+
 const StageCanvas = forwardRef(function StageCanvas(
   {
     activity,
@@ -1816,7 +1820,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                     isOtherLayerObj || isEditorLocked
                       ? undefined
                       : (e) => {
-                          if (['button', 'text', 'shape'].includes(o.type) && !o.iconSvg) {
+                          if (INLINE_TEXT_EDITABLE_TYPES.includes(o.type) && !o.iconSvg) {
                             e.preventDefault();
                             e.stopPropagation();
                             // Sağ tık ile tutarlı: zaten seçili değilse tekile indir
@@ -2670,7 +2674,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               const isImageLike = !!target.imageData;
               // iconSvg taşıyan ögeler (insertIcon) düzenlenebilir metin içermez
               const isTextLike =
-                ['button', 'text', 'shape'].includes(target.type) && !target.iconSvg;
+                INLINE_TEXT_EDITABLE_TYPES.includes(target.type) && !target.iconSvg;
               if (isTextLike) {
                 items.push({
                   label: 'Metni Düzenle',
