@@ -55,6 +55,12 @@ import {
   getEditorLinkedSelectionIds,
   getEditorPrimaryObjectId,
 } from './editorHelpers';
+import {
+  computeResizeRect,
+  computeSelectionScaledRects,
+  getResizeAnchor,
+  getSnapshotBounds,
+} from './resizeGeometry';
 import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
 import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
 import { upgradeDragDropStyle } from './factories';
@@ -840,7 +846,10 @@ const StageCanvas = forwardRef(function StageCanvas(
 
     // Update selection
     const currentIds = latestSelectedIdsRef.current;
-    const forceSingleObjectEdit = e.altKey || e.ctrlKey || e.metaKey;
+    // Alt/Ctrl/Meta = bağlı seçimi kırıp tek nesne düzenle — yalnız taşıma/tıklama
+    // başlatımında geçerli; resize'da Alt "merkez sabit simetrik boyutlandır" demektir
+    // ve mevcut (çoklu) seçim korunmalıdır.
+    const forceSingleObjectEdit = mode === 'move' && (e.altKey || e.ctrlKey || e.metaKey);
     const linkedSelectionIds = (
       forceSingleObjectEdit ? [objId] : [...getEditorLinkedSelectionIds(a, objId)]
     ).filter((id) => {
@@ -917,38 +926,47 @@ const StageCanvas = forwardRef(function StageCanvas(
         });
         setLiveInteractionActivity({ ...curr, objects: updatedObjects });
       } else {
-        const s = dragSnapshotRef.current?.[objId] || obj;
-        const r = s.x + s.width,
-          b = s.y + s.height;
-        let next = { x: s.x, y: s.y, width: s.width, height: s.height };
-        if (handle.includes('e')) next.width = Math.max(MIN, s.width + dx);
-        if (handle.includes('s')) next.height = Math.max(MIN, s.height + dy);
-        if (handle.includes('w')) {
-          next.x = Math.max(0, Math.min(s.x + dx, r - MIN));
-          next.width = Math.max(MIN, r - next.x);
+        // Boyutlandırma geometrisi saf modülde (resizeGeometry):
+        // Shift = orantılı, Alt = merkez sabit simetrik, Shift+Alt = ikisi birden.
+        // Modifierlar sürükleme sırasında dinamik okunur (me.shiftKey/me.altKey).
+        const snap = dragSnapshotRef.current || {};
+        const s = snap[objId] || obj;
+        const next = computeResizeRect(s, handle, dx, dy, {
+          shift: me.shiftKey,
+          alt: me.altKey,
+          min: MIN,
+        });
+        const snapshotIds = Object.keys(snap);
+        let updatedObjects;
+        if (snapshotIds.length > 1) {
+          // Çoklu seçim: birincil ögenin ölçek faktörü, tutamacın karşı
+          // kenarı (Alt'ta seçim merkezi) ankraj alınarak TÜM seçime uygulanır.
+          const scaleX = s.width > 0 ? next.width / s.width : 1;
+          const scaleY = s.height > 0 ? next.height / s.height : 1;
+          const anchor = getResizeAnchor(getSnapshotBounds(snap), handle, me.altKey);
+          const scaledRects = computeSelectionScaledRects(
+            snap,
+            { x: scaleX, y: scaleY },
+            anchor,
+            MIN
+          );
+          updatedObjects = (curr.objects || []).map((item) => {
+            const rect = scaledRects[item.id];
+            if (!rect) return item;
+            const patched = { ...item, ...rect };
+            return item.generatedBy === 'answer-placement'
+              ? { ...patched, answerPlacementManual: true, disableDrag: false, locked: false }
+              : patched;
+          });
+        } else {
+          const nextPatch =
+            obj.generatedBy === 'answer-placement'
+              ? { ...next, answerPlacementManual: true, disableDrag: false, locked: false }
+              : next;
+          updatedObjects = (curr.objects || []).map((item) =>
+            item.id === objId ? { ...item, ...nextPatch } : item
+          );
         }
-        if (handle.includes('n')) {
-          next.y = Math.max(0, Math.min(s.y + dy, b - MIN));
-          next.height = Math.max(MIN, b - next.y);
-        }
-        // Shift: en-boy oranını koru (Illustrator gibi orantılı boyutlandır)
-        if (me.shiftKey) {
-          const aspect = s.height > 0 ? s.width / s.height : 1;
-          const dw = Math.abs(next.width - s.width);
-          const dh = Math.abs(next.height - s.height);
-          if (dw >= dh) next.height = Math.max(MIN, Math.round(next.width / aspect));
-          else next.width = Math.max(MIN, Math.round(next.height * aspect));
-          // Sabit kenarı (resize ankrajı) koru: w/n tutamaçlarında sağ/alt kenar sabittir
-          next.x = handle.includes('w') ? r - next.width : s.x;
-          next.y = handle.includes('n') ? b - next.height : s.y;
-        }
-        const nextPatch =
-          obj.generatedBy === 'answer-placement'
-            ? { ...next, answerPlacementManual: true, disableDrag: false, locked: false }
-            : next;
-        const updatedObjects = (curr.objects || []).map((item) =>
-          item.id === objId ? { ...item, ...nextPatch } : item
-        );
         setLiveInteractionActivity({ ...curr, objects: updatedObjects });
       }
     };
