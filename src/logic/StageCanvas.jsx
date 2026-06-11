@@ -1717,7 +1717,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               if (oL === 'base' && cL !== 'base' && !showBaseLayer) return false;
               return true;
             })
-            .sort((a, b) => a.zIndex - b.zIndex)
+            .sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0))
             .map((o) => {
               const objLayer = o.layerId || 'base';
               const curLayer = canvasActivity.activeLayerId || 'base';
@@ -1848,11 +1848,14 @@ const StageCanvas = forwardRef(function StageCanvas(
                     textDecoration: st.textDecoration || 'none',
                     lineHeight: st.lineHeight || undefined,
                     letterSpacing: st.letterSpacing || undefined,
-                    opacity: isOtherLayerObj
-                      ? 1
-                      : isTimelineActive
-                        ? motionStyle.opacity
-                        : inactiveOpacity,
+                    // Kullanıcının style.opacity ayarı çarpımsal uygulanır (SCORM/önizleme ile tutarlı).
+                    opacity:
+                      Math.max(0, Math.min(1, Number(st.opacity ?? 1) || 0)) *
+                      (isOtherLayerObj
+                        ? 1
+                        : isTimelineActive
+                          ? motionStyle.opacity
+                          : inactiveOpacity),
                     filter:
                       isOtherLayerObj || isSceneTemplateObject
                         ? 'none'

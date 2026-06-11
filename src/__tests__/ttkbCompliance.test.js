@@ -263,7 +263,8 @@ describe('TTKB editor compliance', () => {
     });
 
     expect(state.activities[0].objects[0].style.background).toContain('rgba(255,255,255,.98)');
-    expect(state.activities[0].objects[0].style.opacity).toBe(1);
+    // Kullanıcının opacity ayarı artık ezilmez (WYSIWYG) — yalnızca arka plan alfası yükseltilir.
+    expect(state.activities[0].objects[0].style.opacity).toBe(0.4);
     expect(auditTtkbEditorState(state).ok).toBe(true);
   });
 });

@@ -126,12 +126,13 @@ function isPopupPanelShape(object = {}) {
 function solidifyReadablePanelStyle(style = {}) {
   const background = String(style.background || '');
   if (!hasVisibleBackground(background)) return style;
+  // Kullanıcının style.opacity ayarı korunur; okunabilirlik yalnızca arka plan
+  // alfasının yükseltilmesiyle sağlanır (WYSIWYG: editörde de aynı görünür).
   return {
     ...style,
     background: background
       .replace(/rgba\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*[^)]+\)/gi, 'rgba($1,$2,$3,.98)')
       .replace(/rgb\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/gi, 'rgba($1,$2,$3,.98)'),
-    opacity: 1,
   };
 }
 
