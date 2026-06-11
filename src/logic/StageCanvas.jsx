@@ -559,7 +559,9 @@ const StageCanvas = forwardRef(function StageCanvas(
     return true;
   }, [clipboardRef]);
 
-  const pasteClipboard = useCallback(() => {
+  // options.exactPosition: true ise +24px kaydırma uygulanmaz (aynı X,Y'ye yapıştır).
+  const pasteClipboard = useCallback((options = {}) => {
+    const { exactPosition = false } = options;
     const clipboard = clipboardRef.current;
     if (!clipboard?.objects?.length) return false;
 
@@ -570,9 +572,12 @@ const StageCanvas = forwardRef(function StageCanvas(
     const pasteSh = Number(a.stageHeight) || 1080;
     const pastePadX = pasteSw * 0.75;
     const pastePadY = pasteSh * 0.75;
+    const pasteOffset = exactPosition ? 0 : 24;
     const targetLayerIds = new Set((a.layers || []).map((layer) => layer.id).filter(Boolean));
     if (!targetLayerIds.size) targetLayerIds.add('base');
-    const fallbackLayerId = targetLayerIds.has(a.activeLayerId) ? a.activeLayerId : 'base';
+    // Hedef her zaman AKTİF katman: kopyala → katman değiştir → yapıştır akışı
+    // çalışsın (eskiden orijinal katman korunuyor, öge görünmez kalabiliyordu).
+    const pasteLayerId = targetLayerIds.has(a.activeLayerId) ? a.activeLayerId : 'base';
     const idMap = new Map();
     const groupIdMap = new Map();
     const hoverGroupIdMap = new Map();
@@ -602,9 +607,9 @@ const StageCanvas = forwardRef(function StageCanvas(
         linkedActionTargetId: idMap.has(item.linkedActionTargetId)
           ? idMap.get(item.linkedActionTargetId)
           : '',
-        layerId: targetLayerIds.has(item.layerId || 'base') ? item.layerId || 'base' : fallbackLayerId,
-        x: clamp(Math.round((Number(item.x) || 0) + 24), -pastePadX, pasteSw + pastePadX),
-        y: clamp(Math.round((Number(item.y) || 0) + 24), -pastePadY, pasteSh + pastePadY),
+        layerId: pasteLayerId,
+        x: clamp(Math.round((Number(item.x) || 0) + pasteOffset), -pastePadX, pasteSw + pastePadX),
+        y: clamp(Math.round((Number(item.y) || 0) + pasteOffset), -pastePadY, pasteSh + pastePadY),
         zIndex: existingObjects.length + index + 1,
         style: item.style ? { ...item.style } : item.style,
       };

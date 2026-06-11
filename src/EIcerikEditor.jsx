@@ -1873,12 +1873,14 @@ export default function EIcerikEditor() {
       const useSlideClipboard =
         !hasObjectSelection && (slideTreeFocused || storyRibbonTab === 'scene');
 
-      if (modKey && e.key === 'z') {
+      if (modKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        undo();
+        // Ctrl+Shift+Z = yinele (Ctrl+Y ile aynı), Ctrl+Z = geri al
+        if (e.shiftKey) redo();
+        else undo();
         return;
       }
-      if (modKey && e.key === 'y') {
+      if (modKey && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
         return;
@@ -1901,15 +1903,24 @@ export default function EIcerikEditor() {
           return;
         }
         if (canvasRef.current.copySelected?.()) clipboardKindRef.current = 'objects';
+      } else if (modKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        // Kes: kopyala + sil (sağ tık menüsündeki 'Kes' ile aynı, yalnız nesne kanalı)
+        if (canvasRef.current.copySelected?.()) {
+          clipboardKindRef.current = 'objects';
+          canvasRef.current.deleteSelected?.();
+        }
       } else if (modKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
+        // Ctrl+Shift+V: nesneyi kopyalandığı X,Y koordinatına (kaydırmasız) yapıştır.
+        const pasteOptions = { exactPosition: e.shiftKey };
         // En son kopyalanan türe göre yapıştır. Slayt ise slayt önce, nesne ise nesne önce;
         // her iki durumda da geri-plan olarak diğer kanal denenir.
         if (clipboardKindRef.current === 'slide') {
           if (slideClipboardCommandsRef.current.pasteSlide?.()) return;
-          canvasRef.current.pasteClipboard?.();
+          canvasRef.current.pasteClipboard?.(pasteOptions);
         } else {
-          if (canvasRef.current.pasteClipboard?.()) return;
+          if (canvasRef.current.pasteClipboard?.(pasteOptions)) return;
           slideClipboardCommandsRef.current.pasteSlide?.();
         }
       } else if (modKey && e.key.toLowerCase() === 'd') {
