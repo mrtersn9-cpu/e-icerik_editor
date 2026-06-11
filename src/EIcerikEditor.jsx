@@ -2764,15 +2764,17 @@ export default function EIcerikEditor() {
             item.type === 'draggable' || item.type === 'dropzone'
               ? upgradeDragDropStyle(item.type, { ...(item.style || {}), ...stylePatch })
               : { ...(item.style || {}), ...stylePatch };
-          // Butona elle renk verildiyse kilitle: TTKB kontrast düzeltmesi ve tema
-          // restyle'ı ezmesin; gölge de seçilen renge uyarlansın.
+          // Elle renk verildiyse kilitle: TTKB kontrast düzeltmesi ve tema
+          // restyle'ı ezmesin; butonda gölge de seçilen renge uyarlansın.
           if (
-            item.type === 'button' &&
+            ['button', 'text', 'shape'].includes(item.type) &&
             Object.prototype.hasOwnProperty.call(stylePatch, 'color')
           ) {
             nextItem.style.colorLocked = true;
-            const adaptedShadow = readyButtonTextShadowForColor(stylePatch.color);
-            if (adaptedShadow) nextItem.style.textShadow = adaptedShadow;
+            if (item.type === 'button') {
+              const adaptedShadow = readyButtonTextShadowForColor(stylePatch.color);
+              if (adaptedShadow) nextItem.style.textShadow = adaptedShadow;
+            }
           }
         }
         return nextItem;

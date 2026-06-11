@@ -189,6 +189,53 @@ describe('TTKB editor compliance', () => {
     expect(activity.objects[1].style.whiteSpace).toBe('nowrap');
   });
 
+  test('colorLocked buton rengi düşük kontrastta bile TTKB zorlamasından korunur', () => {
+    const activity = enforceTtkbActivityCompliance({
+      id: 'act-1',
+      buttonPackageId: 'pkg-1',
+      objects: [
+        {
+          id: 'locked-btn',
+          type: 'button',
+          label: 'KONTROL ET',
+          style: {
+            background: '#2563eb',
+            color: '#3b82f6', // mavi zeminde düşük kontrast — yine de korunmalı
+            colorLocked: true,
+            textShadow: '0 2px 0 rgba(0,0,0,.4)',
+          },
+        },
+      ],
+    });
+
+    expect(activity.objects[0].style.color).toBe('#3b82f6');
+    expect(activity.objects[0].style.textShadow).toBe('0 2px 0 rgba(0,0,0,.4)');
+  });
+
+  test('colorLocked text/shape rengi de TTKB zorlamasından korunur', () => {
+    const activity = enforceTtkbActivityCompliance({
+      id: 'act-1',
+      objects: [
+        {
+          id: 'txt',
+          type: 'text',
+          label: 'Başlık',
+          style: { background: '#ffffff', color: '#fde047', colorLocked: true },
+        },
+        {
+          id: 'shp',
+          type: 'shape',
+          shapeKind: 'roundedRect',
+          label: 'Şekil',
+          style: { background: '#0f172a', color: '#1e293b', colorLocked: true },
+        },
+      ],
+    });
+
+    expect(activity.objects[0].style.color).toBe('#fde047');
+    expect(activity.objects[1].style.color).toBe('#1e293b');
+  });
+
   test('solidifies popup panels and passes contrast audit after enforcement', () => {
     const state = enforceTtkbEditorState({
       activities: [

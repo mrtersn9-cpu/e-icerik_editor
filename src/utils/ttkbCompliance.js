@@ -136,6 +136,9 @@ function solidifyReadablePanelStyle(style = {}) {
 }
 
 export function ensureTtkbReadableStyle(style = {}, { force = false, fallbackBg = '#ffffff' } = {}) {
+  // Kullanıcı rengi elle seçip kilitlediyse (colorLocked) kontrast zorlaması
+  // uygulanmaz; aksi halde her normalize turunda seçilen renk geri alınıyordu.
+  if (style.colorLocked) return style;
   const localBg = style.background;
   const hasBg = localBg && localBg !== 'transparent' && localBg !== 'none' && !localBg.includes('rgba(0,0,0,0)');
   if (!force && !hasBg) return style;
