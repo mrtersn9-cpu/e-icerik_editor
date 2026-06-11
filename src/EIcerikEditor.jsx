@@ -1920,11 +1920,17 @@ export default function EIcerikEditor() {
         const a = history.present;
         const act = a.activities.find((x) => x.id === a.selActId);
         const curLayer = act?.activeLayerId || 'base';
-        // Yalnızca görünür ve AKTİF katmandaki ögeleri seç (gizli/diğer katman hariç)
+        // Yalnızca görünür, kilitsiz ve AKTİF katmandaki ögeleri seç
+        // (gizli/diğer katman/kilitli hariç; cevap yerleşimi kilit istisnası)
         setSelectedIds(
           new Set(
             (act?.objects || [])
-              .filter((o) => o.visible !== false && (o.layerId || 'base') === curLayer)
+              .filter(
+                (o) =>
+                  o.visible !== false &&
+                  (o.layerId || 'base') === curLayer &&
+                  (!o.locked || o.generatedBy === 'answer-placement')
+              )
               .map((o) => o.id)
           )
         );

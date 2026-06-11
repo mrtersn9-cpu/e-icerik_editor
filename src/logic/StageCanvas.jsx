@@ -829,6 +829,9 @@ const StageCanvas = forwardRef(function StageCanvas(
     const objLayer = obj.layerId || 'base';
     const curLayer = a.activeLayerId || 'base';
     if (objLayer !== curLayer) return;
+    // Kilitli öge (cevap yerleşimi hariç) seçilemez ve taşınamaz: seçim
+    // güncellemesinden ÖNCE çıkılır ki mavi seçim çerçevesi de oluşmasın.
+    if (obj.locked && obj.generatedBy !== 'answer-placement') return;
 
     // Update selection
     const currentIds = latestSelectedIdsRef.current;
@@ -864,9 +867,6 @@ const StageCanvas = forwardRef(function StageCanvas(
     };
     latestRef.current = selectedActivity;
     onUpdate(selectedActivity);
-    const isEditableAnswerPlacement = obj.generatedBy === 'answer-placement';
-    if (obj.locked && !isEditableAnswerPlacement) return;
-
     const origin = toStage(e.clientX, e.clientY);
     let hasMoved = false;
     const isShift = e.shiftKey;
@@ -1029,6 +1029,8 @@ const StageCanvas = forwardRef(function StageCanvas(
             .filter(
               (o) =>
                 o.visible !== false &&
+                // Kilitli ögeler marquee seçimine dahil edilmez (cevap yerleşimi hariç)
+                (!o.locked || o.generatedBy === 'answer-placement') &&
                 o.x < maxX &&
                 o.x + o.width > minX &&
                 o.y < maxY &&
@@ -1722,10 +1724,12 @@ const StageCanvas = forwardRef(function StageCanvas(
               const objLayer = o.layerId || 'base';
               const curLayer = canvasActivity.activeLayerId || 'base';
               const isOtherLayerObj = objLayer !== curLayer;
+              const isEditorLocked = o.locked && o.generatedBy !== 'answer-placement';
+              // Kilitli öge seçim çerçevesi/tutamaç göstermez (seçilemez de).
               const isSel =
                 !isOtherLayerObj &&
+                !isEditorLocked &&
                 (selectedIds.has(o.id) || canvasActivity.selectedObjectId === o.id);
-              const isEditorLocked = o.locked && o.generatedBy !== 'answer-placement';
               const st =
                 o.type === 'draggable' || o.type === 'dropzone'
                   ? upgradeDragDropStyle(o.type, o.style || {})
@@ -1781,7 +1785,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                 <div
                   key={o.id}
                   onPointerDown={
-                    isOtherLayerObj || editingObjectId === o.id
+                    isOtherLayerObj || isEditorLocked || editingObjectId === o.id
                       ? undefined
                       : (e) => startInteract(e, o.id, 'move')
                   }
@@ -1804,8 +1808,10 @@ const StageCanvas = forwardRef(function StageCanvas(
                       : (e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          // Çoklu seçimi koru: tıklanan öge seçili değilse tekile indir
-                          if (!selectedIds.has(o.id)) selectObjectById(o.id);
+                          // Çoklu seçimi koru: tıklanan öge seçili değilse tekile indir.
+                          // Kilitli öge SEÇİLMEZ; menü hedefi objectId ile taşınır
+                          // (Kilidi Aç gibi aksiyonlar seçimden bağımsız çalışır).
+                          if (!isEditorLocked && !selectedIds.has(o.id)) selectObjectById(o.id);
                           setContextMenu({ x: e.clientX, y: e.clientY, objectId: o.id });
                         }
                   }
@@ -1819,7 +1825,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    cursor: isOtherLayerObj ? 'default' : isEditorLocked ? 'pointer' : 'move',
+                    cursor: isOtherLayerObj || isEditorLocked ? 'default' : 'move',
                     userSelect: 'none',
                     zIndex:
                       layerBoost > 0 && isFullStageDarkBackdrop(o)
