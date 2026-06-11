@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom';
+
 import { timelineTokens as t } from './timelineTokens';
 
 function MenuButton({ children, disabled = false, onClick, tone = t.text }) {
@@ -37,14 +39,16 @@ export default function TimelineContextMenu({ controller }) {
     fn?.();
   };
 
-  return (
+  // Portal + yüksek z-index: sahnedeki layerBoost'lu nesnelerin (z-index ~100M)
+  // altında kalmaması için menü document.body'ye taşınır.
+  return createPortal(
     <div
       onPointerDown={(event) => event.stopPropagation()}
       style={{
         position: 'fixed',
         left: menu.x,
         top: menu.y,
-        zIndex: 1000,
+        zIndex: 2147483001,
         width: 210,
         border: `1px solid ${t.border}`,
         borderRadius: 8,
@@ -83,6 +87,7 @@ export default function TimelineContextMenu({ controller }) {
       <MenuButton onClick={() => run(controller.addCuePoint)} tone={t.cue}>
         Playhead'e Cue Ekle
       </MenuButton>
-    </div>
+    </div>,
+    document.body
   );
 }

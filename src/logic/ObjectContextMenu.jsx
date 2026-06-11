@@ -2,6 +2,7 @@
 // Menü öğeleri StageCanvas tarafından (öge tipine göre) hazırlanıp `items` ile geçilir;
 // bu bileşen yalnızca sunumdan, alt menülerden ve dışarı tıkta kapanmaktan sorumludur.
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const MENU_WIDTH = 214;
 
@@ -109,7 +110,10 @@ export default function ObjectContextMenu({ x = 0, y = 0, items = [], onClose })
   const top =
     typeof window !== 'undefined' ? Math.min(y, window.innerHeight - estHeight - 8) : y;
 
-  return (
+  // Portal + çok yüksek z-index: overlay katmanındaki nesneler layerBoost ile
+  // 100M'a kadar z-index alabildiğinden menü sahne ağacında kalırsa altlarında
+  // kalıyordu. document.body'ye taşınıp her şeyin üstünde çizilir.
+  return createPortal(
     <>
       <div
         onPointerDown={onClose}
@@ -117,11 +121,19 @@ export default function ObjectContextMenu({ x = 0, y = 0, items = [], onClose })
           event.preventDefault();
           onClose?.();
         }}
-        style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'transparent' }}
+        style={{ position: 'fixed', inset: 0, zIndex: 2147483000, background: 'transparent' }}
       />
-      <div style={{ position: 'fixed', left: Math.max(8, left), top: Math.max(8, top), zIndex: 4001 }}>
+      <div
+        style={{
+          position: 'fixed',
+          left: Math.max(8, left),
+          top: Math.max(8, top),
+          zIndex: 2147483001,
+        }}
+      >
         <MenuSurface items={items} onClose={onClose} />
       </div>
-    </>
+    </>,
+    document.body
   );
 }
