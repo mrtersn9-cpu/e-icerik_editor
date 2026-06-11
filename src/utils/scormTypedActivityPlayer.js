@@ -84,6 +84,10 @@ export const TYPED_ACTIVITY_PLAYER_STYLE = `
 export const TYPED_ACTIVITY_PLAYER_SCRIPT = `
 // ✓ Doğru
 // × Yanlış
+// Oyuncu metinleri: PAYLOAD.i18n seçilen üretim diliyle gelir; yoksa Türkçe fallback.
+function typedText(key, fallback) {
+  return (typeof PAYLOAD !== "undefined" && PAYLOAD.i18n && PAYLOAD.i18n[key]) || fallback;
+}
 function typedActivitySupported(slide) {
   return !!(slide && ["fill-blank", "mixed", "puzzle", "hotspot", "sequence"].includes(slide.type));
 }
@@ -129,7 +133,7 @@ function typedLivesBar(root, current) {
   var remaining = typedLivesRemaining(current);
   var bar = typedEl("div", "typed-lives");
   bar.setAttribute("role", "status");
-  bar.setAttribute("aria-label", "Kalan can: " + remaining + " / " + cfg.count);
+  bar.setAttribute("aria-label", typedText("livesRemaining", "Kalan can") + ": " + remaining + " / " + cfg.count);
   bar.style.cssText = "display:inline-flex;align-items:center;gap:4px;margin:6px 0";
   for (var i = 0; i < cfg.count; i++) {
     var filled = i < remaining;
@@ -165,16 +169,16 @@ function typedFeedback(root) {
 
   let className = "typed-feedback incorrect";
   let symbol = "×";
-  let text = "Yanlış";
+  let text = typedText("incorrectShort", "Yanlış");
 
   if (success) {
     className = "typed-feedback correct";
     symbol = "✓";
-    text = "Doğru";
+    text = typedText("correctShort", "Doğru");
   } else if (completed && assisted) {
     className = "typed-feedback neutral";
     symbol = "✎";
-    text = "Etkinlik çözüm desteğiyle tamamlandı.";
+    text = typedText("solvedWithSolution", "Etkinlik çözüm desteğiyle tamamlandı.");
   }
 
   const message = typedEl("div", className);
@@ -328,17 +332,17 @@ function typedActions(root, current) {
   const cfg = typedLivesConfig(current);
   const livesOut = cfg.enabled && typedLivesRemaining(current) <= 0;
   const actions = typedEl("div", "typed-actions");
-  const checkBtn = typedButton("Kontrol Et", () => typedCheck(current), false);
+  const checkBtn = typedButton(typedText("checkLabel", "Kontrol Et"), () => typedCheck(current), false);
   if (livesOut) {
     checkBtn.disabled = true;
     checkBtn.style.opacity = "0.45";
     checkBtn.style.cursor = "not-allowed";
   }
   actions.appendChild(checkBtn);
-  actions.appendChild(typedButton("Temizle", () => { typedClear(current); render(); }, true));
+  actions.appendChild(typedButton(typedText("clearLabel", "Temizle"), () => { typedClear(current); render(); }, true));
   root.appendChild(actions);
   if (livesOut) {
-    const note = typedEl("div", "typed-feedback incorrect", "Canların bitti.");
+    const note = typedEl("div", "typed-feedback incorrect", typedText("livesOut", "Canların bitti."));
     note.style.marginTop = "12px";
     root.appendChild(note);
   }
@@ -357,7 +361,7 @@ function typedFillBlankTokens(container, sentence, values, answers) {
     const input = typedEl("input", "typed-blank");
     input.type = "text";
     input.value = values[id] || "";
-    input.setAttribute("aria-label", "Boşluk " + (index + 1));
+    input.setAttribute("aria-label", typedText("blankLabel", "Boşluk") + " " + (index + 1));
     input.addEventListener("input", event => {
       values[id] = event.target.value;
       state.typedActivityResult = null;
@@ -367,7 +371,7 @@ function typedFillBlankTokens(container, sentence, values, answers) {
   });
 }
 function typedRenderFillBlank(root, current) {
-  typedQuestion(root, current.fillBlankQuestion || "Boşlukları doldurunuz.");
+  typedQuestion(root, current.fillBlankQuestion || typedText("fillBlanksHint", "Boşlukları doldurunuz."));
   const sentence = typedEl("div", "typed-sentence");
   typedFillBlankTokens(sentence, current.fillBlankSentence, typedStore("fillBlankValues", {}), current.fillBlankAnswers || []);
   root.appendChild(sentence);
@@ -377,7 +381,7 @@ function typedRenderMixed(root, current) {
   const answers = typedStore("mixedAnswers", {});
   (current.mixedItems || []).forEach((item, index) => {
     const card = typedEl("fieldset", "typed-card");
-    card.appendChild(typedEl("legend", "typed-card-title", "Soru " + (index + 1) + ": " + (item.question || "")));
+    card.appendChild(typedEl("legend", "typed-card-title", typedText("questionLabel", "Soru") + " " + (index + 1) + ": " + (item.question || "")));
     if (item.type === "selection") {
       const multiple = item.mode === "multi" || (item.options || []).filter(option => option.isCorrect).length > 1;
       (item.options || []).forEach((option, optionIndex) => {
@@ -408,7 +412,7 @@ function typedRenderMixed(root, current) {
         label.appendChild(document.createTextNode((pair.left || "") + " "));
         const select = document.createElement("select");
         select.setAttribute("aria-label", (pair.left || "Eşleştirme") + " için seçim");
-        select.appendChild(new Option("Seçiniz...", ""));
+        select.appendChild(new Option(typedText("selectPlaceholder", "Seçiniz..."), ""));
         (item.pairs || []).forEach(option => select.appendChild(new Option(option.right || "", option.right || "")));
         select.value = values[pair.id] || "";
         select.addEventListener("change", event => {
@@ -431,7 +435,7 @@ function typedRenderMixed(root, current) {
         const key = blankIndex++;
         const input = typedEl("input", "typed-blank");
         input.value = values[key] || "";
-        input.setAttribute("aria-label", "Boşluk " + (key + 1));
+        input.setAttribute("aria-label", typedText("blankLabel", "Boşluk") + " " + (key + 1));
         input.addEventListener("input", event => {
           values[key] = event.target.value;
           state.typedActivityResult = null;
@@ -443,7 +447,7 @@ function typedRenderMixed(root, current) {
       const input = typedEl("input", "typed-entry");
       input.type = item.type === "numeric" ? "number" : "text";
       input.value = answers[item.id] || "";
-      input.setAttribute("aria-label", item.question || "Yanıt");
+      input.setAttribute("aria-label", item.question || typedText("answerLabel", "Yanıt"));
       input.addEventListener("input", event => {
         answers[item.id] = event.target.value;
         state.typedActivityResult = null;
@@ -480,15 +484,15 @@ function openCrosswordModal(word, current, gridCellEl) {
   
   // Header
   const header = typedEl("div", "typed-modal-header");
-  header.appendChild(typedEl("div", "typed-modal-title", "Soru " + word.number + " (" + (word.direction === "across" ? "Yatay" : "Dikey") + ")"));
-  
+  header.appendChild(typedEl("div", "typed-modal-title", typedText("questionLabel", "Soru") + " " + word.number + " (" + (word.direction === "across" ? typedText("acrossShort", "Yatay") : typedText("downShort", "Dikey")) + ")"));
+
   const attempts = typedStore("puzzleAttempts", {});
   const qAttempts = attempts[word.id] || 0;
-  header.appendChild(typedEl("div", "typed-modal-attempts", "Deneme Sayısı: " + qAttempts));
+  header.appendChild(typedEl("div", "typed-modal-attempts", typedText("attemptsLabel", "Deneme Sayısı") + ": " + qAttempts));
   card.appendChild(header);
 
   // Clue Text
-  card.appendChild(typedEl("div", "typed-modal-clue", word.question || word.clue || "İpucu belirtilmemiş."));
+  card.appendChild(typedEl("div", "typed-modal-clue", word.question || word.clue || typedText("noHint", "İpucu belirtilmemiş.")));
 
   // Status feedback box
   const qStatus = typedStore("puzzleQuestionStatus", {});
@@ -508,11 +512,11 @@ function openCrosswordModal(word, current, gridCellEl) {
 
   // Pre-fill feedback if already correct or revealed
   if (currentStatus === "correct") {
-    updateFeedbackUI("✓ Tebrikler, doğru cevap!", "success");
+    updateFeedbackUI("✓ " + typedText("typedCorrect", "Tebrikler, doğru cevap!"), "success");
   } else if (currentStatus === "revealed") {
-    updateFeedbackUI("✎ Çözüm gösterildi.", "revealed");
+    updateFeedbackUI("✎ " + typedText("typedRevealed", "Çözüm gösterildi."), "revealed");
   } else if (currentStatus === "incorrect") {
-    updateFeedbackUI("× Hatalı cevap! Tekrar deneyebilirsiniz.", "error");
+    updateFeedbackUI("× " + typedText("typedIncorrect", "Hatalı cevap! Tekrar deneyebilirsiniz."), "error");
   }
 
   // Harf Kutuları & Hücre Kilitleme Kuralı
@@ -627,7 +631,7 @@ function openCrosswordModal(word, current, gridCellEl) {
       rowDiv.appendChild(key);
     });
     if (rIdx === 2) {
-      const bs = typedEl("button", "typed-key backspace", "← Sil");
+      const bs = typedEl("button", "typed-key backspace", typedText("backspace", "← Sil"));
       bs.type = "button";
       bs.addEventListener("click", handleBackspace);
       rowDiv.appendChild(bs);
@@ -645,11 +649,11 @@ function openCrosswordModal(word, current, gridCellEl) {
     const isCorrect = userInput === answer;
 
     attempts[word.id] = (attempts[word.id] || 0) + 1;
-    header.querySelector(".typed-modal-attempts").textContent = "Deneme Sayısı: " + attempts[word.id];
+    header.querySelector(".typed-modal-attempts").textContent = typedText("attemptsLabel", "Deneme Sayısı") + ": " + attempts[word.id];
 
     if (isCorrect) {
       qStatus[word.id] = "correct";
-      updateFeedbackUI("✓ Tebrikler, doğru cevap!", "success");
+      updateFeedbackUI("✓ " + typedText("typedCorrect", "Tebrikler, doğru cevap!"), "success");
       
       // Grid üzerine harfleri doldur
       for (let i = 0; i < wordLen; i++) {
@@ -665,7 +669,7 @@ function openCrosswordModal(word, current, gridCellEl) {
       }, 1200);
     } else {
       qStatus[word.id] = "incorrect";
-      updateFeedbackUI("× Hatalı cevap! Tekrar deneyebilirsiniz.", "error");
+      updateFeedbackUI("× " + typedText("typedIncorrect", "Hatalı cevap! Tekrar deneyebilirsiniz."), "error");
     }
   }
 
@@ -674,7 +678,7 @@ function openCrosswordModal(word, current, gridCellEl) {
     if (activeStatus === "correct" || activeStatus === "revealed") return;
     const answer = (word.answer || "").toUpperCase();
     qStatus[word.id] = "revealed";
-    updateFeedbackUI("✎ Çözüm gösterildi.", "revealed");
+    updateFeedbackUI("✎ " + typedText("typedRevealed", "Çözüm gösterildi."), "revealed");
 
     checkBtn.disabled = true;
     checkBtn.style.opacity = "0.5";
@@ -702,18 +706,18 @@ function openCrosswordModal(word, current, gridCellEl) {
   // Modal Actions
   const actions = typedEl("div", "typed-modal-actions");
   
-  const checkBtn = typedButton("✓ Kontrol Et", checkAnswer, false);
+  const checkBtn = typedButton("✓ " + typedText("checkLabel", "Kontrol Et"), checkAnswer, false);
   checkBtn.style.flex = "2 1 140px";
   actions.appendChild(checkBtn);
 
   const settings = current.puzzleSettings || {};
   if (settings.allowHints !== false) {
-    const hintBtn = typedButton("✎ Çözümü Göster", revealSolution, true);
+    const hintBtn = typedButton("✎ " + typedText("showSolutionLabel", "Çözümü Göster"), revealSolution, true);
     hintBtn.style.flex = "1 1 110px";
     actions.appendChild(hintBtn);
   }
 
-  const closeBtn = typedButton("Kapat", () => {
+  const closeBtn = typedButton(typedText("closeLabel", "Kapat"), () => {
     document.body.removeChild(overlay);
     render();
     if (gridCellEl) gridCellEl.focus();
@@ -830,7 +834,7 @@ function typedRenderCrossword(root, current) {
   
   // Yatay Sorular
   const acrossSection = typedEl("div", "");
-  acrossSection.appendChild(typedEl("div", "typed-clues-section-title", "Yatay Sorular"));
+  acrossSection.appendChild(typedEl("div", "typed-clues-section-title", typedText("acrossLabel", "Yatay Sorular")));
   
   placed.filter(p => p.direction === "across").forEach(p => {
     const status = qStatus[p.id] || "unanswered";
@@ -852,7 +856,7 @@ function typedRenderCrossword(root, current) {
 
   // Dikey Sorular
   const downSection = typedEl("div", "");
-  downSection.appendChild(typedEl("div", "typed-clues-section-title", "Dikey Sorular"));
+  downSection.appendChild(typedEl("div", "typed-clues-section-title", typedText("downLabel", "Dikey Sorular")));
 
   placed.filter(p => p.direction === "down").forEach(p => {
     const status = qStatus[p.id] || "unanswered";
@@ -936,7 +940,7 @@ function typedRenderMaze(root, current) {
   }));
   root.appendChild(grid);
   const controls = typedEl("div", "typed-maze-controls");
-  [["Yukarı", -1, 0], ["Sol", 0, -1], ["Sağ", 0, 1], ["Aşağı", 1, 0]].forEach(move => {
+  [[typedText("upLabel", "Yukarı"), -1, 0], [typedText("leftLabel", "Sol"), 0, -1], [typedText("rightLabel", "Sağ"), 0, 1], [typedText("downMoveLabel", "Aşağı"), 1, 0]].forEach(move => {
     controls.appendChild(typedButton(move[0], () => {
       const row = position.row + move[1];
       const column = position.column + move[2];
@@ -976,7 +980,7 @@ function typedRenderMemory(root, current) {
     grid.appendChild(button);
   });
   root.appendChild(grid);
-  root.appendChild(typedEl("p", "typed-counter", "Eşleşen: " + matched.length + " / " + Math.floor(cards.length / 2)));
+  root.appendChild(typedEl("p", "typed-counter", typedText("matchedLabel", "Eşleşen") + ": " + matched.length + " / " + Math.floor(cards.length / 2)));
 }
 function typedRenderSudoku(root, current) {
   const cells = (current.puzzleGrid && current.puzzleGrid.cells) || [];
@@ -995,7 +999,7 @@ function typedRenderSudoku(root, current) {
     input.maxLength = 1;
     input.inputMode = "numeric";
     input.value = values[key] || "";
-    input.setAttribute("aria-label", "Satır " + (rowIndex + 1) + " sütun " + (columnIndex + 1));
+    input.setAttribute("aria-label", typedText("rowLabel", "Satır") + " " + (rowIndex + 1) + " " + typedText("columnLabel", "sütun") + " " + (columnIndex + 1));
     input.addEventListener("input", event => {
       let value = String(event.target.value || "").replace(/[^1-9]/g, "").slice(-1);
       event.target.value = value;
@@ -1008,7 +1012,7 @@ function typedRenderSudoku(root, current) {
   typedActions(root, current);
 }
 function typedRenderSequence(root, current) {
-  typedQuestion(root, current.sequenceQuestion || "Öğeleri doğru sıraya diziniz.");
+  typedQuestion(root, current.sequenceQuestion || typedText("sequenceHint", "Öğeleri doğru sıraya diziniz."));
   const items = current.sequenceItems || [];
   if (!state.sequenceOrder) {
     let base = items.map(item => item.id);
@@ -1039,7 +1043,7 @@ function typedRenderSequence(root, current) {
     label.style.fontWeight = "800";
     row.appendChild(label);
     
-    const upBtn = typedButton("Yukarı", () => {
+    const upBtn = typedButton(typedText("upLabel", "Yukarı"), () => {
       if (index === 0) return;
       const next = [...state.sequenceOrder];
       [next[index], next[index - 1]] = [next[index - 1], next[index]];
@@ -1054,7 +1058,7 @@ function typedRenderSequence(root, current) {
     if (index === 0) upBtn.style.opacity = "0.4";
     row.appendChild(upBtn);
     
-    const downBtn = typedButton("Aşağı", () => {
+    const downBtn = typedButton(typedText("downMoveLabel", "Aşağı"), () => {
       if (index === orderedItems.length - 1) return;
       const next = [...state.sequenceOrder];
       [next[index], next[index + 1]] = [next[index + 1], next[index]];
@@ -1077,7 +1081,7 @@ function typedRenderSequence(root, current) {
 }
 function typedRenderPuzzle(root, current) {
   const puzzleType = current.puzzleType || "crossword";
-  typedQuestion(root, puzzleType === "wordsearch" ? "Kelimeleri tabloda bulunuz." : (puzzleType === "maze" ? "Ok düğmeleriyle çıkışa ulaşınız." : "Bulmacayı tamamlayınız."));
+  typedQuestion(root, puzzleType === "wordsearch" ? typedText("wordsearchHint", "Kelimeleri tabloda bulunuz.") : (puzzleType === "maze" ? typedText("mazeHint", "Ok düğmeleriyle çıkışa ulaşınız.") : typedText("puzzleHint", "Bulmacayı tamamlayınız.")));
   if (puzzleType === "wordsearch") typedRenderWordsearch(root, current);
   else if (puzzleType === "maze") typedRenderMaze(root, current);
   else if (puzzleType === "memory") typedRenderMemory(root, current);
@@ -1085,7 +1089,7 @@ function typedRenderPuzzle(root, current) {
   else typedRenderCrossword(root, current);
 }
 function typedRenderHotspot(root, current) {
-  typedQuestion(root, current.hotspotQuestion || "Görseldeki doğru alanları işaretleyin.");
+  typedQuestion(root, current.hotspotQuestion || typedText("hotspotHint", "Görseldeki doğru alanları işaretleyin."));
   const scene = typedEl("div", "typed-hotspot-scene");
   const stageWidth = Number(current.stageWidth) || 800;
   const stageHeight = Number(current.stageHeight) || 600;
@@ -1094,9 +1098,9 @@ function typedRenderHotspot(root, current) {
   scene.style.height = stageHeight * scale + "px";
   if (current.hotspotImage) {
     scene.style.backgroundImage = 'url("' + String(current.hotspotImage).replace(/"/g, '\\\\"') + '")';
-    const description = typedEl("span", "", current.hotspotImageAlt || "Etkileşimli görsel");
+    const description = typedEl("span", "", current.hotspotImageAlt || typedText("interactiveImage", "Etkileşimli görsel"));
     description.setAttribute("role", "img");
-    description.setAttribute("aria-label", current.hotspotImageAlt || "Etkileşimli görsel");
+    description.setAttribute("aria-label", current.hotspotImageAlt || typedText("interactiveImage", "Etkileşimli görsel"));
     description.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)";
     scene.appendChild(description);
   }

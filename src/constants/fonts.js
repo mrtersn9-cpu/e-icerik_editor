@@ -143,22 +143,112 @@ let googleFontsLinkPromise = null;
 
 // Google fontlarını tek bir stylesheet ile (tembel) yükle. Yalnızca bir kez enjekte edilir.
 // Stylesheet <link> yüklenince resolve olan bir Promise döndürür (idempotent).
+// ÇEVRİMDIŞI: önce sisteme indirilen yerel kopya (public/fonts/fonts.css,
+// `npm run fonts:download` ile üretilir) denenir; yoksa Google CDN'e düşülür.
+// Böylece editör internetsiz ortamda da fontları gösterir.
 export function ensureGoogleFontsLoaded() {
   if (typeof document === 'undefined') return Promise.resolve();
   if (googleFontsLinkPromise) return googleFontsLinkPromise;
-  const families = GOOGLE_FONTS.map(
-    (name) => `family=${encodeURIComponent(name).replace(/%20/g, '+')}:wght@400;700`
-  ).join('&');
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
-  link.setAttribute('data-eicerik-fonts', 'true');
   googleFontsLinkPromise = new Promise((resolve) => {
-    link.onload = () => resolve();
-    link.onerror = () => resolve();
+    const localLink = document.createElement('link');
+    localLink.rel = 'stylesheet';
+    localLink.href = `${process.env.PUBLIC_URL || '.'}/fonts/fonts.css`;
+    localLink.setAttribute('data-eicerik-fonts', 'local');
+    localLink.onload = () => resolve();
+    localLink.onerror = () => {
+      localLink.remove();
+      const families = GOOGLE_FONTS.map(
+        (name) => `family=${encodeURIComponent(name).replace(/%20/g, '+')}:wght@400;700`
+      ).join('&');
+      const cdnLink = document.createElement('link');
+      cdnLink.rel = 'stylesheet';
+      cdnLink.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+      cdnLink.setAttribute('data-eicerik-fonts', 'cdn');
+      cdnLink.onload = () => resolve();
+      cdnLink.onerror = () => resolve();
+      document.head.appendChild(cdnLink);
+    };
+    document.head.appendChild(localLink);
   });
-  document.head.appendChild(link);
   return googleFontsLinkPromise;
+}
+
+// ─── Özel (kullanıcı yüklemesi) fontlar ──────────────────────────────────────
+// Kullanıcı .ttf/.otf/.woff/.woff2 dosyası yükleyebilir; font tarayıcıda
+// FontFace API ile kaydedilir ve localStorage'da saklanır (çevrimdışı kalıcı).
+
+const CUSTOM_FONTS_KEY = 'eicerik_custom_fonts';
+const registeredCustomFonts = new Set();
+
+export function getCustomFonts() {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CUSTOM_FONTS_KEY) || '[]');
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && item.name && item.dataUrl)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isCustomFont(name = '') {
+  const safe = String(name || '').trim();
+  return !!safe && getCustomFonts().some((item) => item.name === safe);
+}
+
+function registerCustomFontFace(name, dataUrl) {
+  if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') {
+    return Promise.resolve(name);
+  }
+  if (registeredCustomFonts.has(name)) return Promise.resolve(name);
+  const face = new FontFace(name, `url(${dataUrl})`);
+  return face
+    .load()
+    .then((loaded) => {
+      document.fonts.add(loaded);
+      registeredCustomFonts.add(name);
+      return name;
+    })
+    .catch(() => name);
+}
+
+// Kayıtlı tüm özel fontları tarayıcıya yükler (idempotent).
+export function ensureCustomFontsLoaded() {
+  return Promise.all(getCustomFonts().map((item) => registerCustomFontFace(item.name, item.dataUrl)));
+}
+
+// Yeni özel font ekler; ad çakışmasında üstüne yazar. Başarıda font adıyla resolve olur.
+export async function addCustomFont(name, dataUrl) {
+  const safe = String(name || '').trim();
+  if (!safe || !dataUrl) throw new Error('Font adı ve dosyası gerekli.');
+  // localStorage sınırı (~5MB) — büyük TTF'ler için kullanıcıyı woff2'ye yönlendir.
+  if (dataUrl.length > 4 * 1024 * 1024) {
+    throw new Error('Font dosyası çok büyük (4 MB sınırı). woff2 formatını deneyin.');
+  }
+  const next = [...getCustomFonts().filter((item) => item.name !== safe), { name: safe, dataUrl }];
+  try {
+    localStorage.setItem(CUSTOM_FONTS_KEY, JSON.stringify(next));
+  } catch {
+    throw new Error('Font kaydedilemedi: tarayıcı depolama alanı dolu.');
+  }
+  registeredCustomFonts.delete(safe);
+  await registerCustomFontFace(safe, dataUrl);
+  return safe;
+}
+
+export function removeCustomFont(name = '') {
+  const safe = String(name || '').trim();
+  if (!safe || typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(
+      CUSTOM_FONTS_KEY,
+      JSON.stringify(getCustomFonts().filter((item) => item.name !== safe))
+    );
+  } catch {
+    // depolama erişilemezse sessiz geç
+  }
+  registeredCustomFonts.delete(safe);
 }
 
 // Tek bir fontun GERÇEKTEN indirildiğini garanti eder (CSS Font Loading API).
@@ -167,6 +257,8 @@ export function ensureGoogleFontsLoaded() {
 export function loadGoogleFont(name = '') {
   const safe = String(name || '').trim();
   if (!safe || typeof document === 'undefined') return Promise.resolve(safe);
+  // Kullanıcının yüklediği özel fontlar FontFace kaydından gelir.
+  if (isCustomFont(safe)) return ensureCustomFontsLoaded().then(() => safe);
   // Sistem fontları zaten hazır.
   if (!isGoogleFont(safe)) return Promise.resolve(safe);
   const family = /\s/.test(safe) ? `'${safe}'` : safe;

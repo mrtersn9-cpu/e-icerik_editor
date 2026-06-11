@@ -171,6 +171,10 @@ export default function useRibbonController({
   // tutulduğundan, oradan yayınlanan 'eicerik:clipboard-change' olayı da bunu bumplar.
   const [clipboardTick, setClipboardTick] = useState(0);
   const bumpClipboard = useCallback(() => setClipboardTick((tick) => tick + 1), []);
+  // Master (stil paketi) editörü: hem Tasarım ribbonu hem Tasarım sağ paneli
+  // açabildiği için state ribbon sekmesinde değil controller'da tutulur; modal
+  // EIcerikEditor'da tek noktadan mount edilir.
+  const [masterEditorOpen, setMasterEditorOpen] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handler = () => setClipboardTick((tick) => tick + 1);
@@ -779,7 +783,7 @@ export default function useRibbonController({
       {
         id: 'playpause',
         icon: '▶',
-        label: 'Oynat / Duraklat',
+        label: tx.playPause,
         width: 300,
         tone: 'theme',
         runtimeAction: 'toggle-play-pause',
@@ -825,7 +829,7 @@ export default function useRibbonController({
       {
         id: 'start-activity',
         icon: '▶',
-        label: settings.startActivityText || 'Etkinliği Başlat',
+        label: settings.startActivityText || tx.start,
         width: 350,
         tone: 'theme',
         runtimeAction: '',
@@ -834,7 +838,7 @@ export default function useRibbonController({
       {
         id: 'activity-intro',
         icon: '?',
-        label: settings.activityIntroText || 'Etkinlik Tanıtımı',
+        label: settings.activityIntroText || tx.activityIntro,
         width: 350,
         tone: 'theme',
         runtimeAction: '',
@@ -1032,6 +1036,7 @@ export default function useRibbonController({
     activeEditorTab,
     activeTab: storyRibbonTab || 'home',
     activity,
+    masterEditorOpen,
     can: {
       selection: !!primaryObject || targetIds.size > 0,
       multiSelection: targetIds.size > 1,
@@ -1063,6 +1068,8 @@ export default function useRibbonController({
       applyButtonPackage,
       applyButtonMotion,
       applyReadyButtonTextColor,
+      openMasterEditor: () => setMasterEditorOpen(true),
+      closeMasterEditor: () => setMasterEditorOpen(false),
       applyMasterLayoutObjects,
       applyMasterLayout,
       applySceneTemplate,

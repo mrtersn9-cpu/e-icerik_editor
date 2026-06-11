@@ -27,7 +27,8 @@
     "format:check": "prettier --check \"src/**/*.{js,jsx}\"",
     "pdf:storyboard": "node scripts/pdf-storyboard/parse-storyboard-pdf.mjs",
     "pdf:storyboard:help": "node scripts/pdf-storyboard/parse-storyboard-pdf.mjs --help",
-    "icons:catalog": "node scripts/build-icon-catalog.mjs"
+    "icons:catalog": "node scripts/build-icon-catalog.mjs",
+    "fonts:download": "node scripts/download-fonts.mjs"
   },
   "browserslist": {
     "production": [

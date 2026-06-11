@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { FONT_FAMILIES, ensureGoogleFontsLoaded, fontFamilyCss, loadGoogleFont } from '../../constants/fonts';
+import { fileToDataUrl } from '../../api/apiClient';
+import {
+  FONT_FAMILIES,
+  addCustomFont,
+  ensureCustomFontsLoaded,
+  ensureGoogleFontsLoaded,
+  fontFamilyCss,
+  getCustomFonts,
+  loadGoogleFont,
+} from '../../constants/fonts';
 
 // Biçim ribbon'unda font seçici: aranabilir, her font kendi yazı tipiyle ÖNİZLENİR.
-// Google fontları picker ilk açıldığında tembel yüklenir.
+// Google fontları picker ilk açıldığında tembel yüklenir. Kullanıcı kendi font
+// dosyasını (.woff2/.woff/.ttf/.otf) yükleyebilir — çevrimdışı kalıcıdır.
 export default function FontPicker({ value, onChange, disabled = false, width = 150 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -12,9 +22,14 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
   // Gerçekten indirilmiş fontlar; satır yalnızca yüklenince kendi tipiyle önizlenir
   // (yüklenmeden önce nötr fallback → tofu/bozuk glif yok).
   const [loadedFonts, setLoadedFonts] = useState(() => new Set());
+  const [customFontNames, setCustomFontNames] = useState(() =>
+    getCustomFonts().map((item) => item.name)
+  );
+  const [uploadError, setUploadError] = useState('');
   const requestedRef = useRef(new Set());
   const rootRef = useRef(null);
   const listRef = useRef(null);
+  const fileInputRef = useRef(null);
   const current = value || 'Arial';
 
   const markLoaded = (name) =>
@@ -28,6 +43,11 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
   useEffect(() => {
     if (!open) return undefined;
     ensureGoogleFontsLoaded();
+    // Kayıtlı özel fontları tarayıcıya yükle ve önizlemede işaretle.
+    ensureCustomFontsLoaded().then((names) => {
+      (names || []).forEach((name) => name && markLoaded(name));
+    });
+    setUploadError('');
     const onDocPointerDown = (event) => {
       if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
     };
@@ -42,11 +62,17 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
     };
   }, [open]);
 
+  // Özel fontlar listenin başında gösterilir.
+  const allFamilies = useMemo(() => {
+    const extras = customFontNames.filter((name) => !FONT_FAMILIES.includes(name));
+    return [...extras, ...FONT_FAMILIES];
+  }, [customFontNames]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr-TR');
-    if (!q) return FONT_FAMILIES;
-    return FONT_FAMILIES.filter((name) => name.toLocaleLowerCase('tr-TR').includes(q));
-  }, [query]);
+    if (!q) return allFamilies;
+    return allFamilies.filter((name) => name.toLocaleLowerCase('tr-TR').includes(q));
+  }, [allFamilies, query]);
 
   // Açılışta/aramada aktif satırı seçili fonta ya da ilk sonuca getir.
   useEffect(() => {
@@ -66,6 +92,22 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
     if (!name) return;
     onChange?.(name);
     setOpen(false);
+  };
+
+  // Özel font dosyası yükle: kaydet (localStorage) + FontFace ile etkinleştir + seç.
+  const handleCustomFontFile = async (file) => {
+    if (!file) return;
+    setUploadError('');
+    try {
+      const name = file.name.replace(/\.[^.]+$/, '').trim() || 'Özel Font';
+      const dataUrl = await fileToDataUrl(file);
+      const savedName = await addCustomFont(name, dataUrl);
+      setCustomFontNames(getCustomFonts().map((item) => item.name));
+      markLoaded(savedName);
+      commitFont(savedName);
+    } catch (error) {
+      setUploadError(error?.message || 'Font yüklenemedi.');
+    }
   };
 
   const handleSearchKeyDown = (event) => {
@@ -168,7 +210,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
           />
           <div ref={listRef} style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: 8, fontSize: 12, color: '#94a3b8' }}>Sonuç yok</div>
+              <div style={{ padding: 8, fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>Sonuç yok</div>
             ) : (
               filtered.map((name, index) => {
                 const isActive = index === activeIndex;
@@ -189,6 +231,12 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
                       textAlign: 'left',
                       padding: '7px 8px',
                       fontSize: 15,
+                      lineHeight: 1.35,
+                      // overflow:hidden satırın min yüksekliğini sıfırladığından, flex
+                      // konteyner satırları maxHeight'e sığdırmak için DİKEYDE eziyordu
+                      // (yazılar yarım görünüyordu). Satır asla büzülmesin.
+                      flexShrink: 0,
+                      minHeight: 30,
                       fontFamily: previewFamily(name),
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -201,6 +249,38 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
               })
             )}
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".woff2,.woff,.ttf,.otf"
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              handleCustomFontFile(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              height: 30,
+              border: '1px dashed #93c5fd',
+              borderRadius: 6,
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            + Özel Font Yükle (.woff2/.ttf)
+          </button>
+          {uploadError ? (
+            <div style={{ fontSize: 11, color: '#dc2626', padding: '0 2px', flexShrink: 0 }}>
+              {uploadError}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

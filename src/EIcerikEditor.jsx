@@ -31,6 +31,7 @@ import ReviewThreadsModal from './components/ReviewThreadsModal';
 import EditorTopBar from './components/ribbon/EditorTopBar';
 import TopRibbon from './components/ribbon/TopRibbon';
 import useRibbonController from './components/ribbon/useRibbonController';
+import SlideMasterModal from './components/SlideMasterModal';
 import { LayerThumbnail, SlideStrip, SlideThumbnail } from './components/SlideStrip';
 import {
   StorylineSystemPreview,
@@ -349,6 +350,7 @@ import {
   downloadScorm12Zip,
   validateScorm12PreviewStart,
 } from './utils/scormExport';
+import { inlineExternalMediaForExport } from './utils/scormMediaInline';
 import {
   buildStorylineObjectRenderModel,
   getSharedStorylineRendererRuntimeApi,
@@ -3324,7 +3326,7 @@ export default function EIcerikEditor() {
     showToast('Güvenli LMS çıktısında cevap anahtarları çıkarıldı.', 'success');
   }, [present, showToast]);
 
-  const handleScorm12Export = useCallback(() => {
+  const handleScorm12Export = useCallback(async () => {
     const lmsConfig = normalizeScorm12LmsConfig(present.lmsConfig || {});
     try {
       const safeLmsConfig = normalizeScorm12LmsConfig(lmsConfig);
@@ -3344,7 +3346,29 @@ export default function EIcerikEditor() {
         showToast(`SCORM başlangıç kontrolü geçmedi: ${startCheck.errors.join(' ')}`, 'error');
         return;
       }
-      const externalUrls = summarizeExternalUrlsForScorm(normalizedPreviewState);
+      // Çevrimdışı paket: sunucudaki medya (görsel/ses/video, can simgesi) pakete
+      // data URL olarak gömülür — paket internetsiz LMS'te de çalışır.
+      const {
+        state: inlinedState,
+        inlined,
+        failed: inlineFailed,
+      } = await inlineExternalMediaForExport(normalizedPreviewState);
+      if (inlineFailed.length) {
+        const failSample = inlineFailed
+          .slice(0, 5)
+          .map((item) => `- ${item.url} (${item.error})`)
+          .join('\n');
+        const ok = window.confirm(
+          `${inlineFailed.length} medya dosyası pakete gömülemedi (indirme hatası):\n\n` +
+            `${failSample}\n\n` +
+            'Bu dosyalar pakette internet adresiyle kalacak ve çevrimdışı ortamda ÇALIŞMAYACAK. Yine de devam edilsin mi?'
+        );
+        if (!ok) {
+          showToast('SCORM paketi oluşturma medya gömme hatası nedeniyle iptal edildi.', 'warning');
+          return;
+        }
+      }
+      const externalUrls = summarizeExternalUrlsForScorm(inlinedState);
       if (externalUrls.length) {
         const sample = externalUrls
           .slice(0, 5)
@@ -3362,7 +3386,7 @@ export default function EIcerikEditor() {
           return;
         }
       }
-      downloadScorm12Zip(normalizedPreviewState, safeLmsConfig, {
+      downloadScorm12Zip(inlinedState, safeLmsConfig, {
         scope: exportScope,
         activityId: present.selActId,
         bookId: present.selBookId,
@@ -3373,6 +3397,13 @@ export default function EIcerikEditor() {
           : 'SCORM 1.2 başlangıç kontrolü geçti: start scene + base layer. Tam ekran paket oluşturuldu.',
         'success'
       );
+      if (inlined.length) {
+        const totalMb = inlined.reduce((sum, item) => sum + (item.bytes || 0), 0) / (1024 * 1024);
+        showToast(
+          `${inlined.length} medya dosyası pakete gömüldü (${totalMb.toFixed(1)} MB) — paket çevrimdışı çalışır.`,
+          'success'
+        );
+      }
       if (externalUrls.length)
         showToast(
           `SCORM dış bağlantı uyarısı onaylandı: ${externalUrls.length} bağlantı.`,
@@ -3996,6 +4027,17 @@ export default function EIcerikEditor() {
           setIconPicker(null);
           callback?.(selection);
         }}
+      />
+
+      {/* Master (stil paketi) editörü: hem Tasarım ribbonu hem Tasarım sağ paneli
+          commands.openMasterEditor ile açar; tek mount noktası burası. */}
+      <SlideMasterModal
+        open={!!ribbonController.masterEditorOpen}
+        onClose={() => ribbonController.commands.closeMasterEditor?.()}
+        masters={ribbonController.galleries?.slideMasters || []}
+        currentId={selActivity?.slideMasterId || 'blank'}
+        onApply={(id) => ribbonController.commands.applySlideMaster?.(id)}
+        onInsertLayout={(id) => ribbonController.commands.applyMasterLayout?.(id)}
       />
 
       <ContentLibraryModal

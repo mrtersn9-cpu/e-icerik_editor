@@ -362,7 +362,34 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
             </div>
           </PanelCard>
 
-          <PanelCard title="3. Otomatik içerik dili" collapsible>
+          <PanelCard title="3. Master ve buton şablonları" collapsible>
+            <div style={{ display: 'grid', gap: 7 }}>
+              <ButtonGrid
+                actions={[
+                  {
+                    label: 'Master Editörü',
+                    onClick: () => commands.openMasterEditor?.(),
+                    tone: '#2563eb',
+                  },
+                  {
+                    label: 'Düzeni Uygula',
+                    onClick: () => commands.applyMasterLayoutObjects?.(),
+                    disabled: !activity?.slideMasterId,
+                  },
+                  ...(galleries.buttonStyles || []).map((style) => ({
+                    label: style.label,
+                    onClick: () => commands.insertButtonPreset?.(style.id),
+                  })),
+                ]}
+              />
+              <EmptyHint>
+                Master, tüm sahnelerin ortak zemin/düzenini belirler; buton şablonları sahneye
+                hazır stilli buton ekler.
+              </EmptyHint>
+            </div>
+          </PanelCard>
+
+          <PanelCard title="4. Otomatik içerik dili" collapsible>
             <div style={{ display: 'grid', gap: 7 }}>
               <FieldLabel>
                 Üretim dili
@@ -379,7 +406,7 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
             </div>
           </PanelCard>
 
-          <PanelCard title="4. Hazır sahne üretimi" collapsible>
+          <PanelCard title="5. Hazır sahne üretimi" collapsible>
             <ButtonGrid
               actions={[
                 {
@@ -480,6 +507,7 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
                     seçimi de onChange tetikler. */}
                 <div style={{ width: 40, flexShrink: 0 }}>
                   <ColorInput
+                    ariaLabel="Buton yazı rengi (özel)"
                     value={activity.readyButtonTextColor || '#fefefe'}
                     onChange={(value) => applyReadyButtonTextColor(value)}
                   />

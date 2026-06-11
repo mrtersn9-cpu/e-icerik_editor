@@ -1,6 +1,7 @@
 import { STORYLINE_RENDERER_CORE_SCRIPT } from '../generated/storylineRendererCore.js';
 import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore.js';
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine.js';
+import { getActivityContentLanguage, runtimeText } from '../logic/contentLanguage';
 
 import {
   TYPED_ACTIVITY_PLAYER_SCRIPT,
@@ -273,16 +274,20 @@ ${resources}
 }
 
 export function buildStorylinePlayerHtml(state = {}, cfg = {}, options = {}) {
+  // İçerik dili: oyuncudaki tüm sabit metinler (Kontrol Et, Tamamlandı vb.)
+  // PAYLOAD.i18n üzerinden seçilen üretim diliyle gelir.
+  const lang = getActivityContentLanguage(getOrderedRuntimeActivities(state, options)[0] || state);
   const payload = {
     title: cfg.packageName || 'E-İçerik',
     passingScore: Math.min(100, Math.max(0, cfg.passingScore ?? 70)),
     trackingMode: cfg.trackingMode || 'completion+score',
     slides: buildStorylineRuntimeDeck(state, options),
     variables: Array.isArray(state.variables) ? state.variables : [],
+    i18n: { lang, ...runtimeText(lang) },
   };
   const title = escXml(payload.title);
   return `<!DOCTYPE html>
-<html lang="tr">
+<html lang="${escXml(lang)}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -307,7 +312,7 @@ ${TYPED_ACTIVITY_PLAYER_STYLE}
 </head>
 <body>
 <div id="stage"></div>
-<div id="complete"><div id="completeCard"><h1>Tamamlandı</h1><p>İçerik tamamlandı.</p><button id="closeComplete">Kapat</button></div></div>
+<div id="complete"><div id="completeCard"><h1>${escXml(payload.i18n.completedTitle)}</h1><p>${escXml(payload.i18n.completedBody)}</p><button id="closeComplete">${escXml(payload.i18n.closeLabel)}</button></div></div>
 <script>
 const PAYLOAD=${escScriptJson(payload)};
 const state={index:0,activeLayerId:"base",hidden:{},objectStates:{},dragPositions:{},dropAssignments:{},variables:buildVariables(PAYLOAD.variables),muted:false,visited:{},activityScores:{},livesAttempts:{}};
@@ -338,7 +343,7 @@ function slide(){return PAYLOAD.slides[state.index]||PAYLOAD.slides[0]||null}
 function livesConfig(s){var ac=(s&&s.answerControl)||{};if(!ac.livesEnabled)return{enabled:false};var count=Math.max(1,Math.min(99,num(ac.livesCount,3)));var g={heart:"❤️",star:"⭐",diamond:"💎",apple:"🍎",bolt:"⚡",trophy:"🏆",crown:"👑",flower:"🌸",balloon:"🎈",medal:"🏅"};var id=ac.livesIconId||"heart";var useCustom=id==="custom"&&!!ac.livesCustomImage;return{enabled:true,count:count,glyph:useCustom?"":(g[id]||g.heart),useCustom:useCustom,customImage:ac.livesCustomImage||"",behaviorOnZero:ac.livesBehaviorOnZero||"lock"};}
 function livesRemaining(s){var cfg=livesConfig(s);if(!cfg.enabled)return null;state.livesAttempts=state.livesAttempts||{};return Math.max(0,cfg.count-num(state.livesAttempts[s.id],0));}
 function livesAfterCheck(result){var s=slide();if(!s)return;var cfg=livesConfig(s);if(!cfg.enabled||!result)return;var hasAttempt=result.type==="selection"?((result.selected||[]).length>0):(result.placements?result.placements.length>0:true);if(!result.success&&hasAttempt){state.livesAttempts=state.livesAttempts||{};state.livesAttempts[s.id]=num(state.livesAttempts[s.id],0)+1;}render();if(livesRemaining(s)<=0){if(cfg.behaviorOnZero==="restart"){setTimeout(restart,1000);}else if(cfg.behaviorOnZero==="show-answer"&&typeof storylineRendererFindLayer==="function"){var ans=storylineRendererFindLayer({slide:s,state:state},["solution","cozum","answer","cevap"]);if(ans){state.activeLayerId=ans.id;render();}}}}
-function renderLivesBar(){var s=slide();if(!s||!stage)return;var cfg=livesConfig(s);if(!cfg.enabled)return;var remaining=livesRemaining(s);var bar=document.createElement("div");bar.setAttribute("role","status");bar.setAttribute("aria-label","Kalan can: "+remaining+" / "+cfg.count);bar.style.cssText="position:absolute;top:10px;right:14px;z-index:50;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.88);padding:4px 9px;border-radius:999px;box-shadow:0 2px 8px rgba(15,23,42,.16)";for(var i=0;i<cfg.count;i++){var filled=i<remaining;if(cfg.useCustom){var img=document.createElement("img");img.src=cfg.customImage;img.alt="";img.style.cssText="width:20px;height:20px;object-fit:contain;opacity:"+(filled?"1":"0.25")+";filter:"+(filled?"none":"grayscale(1)");bar.appendChild(img);}else{var sp=document.createElement("span");sp.textContent=cfg.glyph;sp.style.cssText="font-size:18px;line-height:1;opacity:"+(filled?"1":"0.25")+";filter:"+(filled?"none":"grayscale(1)");bar.appendChild(sp);}}stage.appendChild(bar);if(remaining<=0){var btns=stage.querySelectorAll('[data-check-button="true"]');for(var b=0;b<btns.length;b++){btns[b].style.pointerEvents="none";btns[b].style.opacity="0.5";}}}
+function renderLivesBar(){var s=slide();if(!s||!stage)return;var cfg=livesConfig(s);if(!cfg.enabled)return;var remaining=livesRemaining(s);var bar=document.createElement("div");bar.setAttribute("role","status");bar.setAttribute("aria-label",((PAYLOAD.i18n&&PAYLOAD.i18n.livesRemaining)||"Kalan can")+": "+remaining+" / "+cfg.count);bar.style.cssText="position:absolute;top:10px;right:14px;z-index:50;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.88);padding:4px 9px;border-radius:999px;box-shadow:0 2px 8px rgba(15,23,42,.16)";for(var i=0;i<cfg.count;i++){var filled=i<remaining;if(cfg.useCustom){var img=document.createElement("img");img.src=cfg.customImage;img.alt="";img.style.cssText="width:20px;height:20px;object-fit:contain;opacity:"+(filled?"1":"0.25")+";filter:"+(filled?"none":"grayscale(1)");bar.appendChild(img);}else{var sp=document.createElement("span");sp.textContent=cfg.glyph;sp.style.cssText="font-size:18px;line-height:1;opacity:"+(filled?"1":"0.25")+";filter:"+(filled?"none":"grayscale(1)");bar.appendChild(sp);}}stage.appendChild(bar);if(remaining<=0){var btns=stage.querySelectorAll('[data-check-button="true"]');for(var b=0;b<btns.length;b++){btns[b].style.pointerEvents="none";btns[b].style.opacity="0.5";}}}
 function currentLayers(){const s=slide();return s&&Array.isArray(s.layers)?s.layers:[]}
 function findLayerByKeys(layerKeys){return runtimeFindLayerByKeys(currentLayers(), layerKeys)}
 function replaceVars(value){const vars=state.variables||{};return String(value==null?"":value).replace(/\\{\\{\\s*([^}]+?)\\s*\\}\\}/g,(m,name)=>vars[name]??m)}

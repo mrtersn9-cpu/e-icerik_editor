@@ -7,7 +7,7 @@ const CONTENT_TEXT = {
     menu: 'MENÜ',
     prev: 'GERİ',
     next: 'İLERİ',
-    playPause: 'PLAY / PAUSE',
+    playPause: 'OYNAT / DURAKLAT',
     mute: 'SESİ KAPAT',
     soundOn: 'SESİ AÇ',
     soundOff: 'SESİ KAPAT',
@@ -132,11 +132,194 @@ const CONTENT_TEXT = {
   },
 };
 
+// Öğrenci runtime'ında (SCORM oyuncusu, önizleme, otomatik üretilen nesneler)
+// kullanılan kısa metinler. CONTENT_TEXT'e KARIŞTIRILMAZ: 'Doğru' gibi kısa
+// kelimeler translateGeneratedContentText'in substring döngüsüne girerse
+// kullanıcı metnini bozar ('Doğru beslenme' → 'True beslenme'). Bu sözlük
+// yalnızca anahtarla (runtimeText) veya TAM eşleşmeyle kullanılır.
+// Not: trueLabel/falseLabel, correctShort'tan ÖNCE tanımlı — tam-eşleşme
+// çevirisinde buton etiketi ('Doğru' → 'True') öncelik kazanır.
+const RUNTIME_TEXT = {
+  tr: {
+    trueLabel: 'Doğru',
+    falseLabel: 'Yanlış',
+    correctShort: 'Doğru',
+    incorrectShort: 'Yanlış',
+    checkLabel: 'Kontrol Et',
+    clearLabel: 'Temizle',
+    closeLabel: 'Kapat',
+    typedCorrect: 'Tebrikler, doğru cevap!',
+    typedIncorrect: 'Hatalı cevap! Tekrar deneyebilirsiniz.',
+    typedRevealed: 'Çözüm gösterildi.',
+    solvedWithSolution: 'Etkinlik çözüm desteğiyle tamamlandı.',
+    showSolutionLabel: 'Çözümü Göster',
+    attemptsLabel: 'Deneme Sayısı',
+    questionLabel: 'Soru',
+    acrossLabel: 'Yatay Sorular',
+    downLabel: 'Dikey Sorular',
+    acrossShort: 'Yatay',
+    downShort: 'Dikey',
+    livesOut: 'Canların bitti.',
+    livesRemaining: 'Kalan can',
+    completedTitle: 'Tamamlandı',
+    completedBody: 'İçerik tamamlandı.',
+    tryAgainShort: 'Tekrar Dene',
+    correctAnswerTitle: 'Doğru Cevap',
+    retryHint: 'Tekrar Deneyelim',
+    restartLabel: 'Yeniden Başlat',
+    backspace: '← Sil',
+    selectPlaceholder: 'Seçiniz...',
+    answerLabel: 'Yanıt',
+    noHint: 'İpucu belirtilmemiş.',
+    fillBlanksHint: 'Boşlukları doldurunuz.',
+    sequenceHint: 'Öğeleri doğru sıraya diziniz.',
+    blankLabel: 'Boşluk',
+    showAnswerShort: 'Cevabı Gör',
+    upLabel: 'Yukarı',
+    downMoveLabel: 'Aşağı',
+    leftLabel: 'Sol',
+    rightLabel: 'Sağ',
+    matchedLabel: 'Eşleşen',
+    rowLabel: 'Satır',
+    columnLabel: 'sütun',
+    wordsearchHint: 'Kelimeleri tabloda bulunuz.',
+    mazeHint: 'Ok düğmeleriyle çıkışa ulaşınız.',
+    puzzleHint: 'Bulmacayı tamamlayınız.',
+    hotspotHint: 'Görseldeki doğru alanları işaretleyin.',
+    interactiveImage: 'Etkileşimli görsel',
+    successTitleShort: 'Harika!',
+    successBodyShort: 'Doğru cevabı buldun, tebrikler!',
+    failureBodyShort: 'Bir kez daha deneyebilirsin.',
+    correctOptionLabel: 'Doğru Seçenek',
+    retryShort: 'Tekrar',
+  },
+  en: {
+    trueLabel: 'True',
+    falseLabel: 'False',
+    correctShort: 'Correct',
+    incorrectShort: 'Incorrect',
+    checkLabel: 'Check',
+    clearLabel: 'Clear',
+    closeLabel: 'Close',
+    typedCorrect: 'Congratulations, correct answer!',
+    typedIncorrect: 'Wrong answer! You can try again.',
+    typedRevealed: 'Solution revealed.',
+    solvedWithSolution: 'Activity completed with solution support.',
+    showSolutionLabel: 'Show Solution',
+    attemptsLabel: 'Attempts',
+    questionLabel: 'Question',
+    acrossLabel: 'Across',
+    downLabel: 'Down',
+    acrossShort: 'Across',
+    downShort: 'Down',
+    livesOut: 'You are out of lives.',
+    livesRemaining: 'Lives left',
+    completedTitle: 'Completed',
+    completedBody: 'The content is complete.',
+    tryAgainShort: 'Try Again',
+    correctAnswerTitle: 'Correct Answer',
+    retryHint: 'Try Again',
+    restartLabel: 'Restart',
+    backspace: '← Delete',
+    selectPlaceholder: 'Select...',
+    answerLabel: 'Answer',
+    noHint: 'No hint provided.',
+    fillBlanksHint: 'Fill in the blanks.',
+    sequenceHint: 'Put the items in the correct order.',
+    blankLabel: 'Blank',
+    showAnswerShort: 'Show Answer',
+    upLabel: 'Up',
+    downMoveLabel: 'Down',
+    leftLabel: 'Left',
+    rightLabel: 'Right',
+    matchedLabel: 'Matched',
+    rowLabel: 'Row',
+    columnLabel: 'column',
+    wordsearchHint: 'Find the words in the grid.',
+    mazeHint: 'Use the arrow buttons to reach the exit.',
+    puzzleHint: 'Complete the puzzle.',
+    hotspotHint: 'Mark the correct areas in the image.',
+    interactiveImage: 'Interactive image',
+    successTitleShort: 'Great!',
+    successBodyShort: 'You found the correct answer, congratulations!',
+    failureBodyShort: 'You can try once more.',
+    correctOptionLabel: 'Correct Option',
+    retryShort: 'Retry',
+  },
+  de: {
+    trueLabel: 'Richtig',
+    falseLabel: 'Falsch',
+    correctShort: 'Richtig',
+    incorrectShort: 'Falsch',
+    checkLabel: 'Prüfen',
+    clearLabel: 'Leeren',
+    closeLabel: 'Schließen',
+    typedCorrect: 'Glückwunsch, richtige Antwort!',
+    typedIncorrect: 'Falsche Antwort! Du kannst es erneut versuchen.',
+    typedRevealed: 'Lösung angezeigt.',
+    solvedWithSolution: 'Aktivität mit Lösungshilfe abgeschlossen.',
+    showSolutionLabel: 'Lösung anzeigen',
+    attemptsLabel: 'Versuche',
+    questionLabel: 'Frage',
+    acrossLabel: 'Waagerecht',
+    downLabel: 'Senkrecht',
+    acrossShort: 'Waagerecht',
+    downShort: 'Senkrecht',
+    livesOut: 'Keine Leben mehr.',
+    livesRemaining: 'Verbleibende Leben',
+    completedTitle: 'Abgeschlossen',
+    completedBody: 'Der Inhalt ist abgeschlossen.',
+    tryAgainShort: 'Erneut versuchen',
+    correctAnswerTitle: 'Richtige Antwort',
+    retryHint: 'Versuchen wir es erneut',
+    restartLabel: 'Neu starten',
+    backspace: '← Löschen',
+    selectPlaceholder: 'Auswählen...',
+    answerLabel: 'Antwort',
+    noHint: 'Kein Hinweis angegeben.',
+    fillBlanksHint: 'Fülle die Lücken aus.',
+    sequenceHint: 'Bringe die Elemente in die richtige Reihenfolge.',
+    blankLabel: 'Lücke',
+    showAnswerShort: 'Antwort zeigen',
+    upLabel: 'Hoch',
+    downMoveLabel: 'Runter',
+    leftLabel: 'Links',
+    rightLabel: 'Rechts',
+    matchedLabel: 'Gefunden',
+    rowLabel: 'Zeile',
+    columnLabel: 'Spalte',
+    wordsearchHint: 'Finde die Wörter im Gitter.',
+    mazeHint: 'Erreiche den Ausgang mit den Pfeiltasten.',
+    puzzleHint: 'Vervollständige das Rätsel.',
+    hotspotHint: 'Markiere die richtigen Bereiche im Bild.',
+    interactiveImage: 'Interaktives Bild',
+    successTitleShort: 'Sehr gut!',
+    successBodyShort: 'Du hast die richtige Antwort gefunden!',
+    failureBodyShort: 'Du kannst es noch einmal versuchen.',
+    correctOptionLabel: 'Richtige Option',
+    retryShort: 'Erneut',
+  },
+};
+
 function getActivityContentLanguage(activity = {}) {
   return activity.contentLanguage || activity.settings?.contentLanguage || activity.lang || 'tr';
 }
 
-export { getActivityContentLanguage, contentText, translateGeneratedContentText, applyContentLanguageToActivity };
+function runtimeText(activityOrLang = 'tr') {
+  const lang =
+    typeof activityOrLang === 'string'
+      ? activityOrLang
+      : getActivityContentLanguage(activityOrLang);
+  return RUNTIME_TEXT[lang] || RUNTIME_TEXT.tr;
+}
+
+export {
+  getActivityContentLanguage,
+  contentText,
+  runtimeText,
+  translateGeneratedContentText,
+  applyContentLanguageToActivity,
+};
 
 function contentText(activityOrLang = 'tr') {
   const lang =
@@ -149,6 +332,26 @@ function contentText(activityOrLang = 'tr') {
 function translateGeneratedContentText(value = '', lang = 'tr') {
   const target = CONTENT_TEXT[lang] || CONTENT_TEXT.tr;
   let next = String(value || '');
+  // Önce TAM eşleşme: metnin tamamı bilinen bir kaynak metne eşitse doğrudan
+  // hedef karşılığı döndürülür. Kısa runtime kelimeleri ('Doğru' vb.) YALNIZCA
+  // burada çevrilir — substring döngüsüne girmezler (kullanıcı metni bozulmasın).
+  const trimmed = next.trim();
+  if (trimmed) {
+    const exactDictionaries = [
+      [CONTENT_TEXT, target],
+      [RUNTIME_TEXT, RUNTIME_TEXT[lang] || RUNTIME_TEXT.tr],
+    ];
+    for (const [dictionary, targetPack] of exactDictionaries) {
+      for (const [sourceLang, sourcePack] of Object.entries(dictionary)) {
+        if (sourceLang === lang) continue;
+        for (const key of Object.keys(sourcePack)) {
+          if (sourcePack[key] === trimmed && targetPack[key] && sourcePack[key] !== targetPack[key]) {
+            return next.replace(trimmed, targetPack[key]);
+          }
+        }
+      }
+    }
+  }
   Object.entries(CONTENT_TEXT)
     .filter(([sourceLang]) => sourceLang !== lang)
     .flatMap(([, source]) =>

@@ -1,6 +1,7 @@
-import { useState } from 'react';
-
-import SlideMasterModal from '../../SlideMasterModal';
+import {
+  BUTTON_MOTION_PROFILE_LABELS,
+  BUTTON_PACKAGE_MOTION_PRESETS,
+} from '../../../constants';
 import {
   CompactRibbonButton,
   RibbonColorInput,
@@ -25,7 +26,6 @@ const backgroundGradients = [
 
 export default function TasarimRibbon({ controller }) {
   const { activity, commands, galleries } = controller;
-  const [masterEditorOpen, setMasterEditorOpen] = useState(false);
 
   return (
     <>
@@ -78,18 +78,46 @@ export default function TasarimRibbon({ controller }) {
               <CompactRibbonButton label="Düzeni Uygula" icon="components" onClick={commands.applyMasterLayoutObjects} width={150} />
             </RibbonStack>
           </RibbonPopoverButton>
-          <CompactRibbonButton label="Master Editörü" icon="template" onClick={() => setMasterEditorOpen(true)} width={142} />
+          <CompactRibbonButton label="Master Editörü" icon="template" onClick={commands.openMasterEditor} width={142} />
         </RibbonStack>
       </RibbonGroup>
 
-      <RibbonGroup title="Buton Stili" width={166}>
+      <RibbonGroup title="Buton Stili" width={214}>
         <RibbonStack>
-          <RibbonSelect
-            value={activity?.buttonPackageId || galleries.buttonPackages[0]?.id || ''}
-            onChange={(event) => commands.applyButtonPackage(event.target.value)}
-            options={galleries.buttonPackages.map((item) => ({ value: item.id, label: item.name }))}
-            width={122}
-          />
+          <RibbonRow>
+            <RibbonSelect
+              value={activity?.buttonPackageId || galleries.buttonPackages[0]?.id || ''}
+              onChange={(event) => commands.applyButtonPackage(event.target.value)}
+              options={galleries.buttonPackages.map((item) => ({ value: item.id, label: item.name }))}
+              width={122}
+            />
+            {/* Boş durum sentinel'i #fefefe: beyaz seçimi de onChange tetikler. */}
+            <RibbonColorInput
+              value={controller.resolveColor(activity?.readyButtonTextColor, '#fefefe')}
+              onChange={(event) => commands.applyReadyButtonTextColor?.(event.target.value)}
+              title="Buton yazı rengi"
+            />
+          </RibbonRow>
+          <RibbonRow>
+            <RibbonSelect
+              value={activity?.buttonAnimationProfileId || 'calmLift'}
+              onChange={(event) => commands.applyButtonMotion(event.target.value)}
+              options={Object.keys(BUTTON_PACKAGE_MOTION_PRESETS).map((profileId) => ({
+                value: profileId,
+                label: BUTTON_MOTION_PROFILE_LABELS[profileId] || profileId,
+              }))}
+              title="Buton animasyonu"
+              width={122}
+            />
+            {activity?.readyButtonTextColor ? (
+              <CompactRibbonButton
+                label="Temaya Bırak"
+                icon="none"
+                onClick={() => commands.applyReadyButtonTextColor?.('')}
+                width={86}
+              />
+            ) : null}
+          </RibbonRow>
           <RibbonRow>
             {galleries.buttonStyles.slice(0, 2).map((style) => (
               <CompactRibbonButton key={style.id} label={style.label} icon="button" onClick={() => commands.insertButtonPreset(style.id)} width={64} />
@@ -153,14 +181,6 @@ export default function TasarimRibbon({ controller }) {
         </RibbonRow>
       </RibbonGroup>
 
-      <SlideMasterModal
-        open={masterEditorOpen}
-        onClose={() => setMasterEditorOpen(false)}
-        masters={galleries.slideMasters}
-        currentId={activity?.slideMasterId || 'blank'}
-        onApply={(id) => commands.applySlideMaster(id)}
-        onInsertLayout={(id) => commands.applyMasterLayout(id)}
-      />
     </>
   );
 }

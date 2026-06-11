@@ -98,6 +98,15 @@ export const BUTTON_PACKAGE_MOTION_PRESETS = {
   },
 };
 
+// Animasyon profillerinin kullanıcıya görünen Türkçe adları (ribbon + sağ panel ortak).
+export const BUTTON_MOTION_PROFILE_LABELS = {
+  calmLift: 'Sakin Yükselme',
+  focusLift: 'Net Odak',
+  softBreath: 'Hafif Nefes',
+  steadyPress: 'Kararlı Basış',
+  horizontalFlow: 'Yatay Akış',
+};
+
 const RAW_BUTTON_PACKAGES = [
   // ─── İlkokul (1-4. Sınıf) ─────────────────────────────────────────────
   {

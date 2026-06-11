@@ -2,6 +2,10 @@ import React, { useState, useMemo } from 'react';
 
 import { analyzeTextOffline } from '../../../../aiService';
 import {
+  collectExternalMediaUrls,
+  inlineExternalMediaForActivity,
+} from '../../../../utils/scormMediaInline';
+import {
   enforceTtkbActivityCompliance,
   enforceTtkbObjectCompliance,
   findTtkbMissingSemanticIconButtons,
@@ -187,6 +191,12 @@ export default function TtkbComplianceRightPanel({ controller, onClose }) {
     });
 
     // D. Dış Bağlantılar (KVKK / Telif Güvenliği)
+    // Gömülebilir medya (mediaUrl/imageData/can simgesi vb. http) ile gerçek web
+    // bağlantıları AYRILIR: medya "Auto-Fix" ile projeye data URL olarak gömülür
+    // (çevrimdışı SCORM); web embed yalnızca uyarı olarak kalır.
+    const inlineableMediaUrls = new Set(
+      collectExternalMediaUrls(controller?.activity || { objects })
+    );
     const externalLinks = [];
     const externalLinkObjects = [];
     objects.forEach((obj) => {
@@ -194,6 +204,7 @@ export default function TtkbComplianceRightPanel({ controller, onClose }) {
       const matches = text.match(/https?:\/\/[^\s"']+/g);
       if (matches) {
         matches.forEach((url) => {
+          if (inlineableMediaUrls.has(url)) return;
           if (!externalLinks.includes(url)) {
             externalLinks.push(url);
           }
@@ -205,9 +216,22 @@ export default function TtkbComplianceRightPanel({ controller, onClose }) {
     });
 
     checks.push({
+      id: 'external-media',
+      title: 'Gömülebilir Harici Medya',
+      desc: 'Sunucudan yüklenen medya çevrimdışı çalışma için pakete gömülmelidir.',
+      status: inlineableMediaUrls.size ? 'warning' : 'success',
+      count: inlineableMediaUrls.size,
+      detail: inlineableMediaUrls.size
+        ? `${inlineableMediaUrls.size} medya dosyası internetten yükleniyor — "Otomatik Onar" ile projeye gömülür.`
+        : 'Tüm medya proje içinde gömülü; çevrimdışı çalışır.',
+      fixable: true,
+      objects: [],
+    });
+
+    checks.push({
       id: 'external-links',
       title: 'Harici Bağlantı Denetçisi',
-      desc: 'KVKK ve telif riski oluşturan dış HTTP/HTTPS linkleri.',
+      desc: 'KVKK ve telif riski oluşturan dış HTTP/HTTPS linkleri (web embed vb.).',
       status: externalLinks.length ? 'warning' : 'success',
       count: externalLinks.length,
       detail: externalLinks.length
@@ -242,17 +266,33 @@ export default function TtkbComplianceRightPanel({ controller, onClose }) {
   }, [controller]);
 
   // 3. Tek Tıkla Otomatik Onarım (Auto-Fix)
-  const handleAutoFix = () => {
+  const handleAutoFix = async () => {
     if (!controller?.onUpdateActivity || !controller?.activity) return;
     const originalActivity = controller.activity;
     const needsLayerFix =
       originalActivity.answerLayerDimOpacity === undefined ||
       Number(originalActivity.answerLayerDimOpacity) < 0.05;
-    const compliantActivity = {
+    let compliantActivity = {
       ...enforceTtkbActivityCompliance(originalActivity),
       ...(needsLayerFix ? { answerLayerDimOpacity: 0.07 } : {}),
     };
-    
+
+    // Harici medya: internetten yüklenen dosyaları projeye (data URL) göm —
+    // SCORM paketi ve önizleme çevrimdışı ortamda da çalışsın.
+    let inlinedCount = 0;
+    if (collectExternalMediaUrls(compliantActivity).length) {
+      const { activity: inlinedActivity, inlined, failed } =
+        await inlineExternalMediaForActivity(compliantActivity);
+      compliantActivity = inlinedActivity;
+      inlinedCount = inlined.length;
+      if (failed.length) {
+        controller.showToast?.(
+          `${failed.length} medya dosyası indirilemedi (ağ/CORS) — internet adresiyle kaldı.`,
+          'warning'
+        );
+      }
+    }
+
     // Find which objects were actually modified and add them to fixed items
     const newlyFixed = [];
     const originalObjects = [
@@ -263,16 +303,24 @@ export default function TtkbComplianceRightPanel({ controller, onClose }) {
       ...(compliantActivity.objects || []),
       ...(compliantActivity.slides || []).flatMap(s => s.objects || [])
     ];
-    
+
     fixedObjects.forEach((fObj) => {
       const orig = originalObjects.find(o => o.id === fObj.id);
       if (orig && JSON.stringify(orig) !== JSON.stringify(fObj)) {
         newlyFixed.push({ id: fObj.id, label: fObj.label || fObj.name || 'Nesne', type: 'object' });
       }
     });
-    
+
     if (needsLayerFix) {
       newlyFixed.push({ id: 'popup-leak', label: 'Katman İzolasyonu', type: 'layer' });
+    }
+
+    if (inlinedCount > 0) {
+      newlyFixed.push({
+        id: 'external-media',
+        label: `${inlinedCount} medya pakete gömüldü (çevrimdışı)`,
+        type: 'media',
+      });
     }
 
     if (newlyFixed.length > 0) {

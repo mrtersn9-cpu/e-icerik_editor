@@ -674,13 +674,15 @@ export function TextAreaInput({ disabled = false, onChange, placeholder = '', ro
   );
 }
 
-export function ColorInput({ onChange, value = '#ffffff' }) {
+export function ColorInput({ ariaLabel, onChange, value = '#ffffff' }) {
   const { draft, flush, scheduleCommit } = useDeferredColor(value, onChange);
 
   return (
     <input
       type="color"
       value={draft || '#ffffff'}
+      aria-label={ariaLabel}
+      title={ariaLabel}
       onInput={(event) => scheduleCommit(event.target.value)}
       onChange={(event) => scheduleCommit(event.target.value)}
       onBlur={flush}

@@ -7,6 +7,7 @@ import {
 import { STORYLINE_RENDERER_CORE_SCRIPT } from '../generated/storylineRendererCore';
 import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore';
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine';
+import { getActivityContentLanguage, runtimeText } from '../logic/contentLanguage';
 
 import { getRuntimeButtonAction, normalizeRuntimeActionLabel } from './storylineRuntime';
 import { isStorylineRuntimeDropTargetLikeObject } from './storylineRuntimeEngine';
@@ -455,13 +456,15 @@ export function buildStorylineObjectRenderModel(
   const fallbackLabel = obj.type === 'draggable' || obj.type === 'dropzone' ? '' : obj.type;
   const displayLabel = String(labelText || fallbackLabel);
   const selectionGlyph = isSelectionOverlay && isSelected ? getSelectionGlyph(selectionMark) : '';
+  // Rozet etiketi seçilen üretim diline göre (Doğru/Correct/Richtig).
+  const badgeText = runtimeText(getActivityContentLanguage(activity || rawActivity || {}));
   const evidenceBadge =
     obj.type === 'draggable' && (runtimeState.dropCorrect || runtimeState.dropIncorrect)
       ? {
           glyph: runtimeState.dropCorrect ? '✓' : '×',
           bg: runtimeState.dropCorrect ? '#16a34a' : '#dc2626',
           ring: runtimeState.dropCorrect ? 'rgba(22,163,74,.26)' : 'rgba(220,38,38,.24)',
-          label: runtimeState.dropCorrect ? 'Doğru' : 'Yanlış',
+          label: runtimeState.dropCorrect ? badgeText.correctShort : badgeText.incorrectShort,
         }
       : null;
   const evidenceBadgeSize = evidenceBadge

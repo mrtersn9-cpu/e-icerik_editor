@@ -4,6 +4,7 @@ import { DEFAULT_ACTIVITY_SETTINGS } from '../../constants';
 import { getLivesConfig } from '../../features/cevap/livesIcons';
 import { getAutoAnswerSummary, getCorrectSelectionIds } from '../../logic/activityScoring';
 import { ButtonPackageIntroDiagram } from '../../logic/buttonStyling';
+import { runtimeText } from '../../logic/contentLanguage';
 import {
   getCorrectDragMatches,
   getDragDropPairsFromMatches,
@@ -312,6 +313,7 @@ function PreviewDragDrop({ activity }) {
 function PreviewSelection({ activity }) {
   const [sel, setSel] = useState([]);
   const [done, setDone] = useState(false);
+  const previewTx = runtimeText(activity);
   const opts = useMemo(
     () => (Array.isArray(activity.mcOptions) ? activity.mcOptions : []),
     [activity.mcOptions]
@@ -378,7 +380,7 @@ function PreviewSelection({ activity }) {
             cursor: 'pointer',
           }}
         >
-          Kontrol Et
+          {previewTx.checkLabel}
         </button>
       ) : (
         <div
@@ -395,7 +397,7 @@ function PreviewSelection({ activity }) {
             alignItems: 'center',
           }}
         >
-          {correct ? '✓ Doğru!' : '× Yanlış!'}
+          {correct ? `✓ ${previewTx.correctShort}!` : `× ${previewTx.incorrectShort}!`}
           {!correct && (
             <button
               onClick={() => {
@@ -412,7 +414,7 @@ function PreviewSelection({ activity }) {
                 cursor: 'pointer',
               }}
             >
-              Tekrar
+              {previewTx.retryShort}
             </button>
           )}
         </div>
@@ -1449,6 +1451,8 @@ function PreviewSelectionFlow({
   const selectedMarkGlyph = getSelectionMarkGlyph(selectionUi.controlMark);
   const wrongMarkGlyph = resolveWrongSelectionGlyph(selectionUi, selectionUi.controlMark);
   const settings = { ...DEFAULT_ACTIVITY_SETTINGS, ...(activity.settings || {}) };
+  // Önizleme fallback metinleri etkinliğin üretim diline göre.
+  const previewTx = runtimeText(activity);
   const answerControl = activity.answerControl || {};
   const intro = activity.introScreen || {};
   const packageScreen = activity.buttonPackageScreen || {};
@@ -2244,7 +2248,7 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle(_rsKey);
     return renderShell(
       _rsKey,
-      isSuccess ? '✓ Doğru' : '× Yanlış',
+      isSuccess ? `✓ ${previewTx.correctShort}` : `× ${previewTx.incorrectShort}`,
       <div style={{ color: _cs.textColor || '#123a56', textAlign: 'center' }}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
           <div style={{ fontSize: 64, lineHeight: 1, marginBottom: 20 }}>
@@ -2259,13 +2263,13 @@ function PreviewSelectionFlow({
             }}
           >
             {isSuccess
-              ? resultScreens.successTitle || 'Harika!'
-              : resultScreens.failureTitle || 'Tekrar Deneyelim'}
+              ? resultScreens.successTitle || previewTx.successTitleShort
+              : resultScreens.failureTitle || previewTx.retryHint}
           </div>
           <div style={{ fontSize: 15, lineHeight: 1.75, opacity: 0.78, marginBottom: 32 }}>
             {isSuccess
-              ? resultScreens.successBody || 'Doğru cevabı buldun, tebrikler!'
-              : resultScreens.failureBody || 'Bir kez daha deneyebilirsin.'}
+              ? resultScreens.successBody || previewTx.successBodyShort
+              : resultScreens.failureBody || previewTx.failureBodyShort}
           </div>
           <div
             style={{
@@ -2274,7 +2278,7 @@ function PreviewSelectionFlow({
           >
             {!isSuccess && canRetry && (
               <button onClick={() => restartSelectionFlow('play')} style={screenBtn(_rsKey)}>
-                {resultScreens.retryText || '↻ Tekrar Dene'}
+                {resultScreens.retryText || `↻ ${previewTx.tryAgainShort}`}
               </button>
             )}
             {!isSuccess && settings.showAnswerLayer !== false && (
@@ -2284,7 +2288,7 @@ function PreviewSelectionFlow({
                 }
                 style={screenGhostBtn(_rsKey)}
               >
-                {settings.answerButtonText || 'Cevabı Gör'}
+                {settings.answerButtonText || previewTx.showAnswerShort}
               </button>
             )}
             {isSuccess && hasNextStep && (
@@ -2303,7 +2307,7 @@ function PreviewSelectionFlow({
               }
               style={screenGhostBtn(_rsKey)}
             >
-              {resultScreens.continueText || 'Yeniden Başlat'}
+              {resultScreens.continueText || previewTx.restartLabel}
             </button>
           </div>
         </div>
@@ -2315,7 +2319,7 @@ function PreviewSelectionFlow({
     const _cs = getScreenStyle('answer');
     return renderShell(
       'failure',
-      'Doğru Cevap',
+      previewTx.correctAnswerTitle,
       <div style={{ color: _cs.textColor || '#123a56' }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
           <div
@@ -2326,7 +2330,7 @@ function PreviewSelectionFlow({
               letterSpacing: -0.4,
             }}
           >
-            {answerScreen.title || 'Doğru Cevap'}
+            {answerScreen.title || previewTx.correctAnswerTitle}
           </div>
           {answerScreen.body && (
             <div style={{ fontSize: 14, lineHeight: 1.7, opacity: 0.72, marginBottom: 20 }}>
@@ -2656,7 +2660,7 @@ function PreviewSelectionFlow({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(usesStageSelection
                   ? autoAnswer
-                  : viewOptions.filter((o) => o.isCorrect).map((o) => o.label || 'Doğru Seçenek')
+                  : viewOptions.filter((o) => o.isCorrect).map((o) => o.label || previewTx.correctOptionLabel)
                 ).map((line, index) => (
                   <div
                     key={`${line}-${index}`}
@@ -2788,6 +2792,8 @@ function PreviewDragDropFlow({
     typeof window !== 'undefined' ? window.innerWidth : 1280
   );
   const settings = { ...DEFAULT_ACTIVITY_SETTINGS, ...(activity.settings || {}) };
+  // Önizleme fallback metinleri etkinliğin üretim diline göre.
+  const previewTx = runtimeText(activity);
   const intro = activity.introScreen || {};
   const packageScreen = activity.buttonPackageScreen || {};
   const menuScreen = activity.menuScreen || {};
@@ -3835,7 +3841,7 @@ function PreviewDragDropFlow({
         {
           id: 'restart',
           icon: '\u21ba',
-          label: settings.restartFlowText || 'Yeniden Başlat',
+          label: settings.restartFlowText || previewTx.restartLabel,
           action: () => runDragDropAction(settings.restartButtonAction || 'restart', 'restart'),
         },
         {
@@ -4012,7 +4018,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.72)',
                   }}
                 >
-                  {settings.restartFlowText || 'Yeniden Başlat'}
+                  {settings.restartFlowText || previewTx.restartLabel}
                 </button>
               </>
             ) : (
@@ -4021,7 +4027,7 @@ function PreviewDragDropFlow({
                   onClick={retryCurrentPlacement}
                   style={{ ...primaryBtn, background: accent, borderColor: accent }}
                 >
-                  {resultScreens.retryText || 'Tekrar Dene'}
+                  {resultScreens.retryText || previewTx.tryAgainShort}
                 </button>
                 <button
                   onClick={() =>
@@ -4034,7 +4040,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.72)',
                   }}
                 >
-                  {settings.solutionButtonText || 'Çözümü Göster'}
+                  {settings.solutionButtonText || previewTx.showSolutionLabel}
                 </button>
                 <button
                   onClick={() =>
@@ -4047,7 +4053,7 @@ function PreviewDragDropFlow({
                     background: 'rgba(255,255,255,.78)',
                   }}
                 >
-                  {settings.restartFlowText || 'Yeniden Başlat'}
+                  {settings.restartFlowText || previewTx.restartLabel}
                 </button>
               </>
             )}
@@ -4356,7 +4362,7 @@ function PreviewDragDropFlow({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 800 }}>
-            {answerScreen.title || 'Doğru Cevap'}: öğeler doğru yerlerine yerleştirildi.
+            {answerScreen.title || previewTx.correctAnswerTitle}: öğeler doğru yerlerine yerleştirildi.
           </div>
           {answerScreen.body ? (
             <div style={{ fontSize: 12, lineHeight: 1.6, opacity: 0.78 }}>{answerScreen.body}</div>

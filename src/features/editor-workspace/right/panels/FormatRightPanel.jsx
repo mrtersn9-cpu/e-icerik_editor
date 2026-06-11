@@ -449,11 +449,11 @@ export function FormatRightPanelContent({ controller }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
               <FieldLabel>
                 <span>Metin rengi <MixedBadge show={mixedColor.mixed} /></span>
-                <ColorInput value={multiStyle.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
+                <ColorInput ariaLabel="Metin rengi" value={multiStyle.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
               </FieldLabel>
               <FieldLabel>
                 <span>Zemin <MixedBadge show={mixedBackground.mixed} /></span>
-                <ColorInput value={multiStyle.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
+                <ColorInput ariaLabel="Zemin rengi" value={multiStyle.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
               </FieldLabel>
               <FieldLabel>
                 Font
@@ -469,7 +469,7 @@ export function FormatRightPanelContent({ controller }) {
               </FieldLabel>
               <FieldLabel>
                 Kenar rengi
-                <ColorInput value={multiStyle.borderColor || '#cbd5e1'} onChange={(value) => patchStyle({ borderColor: value })} />
+                <ColorInput ariaLabel="Kenar rengi" value={multiStyle.borderColor || '#cbd5e1'} onChange={(value) => patchStyle({ borderColor: value })} />
               </FieldLabel>
             </div>
             <ButtonGrid
@@ -803,11 +803,11 @@ export function FormatRightPanelContent({ controller }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
             <FieldLabel>
               Metin rengi
-              <ColorInput value={style.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
+              <ColorInput ariaLabel="Metin rengi" value={style.color || '#111827'} onChange={(value) => patchStyle({ color: value })} />
             </FieldLabel>
             <FieldLabel>
               Zemin
-              <ColorInput value={style.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
+              <ColorInput ariaLabel="Zemin rengi" value={style.background || '#ffffff'} onChange={(value) => patchStyle({ background: value })} />
             </FieldLabel>
             <FieldLabel>
               Font
@@ -823,7 +823,7 @@ export function FormatRightPanelContent({ controller }) {
             </FieldLabel>
             <FieldLabel>
               Kenar rengi
-              <ColorInput value={style.borderColor || '#cbd5e1'} onChange={(value) => patchStyle({ borderColor: value })} />
+              <ColorInput ariaLabel="Kenar rengi" value={style.borderColor || '#cbd5e1'} onChange={(value) => patchStyle({ borderColor: value })} />
             </FieldLabel>
           </div>
           <ButtonGrid
