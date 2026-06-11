@@ -248,8 +248,11 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
       })
       .filter(Boolean);
 
+    // Aktif katmana DOKUNMA: eşleştirme seçimi her değiştiğinde bu üretim
+    // otomatik tetikleniyor; eskiden activeLayerId'yi cevap katmanına zorlayınca
+    // sahneye aniden koyu yerleşim kopyaları + katman karartması geliyordu
+    // ("siyah alan" şikâyeti). Cevap katmanı katman listesinden açılabilir.
     patch({
-      activeLayerId: answerLayerId,
       layers: existingAnswerLayer ? layers : [...layers, answerLayer],
       dragDropMatches: resolvedMatches,
       objects: [...remainingObjects, ...generatedObjects],
