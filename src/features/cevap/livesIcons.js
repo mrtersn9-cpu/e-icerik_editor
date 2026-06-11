@@ -28,7 +28,9 @@ export function getLivesConfig(activity = {}) {
   const ac = activity?.answerControl || {};
   const settings = activity?.settings || {};
   const pick = (key) => (ac[key] !== undefined ? ac[key] : settings[key]);
-  const enabled = !!pick('livesEnabled');
+  // Katı boolean: içe aktarılan/eski verideki "true"/1 gibi truthy kalıntılar
+  // can sistemini istemeden açmasın (önizlemede beklenmedik 3 kalp şikâyeti).
+  const enabled = pick('livesEnabled') === true;
   const count = Math.max(1, Math.min(99, Number(pick('livesCount')) || DEFAULT_LIVES_COUNT));
   const iconId = pick('livesIconId') || DEFAULT_LIVES_ICON_ID;
   const rawCustom = pick('livesCustomImage');

@@ -299,7 +299,8 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     // Yalnızca can/hak ayarları runtime'a taşınır (cevap anahtarı alanları taşınmaz).
     answerControl: (() => {
       const ac = merged.answerControl || activity.answerControl || {};
-      if (!ac.livesEnabled) return {};
+      // Katı boolean: truthy kalıntı veriler can sistemini istemeden açmasın.
+      if (ac.livesEnabled !== true) return {};
       return {
         livesEnabled: true,
         livesCount: ac.livesCount,

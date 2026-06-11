@@ -189,8 +189,15 @@ export function CanCard({ number = '12', activity, onUpdate }) {
   const lives = getLivesConfig(activity);
   // Can ayarları answerControl'a yazılır — bu anahtar SCORM runtime'ına taşınır,
   // böylece can hem editör önizlemesinde hem SCORM çıktısında çalışır.
-  const patchLives = (nextPatch) =>
-    patchActivity(activity, onUpdate, withAnswerControl(activity, nextPatch));
+  const patchLives = (nextPatch) => {
+    const base = withAnswerControl(activity, nextPatch);
+    // Kapatırken eski sürümlerden kalan settings.livesEnabled kalıntısını da
+    // temizle; aksi halde answerControl silinirse kalpler geri gelebiliyordu.
+    if (nextPatch.livesEnabled === false && base.settings) {
+      base.settings = { ...base.settings, livesEnabled: false };
+    }
+    patchActivity(activity, onUpdate, base);
+  };
 
   const handleCustomUpload = (event) => {
     const file = event.target.files?.[0];

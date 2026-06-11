@@ -104,7 +104,7 @@ function typedStore(key, fallback) {
 // Can/hak: editörde answerControl.livesX olarak saklanır (SCORM'a taşınan anahtar).
 function typedLivesConfig(current) {
   const ac = (current && current.answerControl) || {};
-  if (!ac.livesEnabled) return { enabled: false };
+  if (ac.livesEnabled !== true) return { enabled: false };
   const count = Math.max(1, Math.min(99, Number(ac.livesCount) || 3));
   var glyphMap = { heart: "❤️", star: "⭐", diamond: "💎", apple: "🍎", bolt: "⚡", trophy: "🏆", crown: "👑", flower: "🌸", balloon: "🎈", medal: "🏅" };
   var iconId = ac.livesIconId || "heart";

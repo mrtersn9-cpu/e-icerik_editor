@@ -22,6 +22,20 @@ describe('livesIcons — can/hak yardımcıları', () => {
       expect(getLivesConfig({ settings: {} }).enabled).toBe(false);
     });
 
+    it('katı boolean: "true"/1 gibi truthy kalıntılar can sistemini AÇMAZ', () => {
+      expect(getLivesConfig({ settings: { livesEnabled: 'true' } }).enabled).toBe(false);
+      expect(getLivesConfig({ settings: { livesEnabled: 1 } }).enabled).toBe(false);
+      expect(getLivesConfig({ answerControl: { livesEnabled: 'true' } }).enabled).toBe(false);
+      expect(getLivesConfig({ answerControl: { livesEnabled: true } }).enabled).toBe(true);
+    });
+
+    it('answerControl kapalı derken settings açık kalsa bile answerControl kazanır', () => {
+      expect(
+        getLivesConfig({ answerControl: { livesEnabled: false }, settings: { livesEnabled: true } })
+          .enabled
+      ).toBe(false);
+    });
+
     it('can sayısını 1-99 aralığına kelepçeler', () => {
       expect(getLivesConfig({ settings: { livesEnabled: true, livesCount: 0 } }).count).toBe(DEFAULT_LIVES_COUNT);
       expect(getLivesConfig({ settings: { livesEnabled: true, livesCount: 500 } }).count).toBe(99);
