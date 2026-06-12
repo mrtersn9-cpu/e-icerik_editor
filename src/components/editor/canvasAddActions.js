@@ -22,5 +22,5 @@ export const CANVAS_ADD_ACTIONS = [
   { id: 'image', label: 'Resim', icon: Image, run: (ref) => ref?.current?.addImage?.() },
   { id: 'video', label: 'Video', icon: Video, run: (ref) => ref?.current?.addVideo?.() },
   { id: 'audio', label: 'Ses', icon: AudioLines, run: (ref) => ref?.current?.addAudio?.() },
-  { id: 'svg', label: 'Zemin', icon: FileImage, run: (ref) => ref?.current?.loadSVG?.() },
+  { id: 'svg', label: 'SVG', icon: FileImage, run: (ref) => ref?.current?.loadSVG?.() },
 ];

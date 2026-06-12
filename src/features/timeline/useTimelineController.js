@@ -20,6 +20,8 @@ import {
 import { clamp, uid } from '../../utils/editorHelpers';
 
 import { getTimelineClipTone, timelineTokens } from './timelineTokens';
+import { getTrackBadge } from './trackBadge';
+import { reorderObjectsByTrack } from './trackOrder';
 
 const OBJECT_TYPE_ICONS = {
   audio: '♪',
@@ -89,7 +91,10 @@ export default function useTimelineController({
   const [floatingBox, setFloatingBox] = useState({ width: 980, height: 300, x: 180, y: 180 });
   const [contextMenu, setContextMenu] = useState(null);
   const [lastSelectedObjectId, setLastSelectedObjectId] = useState('');
+  // Satır sürükle-bırak (yeniden sıralama) oturumu: {sourceId, overId, placeAfter}
+  const [trackDrag, setTrackDrag] = useState(null);
   const dragRef = useRef(null);
+  const trackDragRef = useRef(null);
 
   useEffect(
     () => () => {
@@ -97,6 +102,16 @@ export default function useTimelineController({
       window.removeEventListener('pointermove', dragRef.current.move);
       window.removeEventListener('pointerup', dragRef.current.up);
       dragRef.current = null;
+    },
+    []
+  );
+
+  useEffect(
+    () => () => {
+      if (!trackDragRef.current) return;
+      window.removeEventListener('pointermove', trackDragRef.current.move);
+      window.removeEventListener('pointerup', trackDragRef.current.up);
+      trackDragRef.current = null;
     },
     []
   );
@@ -147,6 +162,7 @@ export default function useTimelineController({
           return {
             id: item.id,
             active,
+            badge: getTrackBadge(object),
             clip: item,
             editable: canEditTimelineItem(item, objects),
             icon: OBJECT_TYPE_ICONS[object?.type] || '•',
@@ -370,6 +386,60 @@ export default function useTimelineController({
     });
   };
 
+  // Satırı sürükle-bırak ile keyfi konuma taşı: objects dizisi yeniden dizilir,
+  // zIndex diziliş sırasından yeniden yazılır (timeline sırası = z-sırası).
+  const reorderTrack = (sourceObjectId, targetObjectId, placeAfter = false) => {
+    const nextObjects = reorderObjectsByTrack(objects, sourceObjectId, targetObjectId, placeAfter);
+    if (!nextObjects) return;
+    const orderIndex = new Map(nextObjects.map((object, index) => [object.id, index]));
+    patchActivity({
+      objects: nextObjectsWithZIndex(nextObjects),
+      timeline: [...timeline]
+        .sort(
+          (left, right) =>
+            (orderIndex.get(left.objectId) ?? 0) - (orderIndex.get(right.objectId) ?? 0)
+        )
+        .map((entry, track) => ({ ...entry, track })),
+    });
+  };
+
+  // Tutamaçtan başlayan satır sürüklemesi; bırakma hedefi elementFromPoint ile
+  // [data-track-row] üzerinden bulunur (pointer capture hit-test'i etkilemez).
+  const beginTrackReorder = (event, row) => {
+    const sourceId = row?.object?.id;
+    if (!sourceId || row.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const move = (moveEvent) => {
+      const hit = document
+        .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+        ?.closest?.('[data-track-row]');
+      if (!hit) return;
+      const overId = hit.getAttribute('data-track-row') || '';
+      const rect = hit.getBoundingClientRect();
+      const placeAfter = moveEvent.clientY > rect.top + rect.height / 2;
+      if (trackDragRef.current) {
+        trackDragRef.current.overId = overId;
+        trackDragRef.current.placeAfter = placeAfter;
+      }
+      setTrackDrag({ sourceId, overId, placeAfter });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const session = trackDragRef.current;
+      trackDragRef.current = null;
+      setTrackDrag(null);
+      if (session?.overId && session.overId !== sourceId) {
+        reorderTrack(sourceId, session.overId, session.placeAfter);
+      }
+    };
+    trackDragRef.current = { move, up, overId: '', placeAfter: false };
+    setTrackDrag({ sourceId, overId: '', placeAfter: false });
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   const openContextMenu = (event, item) => {
     event.preventDefault();
     event.stopPropagation();
@@ -464,6 +534,9 @@ export default function useTimelineController({
     isPlaying,
     liveCount,
     moveActiveTrack,
+    reorderTrack,
+    beginTrackReorder,
+    trackDrag,
     objects,
     openContextMenu,
     patchCuePoint,

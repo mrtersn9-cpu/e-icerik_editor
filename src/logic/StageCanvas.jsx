@@ -499,14 +499,45 @@ const StageCanvas = forwardRef(function StageCanvas(
     [onUpdate, onSelectionChange]
   );
 
+  // SVG artık sahne zemini değil NORMAL NESNE olarak eklenir: timeline'da
+  // görünür, sürüklenip sıralanabilir, ikinci SVG öncekini ezmez. Eski
+  // projelerdeki activity.svgMarkup zemini geriye dönük render edilmeye devam eder.
   const loadSvgFile = useCallback(
     (file) => {
       if (!file) return;
-      file
-        .text()
-        .then((markup) => patchAct({ svgMarkup: sanitizeSvgMarkup(markup), svgName: file.name }));
+      file.text().then((markup) => {
+        const safe = sanitizeSvgMarkup(markup);
+        if (!safe) return;
+        const a = latestRef.current;
+        const objs = a.objects || [];
+        const o = createObject('image');
+        o.imageData = `data:image/svg+xml;base64,${window.btoa(
+          unescape(encodeURIComponent(safe))
+        )}`;
+        o.label = file.name.replace(/\.[^.]+$/, '') || 'SVG';
+        // viewBox'tan en-boy oranını koru (en fazla 640x480'e sığdır).
+        const viewBox = safe.match(
+          /viewBox\s*=\s*["']\s*[-\d.]+[,\s]+[-\d.]+[,\s]+([\d.]+)[,\s]+([\d.]+)/i
+        );
+        const vbWidth = viewBox ? Number(viewBox[1]) : 0;
+        const vbHeight = viewBox ? Number(viewBox[2]) : 0;
+        if (vbWidth > 0 && vbHeight > 0) {
+          const fit = Math.min(1, 640 / vbWidth, 480 / vbHeight);
+          o.width = Math.max(40, Math.round(vbWidth * fit));
+          o.height = Math.max(40, Math.round(vbHeight * fit));
+        }
+        o.zIndex = nextTopZIndex(objs);
+        o.layerId = a.activeLayerId || 'base';
+        onUpdate({
+          ...a,
+          objects: [...objs, o],
+          selectedObjectId: o.id,
+          timeline: syncTimelineWithObjects({ ...a, objects: [...objs, o] }),
+        });
+        onSelectionChange(new Set([o.id]));
+      });
     },
-    [patchAct]
+    [onUpdate, onSelectionChange]
   );
 
   const deleteSelected = useCallback(() => {

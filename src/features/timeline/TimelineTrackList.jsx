@@ -247,11 +247,27 @@ export default function TimelineTrackList({ controller }) {
           <div key={row.id}>
             {showLayer ? <LayerDivider controller={controller} name={row.layerName} /> : null}
             <div
+              data-track-row={row.object?.id || ''}
               style={{
                 display: 'flex',
                 minWidth: t.size.labelColumn + controller.trackWidth,
+                position: 'relative',
               }}
             >
+              {controller.trackDrag && controller.trackDrag.overId === row.object?.id && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    height: 2,
+                    background: t.blue,
+                    zIndex: 6,
+                    pointerEvents: 'none',
+                    ...(controller.trackDrag.placeAfter ? { bottom: -1 } : { top: -1 }),
+                  }}
+                />
+              )}
               <div
                 style={{
                   width: t.size.labelColumn,
@@ -261,13 +277,33 @@ export default function TimelineTrackList({ controller }) {
                   borderBottom: `1px solid ${t.borderSoft}`,
                   background: row.selected ? t.rowSelected : row.index % 2 ? t.rowAlt : '#ffffff',
                   display: 'grid',
-                  gridTemplateColumns: '26px 26px minmax(0,1fr) 24px',
+                  gridTemplateColumns: '14px 26px 26px minmax(0,1fr) 24px',
                   alignItems: 'center',
                   gap: 4,
                   padding: '0 6px',
                   boxSizing: 'border-box',
+                  opacity:
+                    controller.trackDrag && controller.trackDrag.sourceId === row.object?.id
+                      ? 0.55
+                      : 1,
                 }}
               >
+                <span
+                  onPointerDown={(event) => controller.beginTrackReorder(event, row)}
+                  title={row.locked ? 'Kilitli satır sürüklenemez' : 'Sürükleyerek sırala'}
+                  style={{
+                    color: row.locked ? '#e2e8f0' : '#94a3b8',
+                    cursor: row.locked ? 'default' : 'grab',
+                    fontSize: 11,
+                    fontWeight: 900,
+                    textAlign: 'center',
+                    userSelect: 'none',
+                    touchAction: 'none',
+                    lineHeight: 1,
+                  }}
+                >
+                  ⠿
+                </span>
                 <IconButton
                   active={row.visible}
                   onClick={() => controller.patchObject(row.object?.id, { visible: !row.visible })}
@@ -301,9 +337,10 @@ export default function TimelineTrackList({ controller }) {
                   title={row.label}
                 >
                   <span
+                    title={row.badge?.label || ''}
                     style={{
-                      width: 18,
-                      height: 18,
+                      height: 16,
+                      maxWidth: 76,
                       borderRadius: 5,
                       border: `1px solid ${row.tone.border}`,
                       background: row.tone.fill,
@@ -311,12 +348,18 @@ export default function TimelineTrackList({ controller }) {
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 9.5,
+                      fontSize: 8,
                       fontWeight: 950,
                       flexShrink: 0,
+                      padding: '0 5px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.3,
                     }}
                   >
-                    {row.icon}
+                    {row.badge?.label || row.icon}
                   </span>
                   <span
                     style={{
