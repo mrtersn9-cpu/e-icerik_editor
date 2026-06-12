@@ -428,7 +428,9 @@ export function auditTtkbEditorState(state = {}) {
       const style = object.style || {};
       const bg = parseCssColorSamples(style.background);
       const fg = parseCssColorSamples(style.color);
-      if (bg.length && fg.length) {
+      // colorLocked: kullanıcı rengi bilinçli kilitledi — enforcement bu rengi
+      // korur, denetim de kontrast riski sayıp SCORM ihracatını engellememeli.
+      if (!style.colorLocked && bg.length && fg.length) {
         const avg = bg.reduce((sum, item) => sum + relativeLuminance(item), 0) / bg.length;
         const sample = bg.reduce(
           (selected, item) =>

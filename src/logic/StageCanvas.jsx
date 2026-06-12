@@ -2659,9 +2659,14 @@ const StageCanvas = forwardRef(function StageCanvas(
             const target = contextMenu.objectId
               ? objects.find((o) => o.id === contextMenu.objectId)
               : null;
-            // Menüdeki çoklu işlemler için güncel seçim (öge seçili değilse hedefe indir).
+            // Kilitli hedef sağ tıkta SEÇİLMEDİĞİ için seçim-tabanlı eylemler
+            // (Kes/Kopyala/Sil/sıralama) bayat seçime gider — bu eylemler kilitli
+            // hedefte devre dışı bırakılır; yalnız hedefe id ile uygulananlar kalır.
+            const isLockedTarget = !!(target?.locked && target.generatedBy !== 'answer-placement');
+            // Menüdeki çoklu işlemler için güncel seçim (öge seçili değilse veya
+            // hedef kilitliyse hedefe indir — eski seçim yanlış hedefe uygulanmasın).
             const selForMenu =
-              latestSelectedIdsRef.current?.size > 0
+              !isLockedTarget && latestSelectedIdsRef.current?.size > 0
                 ? latestSelectedIdsRef.current
                 : new Set(target ? [target.id] : []);
             const groupState = getSelectionGroupState(canvasActivity, selForMenu);
@@ -2680,6 +2685,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               if (isTextLike) {
                 items.push({
                   label: 'Metni Düzenle',
+                  disabled: isLockedTarget,
                   onClick: () => setEditingObjectId(target.id),
                 });
               }
