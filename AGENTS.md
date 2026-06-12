@@ -12,7 +12,7 @@ Do not create SCORM-only or preview-only visual/behavior patches. The editor is 
 
 The product exports only SCORM 1.2 packages. Do not add or expose SCORM 2004, xAPI, cmi5, LTI, standalone learner package modes, or external tracking in the editor unless the user explicitly changes this product rule.
 
-External links are allowed when production needs them, but SCORM export must warn the user when external HTTP/HTTPS links or embeds are present so they can review TTKB/KVKK/telif risk before packaging.
+HARD RULE (scoped to exported output): The exported SCORM package — including its HTML and learner runtime — must never fetch anything from an external source unless the user manually added that link to the content. No code-originated external requests inside the package: no CDN, fonts, icons, analytics, embeds, or tracking, including fallback paths; all assets must be bundled or inlined at export time. The editor application itself may use external resources — that side is ours and is not restricted by this rule. When user-added external links or embeds are present in the content, SCORM export must warn the user so they can review TTKB/KVKK/telif risk before packaging.
 
 Button animation is package-level. All buttons that belong to the same visual package must use the same TTKB-safe hover/press motion profile; do not assign unrelated per-button animation styles inside the same package.
 
