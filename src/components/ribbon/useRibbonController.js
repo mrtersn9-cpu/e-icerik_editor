@@ -18,7 +18,6 @@ import {
   TIMELINE_EASING_OPTIONS,
   TIMELINE_EFFECT_OPTIONS,
 } from '../../constants';
-import { readyButtonTextShadowForColor } from '../../editor-logic/colorUtils';
 import { createObjectFromActivity } from '../../logic/activityFactory';
 import {
   commitMaterializedActivity,
@@ -32,6 +31,8 @@ import {
   getButtonMotionProfile,
   buildReadyButtonStyle,
   getAnswerLayerStylePresetById,
+  getReadyButtonStyleOptions,
+  applyReadyButtonBulkStyleToObject,
   restyleAllButtonsForPackage,
 } from '../../logic/buttonStyling';
 import { contentText, getActivityContentLanguage } from '../../logic/contentLanguage';
@@ -559,9 +560,11 @@ export default function useRibbonController({
       const slides = getActivitySlides(committed);
       const currentSlideId = committed.currentSlideId || slides[0]?.id || '';
       const nextSlides = slides.map((slide, index) => {
-        const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId, {
-          textColor: committed.readyButtonTextColor || '',
-        }).map((object) =>
+        const nextObjects = restyleAllButtonsForPackage(
+          slide.objects || [],
+          pkgId,
+          getReadyButtonStyleOptions(committed)
+        ).map((object) =>
           object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
         );
         return normalizeSlide(
@@ -623,23 +626,44 @@ export default function useRibbonController({
     [activity, updateActivity]
   );
 
-  // Tüm hazır/üretilmiş butonların iç yazı rengi (boş = temadan gelen varsayılan).
+  // Tüm hazır/üretilmiş butonların yazı sistemi (boş = temadan gelen varsayılan).
   // Tek kaynak: hem Tasarım ribbonu hem Tasarım sağ paneli bu komutu kullanır.
-  const applyReadyButtonTextColor = useCallback(
-    (color) => {
+  const applyReadyButtonTypography = useCallback(
+    (patch = {}) => {
       if (!activity) return;
       const presetId =
         activity.answerLayerStylePresetId ||
         bookDefaultStylePresetId ||
         DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID;
+      const nextActivity = { ...activity };
+      if (Object.prototype.hasOwnProperty.call(patch, 'textColor')) {
+        nextActivity.readyButtonTextColor = patch.textColor || '';
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'fontFamily')) {
+        nextActivity.readyButtonFontFamily = patch.fontFamily || '';
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'fontSize')) {
+        const value = Number(patch.fontSize);
+        nextActivity.readyButtonFontSize = Number.isFinite(value) && value > 0 ? Math.round(value) : '';
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'fontWeight')) {
+        const value = Number(patch.fontWeight);
+        nextActivity.readyButtonFontWeight =
+          Number.isFinite(value) && value > 0 ? Math.round(value / 50) * 50 : '';
+      }
       updateActivity(
         applyGeneratedThemeToActivity(
-          { ...activity, readyButtonTextColor: color || '' },
+          nextActivity,
           presetId
         )
       );
     },
     [activity, bookDefaultStylePresetId, updateActivity]
+  );
+
+  const applyReadyButtonTextColor = useCallback(
+    (color) => applyReadyButtonTypography({ textColor: color || '' }),
+    [applyReadyButtonTypography]
   );
 
   const applySlideMaster = useCallback(
@@ -732,7 +756,11 @@ export default function useRibbonController({
   const insertButtonPreset = useCallback(
     (presetId) => {
       const pkgId = activity?.buttonPackageId || BUTTON_PACKAGES[0]?.id || 'pkg-1';
-      const [button] = restyleAllButtonsForPackage([createButtonPresetObject(presetId)], pkgId);
+      const [button] = restyleAllButtonsForPackage(
+        [createButtonPresetObject(presetId)],
+        pkgId,
+        getReadyButtonStyleOptions(activity || {})
+      );
       const motion = getActivityButtonMotion(activity || {}) || getButtonPackageMotion(pkgId);
       commitRibbonObject(button && motion ? { ...button, buttonMotion: { ...motion } } : button);
     },
@@ -859,6 +887,7 @@ export default function useRibbonController({
           bookDefaultStylePresetId ||
           DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID
       );
+      const readyButtonStyleOptions = getReadyButtonStyleOptions(activity);
       const motion = stylePreset?.motion || {};
       const topZIndex = objects.reduce((max, item) => Math.max(max, Number(item.zIndex) || 0), 0);
       const groupId = `ready:${preset.id}:${uid()}`;
@@ -878,7 +907,7 @@ export default function useRibbonController({
       const makeReadyButton = (patch = {}) => {
         const baseButton = createObjectFromActivity(activity, 'button');
         const label = String(patch.label || '').toLocaleUpperCase(locale);
-        return {
+        const button = {
           ...baseButton,
           label,
           x: patch.x,
@@ -910,21 +939,14 @@ export default function useRibbonController({
             fontSize: patch.fontSize,
             lineHeight: patch.lineHeight || 1.1,
             padding: 0,
-            // Aktivitede "Buton yazı rengi" ayarlıysa yeni buton da onu (renge uyumlu
-            // gölgesiyle birlikte) kilitli alsın.
-            ...(activity.readyButtonTextColor
-              ? {
-                  color: activity.readyButtonTextColor,
-                  colorLocked: true,
-                  ...(readyButtonTextShadowForColor(activity.readyButtonTextColor)
-                    ? { textShadow: readyButtonTextShadowForColor(activity.readyButtonTextColor) }
-                    : {}),
-                }
-              : {}),
           },
           ...(motion ? { buttonMotion: { ...motion } } : {}),
           ...(patch.sceneTemplateSlotId ? { sceneTemplateSlotId: patch.sceneTemplateSlotId } : {}),
         };
+        return applyReadyButtonBulkStyleToObject(
+          button,
+          readyButtonStyleOptions
+        );
       };
       const iconObject = makeReadyButton({
         label: getButtonPairSemanticIcon(
@@ -966,7 +988,7 @@ export default function useRibbonController({
       });
       labelObject.style = {
         ...(labelObject.style || {}),
-        fontSize: EDUCATION_BUTTON_TEXT_SIZE_SMALL,
+        fontSize: readyButtonStyleOptions.fontSize ?? EDUCATION_BUTTON_TEXT_SIZE_SMALL,
         paddingLeft: 0,
         whiteSpace: 'nowrap',
       };
@@ -1066,6 +1088,7 @@ export default function useRibbonController({
       align: (mode) => activity && updateActivity(alignActivitySelection(activity, targetIds, mode)),
       applyButtonPackage,
       applyButtonMotion,
+      applyReadyButtonTypography,
       applyReadyButtonTextColor,
       openMasterEditor: () => setMasterEditorOpen(true),
       closeMasterEditor: () => setMasterEditorOpen(false),

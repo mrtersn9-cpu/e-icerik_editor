@@ -724,7 +724,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
       linkedHoverGroup: retryGroup,
       style: { padding: 0, lineHeight: 1, borderRadius: 999 },
     });
-    const retryLabel = pushButton(layerId, 'TEKRAR DENE', panelX + u(248), panelY + u(20, 'y'), u(277), u(58, 'y'), {
+    const retryLabel = pushButton(layerId, tx.tryAgain, panelX + u(248), panelY + u(20, 'y'), u(277), u(58, 'y'), {
       tone: 'danger',
       background: toneDanger,
       fontSize: u(19, 'y'),
@@ -763,7 +763,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
     pushIconButton(layerId, themeIcons.warning || '!', panelX + Math.round((panelW - u(92)) / 2), panelY + u(36, 'y'), u(92, 'y'), 'warning', {
       style: { fontSize: u(70, 'y') },
     });
-    pushText(layerId, 'Cevaplarınızı kontrol edebilmek için\nönce sorulara cevap vermelisiniz.', panelX + u(40), panelY + u(158, 'y'), panelW - u(80), u(62, 'y'), {
+    pushText(layerId, tx.answerPrecheckMessage, panelX + u(40), panelY + u(158, 'y'), panelW - u(80), u(62, 'y'), {
       color: preset?.bodyColor || '#334155',
       fontSize: u(22, 'y'),
       fontWeight: 700,
@@ -882,11 +882,11 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
     pushResultHeaderTemplate({
       layerId: correctLayerId,
       status: 'success',
-      title: 'DOĞRU',
-      body: 'Tebrikler, doğru cevapladınız.',
+      title: tx.correctTitle,
+      body: tx.correctBody,
       buttons: [
         {
-          label: 'TAMAMLA',
+          label: tx.complete,
           tone: 'success',
           icon: themeIcons.complete || '✓',
           width: 240,
@@ -894,7 +894,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           trigger: launchSlideId ? { action: 'SliderGec', value: launchSlideId } : null,
         },
         {
-          label: 'TEKRARLA',
+          label: tx.retry,
           tone: 'danger',
           icon: themeIcons.restart || '↻',
           width: 240,
@@ -909,11 +909,11 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
     pushResultHeaderTemplate({
       layerId: incorrectLayerId,
       status: 'failure',
-      title: 'YANLIŞ',
-      body: 'Üzgünüz, soruların tamamını doğru cevaplamadınız.',
+      title: tx.incorrectTitle,
+      body: tx.incorrectBody,
       buttons: [
         {
-          label: 'ÇÖZÜMÜ GÖSTER',
+          label: tx.solution,
           tone: 'success',
           icon: '✎',
           width: 250,
@@ -921,7 +921,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
           trigger: answerLayerId ? { action: 'KatmanaGec', value: answerLayerId } : null,
         },
         {
-          label: 'YENİDEN BAŞLAT',
+          label: tx.restart,
           tone: 'danger',
           icon: themeIcons.restart || '↻',
           width: 250,

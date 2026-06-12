@@ -119,7 +119,14 @@ export function PanelTabs({ active, onChange, tabs }) {
   );
 }
 
-export function PanelCard({ children, title, action, defaultOpen = true, collapsible = false }) {
+export function PanelCard({
+  children,
+  title,
+  action,
+  defaultOpen = true,
+  collapsible = false,
+  allowOverflow = false,
+}) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyVisible = !collapsible || open;
 
@@ -129,7 +136,9 @@ export function PanelCard({ children, title, action, defaultOpen = true, collaps
         border: `1px solid ${inspectorChrome.border}`,
         borderRadius: EDITOR_THEME.radiusLg,
         background: inspectorChrome.panel,
-        overflow: 'hidden',
+        overflow: allowOverflow ? 'visible' : 'hidden',
+        position: 'relative',
+        zIndex: allowOverflow && bodyVisible ? 20 : 'auto',
       }}
     >
       {title ? (

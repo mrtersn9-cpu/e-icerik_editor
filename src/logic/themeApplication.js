@@ -5,6 +5,7 @@ import {
   selectActivitySlide,
 } from './activityHelpers';
 import {
+  getReadyButtonStyleOptions,
   restyleAnswerLayerObjectsForPreset,
   restyleReadyButtonsForPreset,
 } from './buttonStyling';
@@ -39,8 +40,9 @@ export function applyGeneratedThemeToActivity(activity = {}, presetId = '') {
   if (!presetId) return activity;
 
   const committed = commitMaterializedActivity(activity);
-  // Kullanıcının seçtiği global hazır-buton yazı rengi (varsa) tüm butonlara uygulanır.
-  const styleOptions = { textColor: committed.readyButtonTextColor || '' };
+  // Kullanıcının seçtiği global hazır-buton yazısı (renk/font/punto/kalınlık)
+  // tüm butonlara uygulanır.
+  const styleOptions = getReadyButtonStyleOptions(committed);
   const slides = getActivitySlides(committed);
   const currentSlideId = committed.currentSlideId || slides[0]?.id || '';
   const contextSlides = slides.map((slide, index) =>

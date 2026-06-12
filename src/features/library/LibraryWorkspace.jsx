@@ -38,6 +38,7 @@ import {
 } from '../../logic/activityTemplateGenerators';
 import {
   getButtonPackageMotion,
+  getReadyButtonStyleOptions,
   restyleAllButtonsForPackage,
   restyleAnswerLayerObjectsForPreset,
 } from '../../logic/buttonStyling';
@@ -130,16 +131,18 @@ function applyBookDefaultsToActivity(activity = {}, selectedBook = null) {
   const slides = getActivitySlides(scaffoldedActivity);
   const currentSlideId = scaffoldedActivity.currentSlideId || slides[0]?.id || '';
   const motion = getButtonPackageMotion(buttonPackageId) || getButtonPackageMotion(buttonPackage?.id) || null;
+  const buttonStyleOptions = getReadyButtonStyleOptions(scaffoldedActivity);
   const nextSlides = slides.map((slide, index) => {
     const layers = getActivityLayers(slide);
     const resolvedNames = buildResolvedLayerNameMap(layers, slide);
     const objects = restyleAnswerLayerObjectsForPreset(
-      restyleAllButtonsForPackage(slide.objects || [], buttonPackageId).map((object) =>
+      restyleAllButtonsForPackage(slide.objects || [], buttonPackageId, buttonStyleOptions).map((object) =>
         object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
       ),
       layers,
       resolvedNames,
-      answerLayerStylePresetId
+      answerLayerStylePresetId,
+      buttonStyleOptions
     );
     return normalizeSlide({ ...slide, answerLayerStylePresetId, objects }, index);
   });

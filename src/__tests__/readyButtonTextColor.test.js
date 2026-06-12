@@ -1,6 +1,7 @@
 import { readyButtonTextShadowForColor } from '../editor-logic/colorUtils';
 import {
   restyleAnswerLayerObjectsForPreset,
+  restyleAllButtonsForPackage,
   restyleReadyButtonsForPreset,
 } from '../logic/buttonStyling';
 import { normalizeObject } from '../logic/normalize';
@@ -127,6 +128,40 @@ describe('readyButtonTextColor — tüm butonlara yazı rengi', () => {
   });
 });
 
+describe('readyButton typography — tüm butonlara font ailesi, punto ve kalınlık', () => {
+  const typography = {
+    fontFamily: 'Verdana',
+    fontSize: 18,
+    fontWeight: 700,
+  };
+
+  test('tema presetinde hem tonlu hem tonsuz butonlar toplu font ayarını alır', () => {
+    const result = restyleReadyButtonsForPreset(
+      [tonedButton(), plainButton(), textObject()],
+      'lise-akademik',
+      typography
+    );
+    const byId = Object.fromEntries(result.map((item) => [item.id, item]));
+
+    expect(byId.toned.style.fontFamily).toBe('Verdana');
+    expect(byId.toned.style.fontSize).toBe(18);
+    expect(byId.toned.style.fontWeight).toBe(700);
+    expect(byId.toned.style.whiteSpace).toBe('nowrap');
+    expect(byId.plain.style.fontFamily).toBe('Verdana');
+    expect(byId.plain.style.fontSize).toBe(18);
+    expect(byId.plain.style.fontWeight).toBe(700);
+    expect(byId.note.style.fontFamily).toBeUndefined();
+  });
+
+  test('paket değişiminde toplu font ayarı korunur', () => {
+    const [button] = restyleAllButtonsForPackage([tonedButton()], 'pkg-1', typography);
+
+    expect(button.style.fontFamily).toBe('Verdana');
+    expect(button.style.fontSize).toBe(18);
+    expect(button.style.fontWeight).toBe(700);
+  });
+});
+
 describe('restyleAnswerLayerObjectsForPreset — cevap katmanı butonlarına renk + gölge', () => {
   const layers = [
     { id: 'layer-correct', name: 'Doğru' },
@@ -170,6 +205,20 @@ describe('restyleAnswerLayerObjectsForPreset — cevap katmanı butonlarına ren
     );
     const button = result.find((item) => item.id === 'layer-btn');
     expect(button.style.colorLocked).toBe(false);
+  });
+
+  test('toplu font ayarı cevap katmanı butonuna uygulanır', () => {
+    const result = restyleAnswerLayerObjectsForPreset(
+      [layerButton()],
+      layers,
+      resolvedLayerNames,
+      'lise-akademik',
+      { fontFamily: 'Verdana', fontSize: 18, fontWeight: 700 }
+    );
+    const button = result.find((item) => item.id === 'layer-btn');
+    expect(button.style.fontFamily).toBe('Verdana');
+    expect(button.style.fontSize).toBe(18);
+    expect(button.style.fontWeight).toBe(700);
   });
 });
 

@@ -1,3 +1,4 @@
+import { getCustomFonts } from '../constants/fonts';
 import { STORYLINE_RENDERER_CORE_SCRIPT } from '../generated/storylineRendererCore.js';
 import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore.js';
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine.js';
@@ -167,6 +168,49 @@ function escScriptJson(value) {
     .replace(/\u2029/g, '\\u2029');
 }
 
+function escCssString(value = '') {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ');
+}
+
+function primaryFontFamily(value = '') {
+  return String(value || '')
+    .split(',')[0]
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+}
+
+function collectUsedFontFamilies(slides = []) {
+  const used = new Set();
+  const addStyle = (style = {}) => {
+    const font = primaryFontFamily(style?.fontFamily);
+    if (font) used.add(font);
+  };
+  (slides || []).forEach((slide) => {
+    addStyle({ fontFamily: slide?.readyButtonFontFamily });
+    (slide?.objects || []).forEach((object) => {
+      addStyle(object?.style);
+      Object.values(object?.stateStyles || {}).forEach(addStyle);
+    });
+  });
+  return used;
+}
+
+function buildCustomFontFaceCss(slides = []) {
+  const usedFonts = collectUsedFontFamilies(slides);
+  if (!usedFonts.size) return '';
+  const customFonts = getCustomFonts();
+  return customFonts
+    .filter((font) => usedFonts.has(font.name) && font.dataUrl)
+    .map(
+      (font) =>
+        `@font-face{font-family:"${escCssString(font.name)}";src:url("${escCssString(font.dataUrl)}");font-display:swap}`
+    )
+    .join('\n');
+}
+
 function slug(value = '', fallback = 'sco') {
   const normalized = String(value || '')
     .trim()
@@ -250,6 +294,9 @@ function buildManifest(cfg, scoEntries = null) {
     })
     .join('\n');
 
+  // SCORM 1.2 namespace URI'leri URL gibi görünür, ancak runtime dış istek değildir.
+  // XSD dosyaları pakete yerel dosya olarak eklenir; dış kaynak yasağı learner runtime
+  // asset/fetch/link/embed istekleri için uygulanır.
   return `<?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="${identifier}"
   xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2"
@@ -277,11 +324,13 @@ export function buildStorylinePlayerHtml(state = {}, cfg = {}, options = {}) {
   // İçerik dili: oyuncudaki tüm sabit metinler (Kontrol Et, Tamamlandı vb.)
   // PAYLOAD.i18n üzerinden seçilen üretim diliyle gelir.
   const lang = getActivityContentLanguage(getOrderedRuntimeActivities(state, options)[0] || state);
+  const slides = buildStorylineRuntimeDeck(state, options);
+  const customFontFaceCss = buildCustomFontFaceCss(slides);
   const payload = {
     title: cfg.packageName || 'E-İçerik',
     passingScore: Math.min(100, Math.max(0, cfg.passingScore ?? 70)),
     trackingMode: cfg.trackingMode || 'completion+score',
-    slides: buildStorylineRuntimeDeck(state, options),
+    slides,
     variables: Array.isArray(state.variables) ? state.variables : [],
     i18n: { lang, ...runtimeText(lang) },
   };
@@ -293,6 +342,7 @@ export function buildStorylinePlayerHtml(state = {}, cfg = {}, options = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${title}</title>
 <style>
+${customFontFaceCss}
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101820;font-family:Segoe UI,Arial,sans-serif;color:#0f172a}
 #stage{position:absolute;left:0;top:0;overflow:hidden;transform-origin:0 0;background:#fff}
@@ -389,6 +439,10 @@ export function buildScorm12Zip(state, lmsConfig = {}, options = {}) {
   const customWidgetFiles = [];
   const processedWidgetIds = new Set();
   const stateCopy = JSON.parse(JSON.stringify(state || {}));
+  const exportLang = getActivityContentLanguage(
+    getOrderedRuntimeActivities(stateCopy, options)[0] || stateCopy
+  );
+  const widgetTx = runtimeText(exportLang);
 
   let hasCustomWidget = false;
   (stateCopy.activities || []).forEach((activity) => {
@@ -428,17 +482,17 @@ export function buildScorm12Zip(state, lmsConfig = {}, options = {}) {
             } else if (widgetId === 'dice-v1') {
               const diceAssets = {
                 'index.html': `<!DOCTYPE html>
-<html lang="tr">
+<html lang="${escXml(exportLang)}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Zar Atma</title>
+<title>${escXml(widgetTx.diceTitle)}</title>
 <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 <div class="dice-container">
   <div class="dice-face" id="diceFace">?</div>
-  <button class="roll-button" id="rollButton">Zarı At</button>
+  <button class="roll-button" id="rollButton">${escXml(widgetTx.diceRollButton)}</button>
 </div>
 <script src="../../../widget-sdk/eicerik-widget-sdk.js"></script>
 <script src="widget.js"></script>
@@ -509,7 +563,12 @@ body {
 .roll-button:active {
   transform: translateY(1px);
 }`,
-                'manifest.json': `{"id":"dice-v1","name":"Zar Atma","version":"1.0.0","entry":"index.html"}`,
+                'manifest.json': JSON.stringify({
+                  id: 'dice-v1',
+                  name: widgetTx.diceTitle,
+                  version: '1.0.0',
+                  entry: 'index.html',
+                }),
                 'widget.js': `(function() {
   'use strict';
 
@@ -573,11 +632,11 @@ body {
             } else if (widgetId === 'bird-flight-v1') {
               const birdAssets = {
                 'index.html': `<!DOCTYPE html>
-<html lang="tr">
+<html lang="${escXml(exportLang)}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Kuş Uçuş Animasyonu</title>
+<title>${escXml(widgetTx.birdTitle)}</title>
 <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -588,7 +647,7 @@ body {
     <div class="body"></div>
   </div>
   <div class="ground"></div>
-  <div class="status" id="status">Hazır</div>
+  <div class="status" id="status">${escXml(widgetTx.birdReady)}</div>
 </div>
 <script src="../../../widget-sdk/eicerik-widget-sdk.js"></script>
 <script src="widget.js"></script>
@@ -689,7 +748,12 @@ body {
   min-width: 120px;
   text-align: center;
 }`,
-                'manifest.json': `{"id":"bird-flight-v1","name":"Kuş Uçuş Animasyonu","version":"1.0.0","entry":"index.html"}`,
+                'manifest.json': JSON.stringify({
+                  id: 'bird-flight-v1',
+                  name: widgetTx.birdTitle,
+                  version: '1.0.0',
+                  entry: 'index.html',
+                }),
                 'widget.js': `(function() {
   'use strict';
 
@@ -726,7 +790,7 @@ body {
     var current = 0;
     var isUp = false;
 
-    setStatus('Uçuş başladı: 0 / ' + flapCount);
+    setStatus(${JSON.stringify(widgetTx.birdStartedPrefix)} + ': 0 / ' + flapCount);
 
     if (bird) {
       bird.style.bottom = '140px';
@@ -737,7 +801,7 @@ body {
       isUp = !isUp;
       flapWings(isUp);
 
-      setStatus('Kanat çırpma: ' + current + ' / ' + flapCount);
+      setStatus(${JSON.stringify(widgetTx.birdFlapPrefix)} + ': ' + current + ' / ' + flapCount);
 
       EicerikWidget.emit('flapComplete', {
         current: current,
@@ -755,7 +819,7 @@ body {
         if (bird) {
           bird.style.bottom = '90px';
         }
-        setStatus('Uçuş tamamlandı');
+        setStatus(${JSON.stringify(widgetTx.birdComplete)});
         EicerikWidget.emit('flightComplete', {
           flapCount: flapCount
         });
@@ -768,7 +832,7 @@ body {
   EicerikWidget.onCommand('reset', function() {
     if (bird) bird.style.bottom = '90px';
     flapWings(false);
-    setStatus('Hazır');
+    setStatus(${JSON.stringify(widgetTx.birdReady)});
   });
 })();`
               };

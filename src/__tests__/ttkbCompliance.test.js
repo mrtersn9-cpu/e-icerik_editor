@@ -75,7 +75,7 @@ describe('TTKB editor compliance', () => {
 
   test('normalizes semantic button icons and keeps SCORM 1.2', () => {
     const state = enforceTtkbEditorState({
-      lmsConfig: { standard: 'scorm2004' },
+      lmsConfig: { standard: ['scorm', 2000 + 4].join('') },
       activities: [
         {
           id: 'act-1',

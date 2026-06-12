@@ -7,10 +7,10 @@ export const TYPED_ACTIVITY_PLAYER_STYLE = `
 .typed-entry{width:min(460px,100%);text-align:left}
 .typed-blank:focus,.typed-entry:focus,select:focus,.typed-btn:focus{outline:3px solid #06b6d4;outline-offset:2px}
 .typed-actions{display:flex;gap:16px;align-items:center;margin-top:28px;flex-wrap:wrap}
-.typed-btn{height:52px;min-width:150px;padding:0 22px;border:0;border-radius:10px;background:#1d4ed8;color:#fff;font:inherit;font-weight:800;white-space:nowrap;cursor:pointer;transition:transform 0.18s cubic-bezier(0.2, 0.82, 0.2, 1), box-shadow 0.18s cubic-bezier(0.2, 0.82, 0.2, 1)}
+.typed-btn{height:52px;min-width:150px;padding:0 22px;border:0;border-radius:10px;background:#1d4ed8;color:var(--typed-button-text-color,#fff);font-family:var(--typed-button-font-family,inherit);font-size:var(--typed-button-font-size,inherit);font-weight:var(--typed-button-font-weight,800);white-space:nowrap;cursor:pointer;transition:transform 0.18s cubic-bezier(0.2, 0.82, 0.2, 1), box-shadow 0.18s cubic-bezier(0.2, 0.82, 0.2, 1)}
 .typed-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(29,78,216,0.22)}
 .typed-btn:active{transform:translateY(1px)}
-.typed-btn.secondary{background:#fff;color:#1e293b;border:2px solid #cbd5e1}
+.typed-btn.secondary{background:#fff;color:var(--typed-button-secondary-text-color,#1e293b);border:2px solid #cbd5e1}
 .typed-btn.secondary:hover{background:#f8fafc;box-shadow:0 8px 20px rgba(30,41,59,0.08)}
 .typed-feedback{display:inline-flex;align-items:center;min-height:52px;margin-top:22px;padding:10px 18px;border-radius:10px;font-weight:800;font-size:clamp(12px, 1.8vmin, 18px)}
 .typed-feedback.correct{background:#dcfce7;color:#166534}
@@ -96,6 +96,34 @@ function typedEl(tag, className, text) {
   if (className) node.className = className;
   if (text != null) node.textContent = String(text);
   return node;
+}
+function typedCleanCssText(value) {
+  var safe = String(value || "").trim();
+  return safe && !/[;{}<>]/.test(safe) ? safe : "";
+}
+function typedCleanCssColor(value) {
+  var safe = typedCleanCssText(value);
+  if (!safe) return "";
+  if (/^#[0-9a-fA-F]{3,8}$/.test(safe)) return safe;
+  return "";
+}
+function typedApplyButtonTypography(root, current) {
+  if (!root || !current) return;
+  var color = typedCleanCssColor(current.readyButtonTextColor);
+  var family = typedCleanCssText(current.readyButtonFontFamily);
+  var size = Number(current.readyButtonFontSize);
+  var weight = Number(current.readyButtonFontWeight);
+  if (color) {
+    root.style.setProperty("--typed-button-text-color", color);
+    root.style.setProperty("--typed-button-secondary-text-color", color);
+  }
+  if (family) root.style.setProperty("--typed-button-font-family", family);
+  if (Number.isFinite(size) && size >= 10 && size <= 32) {
+    root.style.setProperty("--typed-button-font-size", Math.round(size) + "px");
+  }
+  if (Number.isFinite(weight) && weight >= 400 && weight <= 950) {
+    root.style.setProperty("--typed-button-font-weight", String(Math.round(weight / 50) * 50));
+  }
 }
 function typedStore(key, fallback) {
   if (state[key] == null) state[key] = fallback;
@@ -1130,6 +1158,7 @@ function renderTypedActivity(current) {
   stage.innerHTML = "";
   stage.style.background = current.backgroundColor || "#fff";
   const root = typedEl("main", "typed-activity");
+  typedApplyButtonTypography(root, current);
   root.appendChild(typedEl("h1", "typed-title", current.activityName || "Etkinlik"));
   if (current.type === "fill-blank") typedRenderFillBlank(root, current);
   else if (current.type === "mixed") typedRenderMixed(root, current);

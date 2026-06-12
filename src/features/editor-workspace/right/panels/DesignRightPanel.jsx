@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import FontPicker from '../../../../components/ribbon/FontPicker';
 import {
   ANSWER_LAYER_STYLE_PRESETS,
   BUTTON_PACKAGE_MOTION_PRESETS,
@@ -25,6 +26,7 @@ import {
   EmptyHint,
   FieldLabel,
   NativeSelect,
+  NumberInput,
   PanelCard,
   PanelShell,
   PanelTabs,
@@ -50,6 +52,21 @@ const motionLabels = {
 };
 
 const gradeFilters = [{ id: 'all', label: 'Tümü', color: '#64748b' }, ...GRADE_GROUPS];
+const buttonFontWeights = [
+  { value: '', label: 'Temaya bırak' },
+  { value: '500', label: '500 Orta' },
+  { value: '600', label: '600 Yarı kalın' },
+  { value: '700', label: '700 Kalın' },
+  { value: '800', label: '800 Ekstra' },
+  { value: '900', label: '900 Siyah' },
+  { value: '950', label: '950 Yoğun' },
+];
+
+const contentLanguageHints = {
+  tr: 'Hazır butonlar, tanıtım ekranları, menü metinleri ve otomatik cevap katmanları seçilen dile göre üretilir.',
+  en: 'Ready buttons, intro screens, menu texts and automatic answer layers are generated in the selected language.',
+  de: 'Fertige Buttons, Introseiten, Menütexte und automatische Antwort-Layer werden in der ausgewählten Sprache erzeugt.',
+};
 
 function extractHexColors(...values) {
   return values
@@ -250,6 +267,12 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
     ];
   const currentContentLanguage =
     controller.currentContentLanguage || getActivityContentLanguage(activity);
+  const contentLanguageHint =
+    contentLanguageHints[currentContentLanguage] || contentLanguageHints.tr;
+  const hasReadyButtonFontOverride =
+    !!activity.readyButtonFontFamily ||
+    !!activity.readyButtonFontSize ||
+    !!activity.readyButtonFontWeight;
 
   const patchActivity = (patch) => commands.patchActivity?.(patch);
 
@@ -264,16 +287,35 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
     controller.onUpdateActivity?.(applyGeneratedThemeToActivity(activity, presetId));
   };
 
-  // Tüm hazır butonların iç yazı rengini ayarla; boş = temadan gelen varsayılan.
+  // Tüm hazır butonların yazı sistemini ayarla; boş = temadan gelen varsayılan.
   // Tek kaynak controller komutu (ribbon ile ortak); eski projeler için yerel fallback.
-  const applyReadyButtonTextColor = (color) => {
+  const applyReadyButtonTypography = (patch = {}) => {
     if (!activity) return;
-    if (commands.applyReadyButtonTextColor) {
-      commands.applyReadyButtonTextColor(color);
+    if (commands.applyReadyButtonTypography) {
+      commands.applyReadyButtonTypography(patch);
       return;
     }
-    const withColor = { ...activity, readyButtonTextColor: color || '' };
-    controller.onUpdateActivity?.(applyGeneratedThemeToActivity(withColor, currentAnswerPresetId));
+    const nextActivity = { ...activity };
+    if (Object.prototype.hasOwnProperty.call(patch, 'textColor')) {
+      nextActivity.readyButtonTextColor = patch.textColor || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'fontFamily')) {
+      nextActivity.readyButtonFontFamily = patch.fontFamily || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'fontSize')) {
+      const value = Number(patch.fontSize);
+      nextActivity.readyButtonFontSize = Number.isFinite(value) && value > 0 ? Math.round(value) : '';
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'fontWeight')) {
+      const value = Number(patch.fontWeight);
+      nextActivity.readyButtonFontWeight =
+        Number.isFinite(value) && value > 0 ? Math.round(value / 50) * 50 : '';
+    }
+    controller.onUpdateActivity?.(applyGeneratedThemeToActivity(nextActivity, currentAnswerPresetId));
+  };
+
+  const applyReadyButtonTextColor = (color) => {
+    applyReadyButtonTypography({ textColor: color || '' });
   };
 
   const generateAnswerObjects = () => {
@@ -399,10 +441,7 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
                   onChange={applyContentLanguage}
                 />
               </FieldLabel>
-              <EmptyHint>
-                Hazır butonlar, tanıtım ekranları, menü metinleri ve otomatik cevap katmanları
-                seçilen dile göre üretilir.
-              </EmptyHint>
+              <EmptyHint>{contentLanguageHint}</EmptyHint>
             </div>
           </PanelCard>
 
@@ -464,7 +503,7 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
 
       {activeTab === 'buttons' && (
         <>
-          <PanelCard title="Buton yazı rengi" collapsible>
+          <PanelCard title="Buton yazısı" collapsible allowOverflow>
             <div style={{ display: 'grid', gap: 8 }}>
               {/* Hızlı renkler: doğrudan uygular — color input'un "değer değişmedi"
                   tuzağına (boşken beyaz görünüp beyaz seçilememesi) takılmaz. */}
@@ -531,6 +570,63 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
                     }}
                   >
                     Temaya bırak
+                  </button>
+                ) : null}
+              </div>
+              <div style={{ display: 'grid', gap: 7 }}>
+                <FieldLabel>
+                  Toplu font ailesi
+                  <FontPicker
+                    value={activity.readyButtonFontFamily || ''}
+                    onChange={(font) => applyReadyButtonTypography({ fontFamily: font })}
+                    emptyLabel="Temaya bırak"
+                    width="100%"
+                  />
+                </FieldLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 7 }}>
+                  <FieldLabel>
+                    Toplu punto
+                    <NumberInput
+                      value={activity.readyButtonFontSize || 15}
+                      min={10}
+                      max={32}
+                      step={1}
+                      title="Hazır buton punto değeri"
+                      onChange={(value) => applyReadyButtonTypography({ fontSize: value })}
+                    />
+                  </FieldLabel>
+                  <FieldLabel>
+                    Toplu kalınlık
+                    <NativeSelect
+                      value={String(activity.readyButtonFontWeight || '')}
+                      options={buttonFontWeights}
+                      onChange={(value) => applyReadyButtonTypography({ fontWeight: value })}
+                    />
+                  </FieldLabel>
+                </div>
+                {hasReadyButtonFontOverride ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      applyReadyButtonTypography({
+                        fontFamily: '',
+                        fontSize: '',
+                        fontWeight: '',
+                      })
+                    }
+                    aria-label="Buton font ayarlarını temaya bırak"
+                    style={{
+                      justifySelf: 'start',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#2563eb',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    Fontu temaya bırak
                   </button>
                 ) : null}
               </div>

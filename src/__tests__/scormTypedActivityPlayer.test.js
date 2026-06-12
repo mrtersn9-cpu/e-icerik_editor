@@ -61,4 +61,44 @@ describe('SCORM typed activity player', () => {
 
     expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
   });
+
+  test('carries ready button typography into typed SCORM player controls', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'fill-typography',
+      activities: [
+        {
+          id: 'fill-typography',
+          name: 'Buton Font Testi',
+          type: 'fill-blank',
+          readyButtonTextColor: '#fde047',
+          readyButtonFontFamily: 'Verdana',
+          readyButtonFontSize: 18,
+          readyButtonFontWeight: 700,
+          fillBlankSentence: 'Türkiye başkenti ___ şehridir.',
+          fillBlankAnswers: [{ id: 'blank-0', acceptedValues: ['Ankara'] }],
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+
+    expect(html).toContain('"readyButtonTextColor":"#fde047"');
+    expect(html).toContain('"readyButtonFontFamily":"Verdana"');
+    expect(html).toContain('"readyButtonFontSize":18');
+    expect(html).toContain('"readyButtonFontWeight":700');
+
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    const root = document.querySelector('.typed-activity');
+    const button = document.querySelector('.typed-actions .typed-btn');
+    expect(root).toBeTruthy();
+    expect(button).toBeTruthy();
+    expect(root.style.getPropertyValue('--typed-button-text-color')).toBe('#fde047');
+    expect(root.style.getPropertyValue('--typed-button-secondary-text-color')).toBe('#fde047');
+    expect(root.style.getPropertyValue('--typed-button-font-family')).toBe('Verdana');
+    expect(root.style.getPropertyValue('--typed-button-font-size')).toBe('18px');
+    expect(root.style.getPropertyValue('--typed-button-font-weight')).toBe('700');
+  });
 });

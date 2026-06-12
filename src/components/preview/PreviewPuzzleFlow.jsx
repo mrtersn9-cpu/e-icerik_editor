@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { getReadyButtonTextStylePatch } from '../../logic/buttonStyling';
 import { evaluateStorylineRuntimePuzzle } from '../../utils/storylineRuntimeEngine';
 
 const TURKISH_KEYBOARD = [
@@ -7,6 +8,28 @@ const TURKISH_KEYBOARD = [
   ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Ş', 'İ'],
   ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'Ö', 'Ç']
 ];
+
+function previewPuzzleButtonTextStyle(activity) {
+  return {
+    ...getReadyButtonTextStylePatch(activity),
+    whiteSpace: 'nowrap',
+  };
+}
+
+function previewPuzzleActionButtonStyle(activity, variant = 'primary', extra = {}) {
+  const primary = variant === 'primary';
+  return {
+    padding: '8px 18px',
+    borderRadius: 8,
+    border: primary ? 'none' : '1px solid #cbd5e1',
+    background: primary ? '#3b82f6' : '#fff',
+    color: primary ? '#fff' : '#334155',
+    cursor: 'pointer',
+    fontWeight: primary ? 800 : 700,
+    ...extra,
+    ...previewPuzzleButtonTextStyle(activity),
+  };
+}
 
 function CrosswordGrid({ activity, onAnswer }) {
   const grid = activity.puzzleGrid;
@@ -546,7 +569,7 @@ function CrosswordGrid({ activity, onAnswer }) {
           </div>
         )}
       </div>
-      <button onClick={checkAnswer} style={{ padding: '8px 18px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 800 }}>
+      <button onClick={checkAnswer} style={previewPuzzleActionButtonStyle(activity, 'primary')}>
         Kontrol Et
       </button>
 
@@ -700,19 +723,15 @@ function CrosswordGrid({ activity, onAnswer }) {
               <button
                 onClick={handleModalCheck}
                 disabled={questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed'}
-                style={{
+                style={previewPuzzleActionButtonStyle(activity, 'primary', {
                   flex: '2 1 140px',
                   height: 38,
                   borderRadius: 10,
-                  border: 'none',
                   background: '#4f46e5',
-                  color: '#fff',
-                  fontWeight: 800,
                   cursor: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 'not-allowed' : 'pointer',
                   fontSize: 12,
-                  whiteSpace: 'nowrap',
                   opacity: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 0.5 : 1
-                }}
+                })}
               >
                 ✓ Kontrol Et
               </button>
@@ -720,37 +739,31 @@ function CrosswordGrid({ activity, onAnswer }) {
                 <button
                   onClick={handleRevealSolution}
                   disabled={questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed'}
-                  style={{
+                  style={previewPuzzleActionButtonStyle(activity, 'secondary', {
                     flex: '1 1 110px',
                     height: 38,
                     borderRadius: 10,
                     border: '1px solid #d97706',
                     background: '#fef3c7',
                     color: '#b45309',
-                    fontWeight: 800,
                     cursor: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 'not-allowed' : 'pointer',
                     fontSize: 12,
-                    whiteSpace: 'nowrap',
                     opacity: (questionStatus[activeQuestion.id] === 'correct' || questionStatus[activeQuestion.id] === 'revealed' || modalFeedback?.type === 'revealed') ? 0.5 : 1
-                  }}
+                  })}
                 >
                   ✎ Çözümü Göster
                 </button>
               )}
               <button
                 onClick={() => setActiveQuestion(null)}
-                style={{
+                style={previewPuzzleActionButtonStyle(activity, 'secondary', {
                   flex: '1 1 70px',
                   height: 38,
                   borderRadius: 10,
-                  border: '1px solid #cbd5e1',
-                  background: '#fff',
                   color: '#475569',
                   fontWeight: 700,
-                  cursor: 'pointer',
                   fontSize: 12,
-                  whiteSpace: 'nowrap'
-                }}
+                })}
               >
                 Kapat
               </button>
@@ -987,7 +1000,7 @@ function SudokuGrid({ activity, onAnswer }) {
           })
         )}
       </div>
-      <button onClick={checkAnswer} style={{ marginTop: 8, padding: '6px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+      <button onClick={checkAnswer} style={previewPuzzleActionButtonStyle(activity, 'primary', { marginTop: 8, padding: '6px 16px', borderRadius: 6 })}>
         Kontrol Et
       </button>
     </div>
@@ -1078,16 +1091,11 @@ function MazeGrid({ activity, onAnswer }) {
             key={control.label}
             type="button"
             onClick={() => move(control.dr, control.dc)}
-            style={{
+            style={previewPuzzleActionButtonStyle(activity, 'secondary', {
               minWidth: 66,
               height: 32,
               borderRadius: 6,
-              border: '1px solid #cbd5e1',
-              background: '#fff',
-              color: '#334155',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
+            })}
           >
             {control.label}
           </button>

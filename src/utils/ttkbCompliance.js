@@ -8,6 +8,7 @@ import {
 import {
   getButtonMotionProfile,
   getButtonPackageMotion,
+  getReadyButtonStyleOptions,
   restyleAllButtonsForPackage,
 } from '../logic/buttonStyling';
 import { normalizeSlide } from '../logic/slideNormalization';
@@ -470,7 +471,11 @@ export function restyleActivityButtonsForPackage(
     getButtonPackageMotion(pkgId);
   const currentSlideId = committed.currentSlideId || committed.slides?.[0]?.id || '';
   const nextSlides = getActivitySlides(committed).map((slide, index) => {
-    const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId).map((object) =>
+    const nextObjects = restyleAllButtonsForPackage(
+      slide.objects || [],
+      pkgId,
+      getReadyButtonStyleOptions(committed)
+    ).map((object) =>
       object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
     );
     return normalizeSlide(

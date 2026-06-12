@@ -17,7 +17,7 @@ import {
   getPresetButtonShapeStyle,
   getLayerActionButtonStyle,
 } from './buttonStyling';
-import { contentText, getActivityContentLanguage } from './contentLanguage';
+import { contentText } from './contentLanguage';
 import { syncTimelineWithObjects } from './timeline';
 
 const DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID = ANSWER_LAYER_STYLE_PRESETS[0]?.id || 'aurora-glass';
@@ -605,7 +605,7 @@ function buildButtonIntroSceneTemplateObjects(
       ? createTemplateTrigger(1, introStartIconButton.id, '__next__', tx.start)
       : null,
     introCloseButton
-      ? createTemplateTrigger(2, introCloseButton.id, '__next__', 'Tanıtımı kapat')
+      ? createTemplateTrigger(2, introCloseButton.id, '__next__', tx.introCloseTrigger)
       : null,
   ].filter(Boolean);
 
@@ -888,15 +888,9 @@ function buildLaunchPageSceneTemplate(
       createLinkedButtonIcon(button, iconOptions.icon || '▶', 'start', iconOptions)
     );
   };
-  const contentLanguage = getActivityContentLanguage(activity);
   const introLabel = tx.activityIntro;
   const startLabel = tx.start;
-  const helperText =
-    {
-      tr: 'Tanıtımı inceleyebilir ya da doğrudan soru akışına geçebilirsin.',
-      en: 'Review the intro or jump directly into the questions.',
-      de: 'Prüfe die Einführung oder springe direkt zu den Fragen.',
-    }[contentLanguage] || 'Tanıtımı inceleyebilir ya da doğrudan soru akışına geçebilirsin.';
+  const helperText = tx.launchHelper;
   const encodeSvgAsset = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
   const svgGridAsset = encodeSvgAsset(
     `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><path d="M0 0H96V96H0Z" fill="none"/><path d="M0 24H96M0 48H96M0 72H96M24 0V96M48 0V96M72 0V96" stroke="rgba(255,255,255,.18)" stroke-width="2"/><path d="M0 0H96V96H0Z" stroke="rgba(255,255,255,.14)" stroke-width="2" fill="none"/></svg>`
@@ -1366,7 +1360,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08)',
       },
     });
-    pushText('Başlamadan önce bir yol seç', x + u(160), y + u(92, 'y'), w - u(320), u(46, 'y'), {
+    pushText(tx.launchChoiceTitle, x + u(160), y + u(92, 'y'), w - u(320), u(46, 'y'), {
       color: titleColor,
       fontSize: u(30, 'y'),
       fontWeight: 900,
@@ -1419,7 +1413,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: hoverShadow,
       },
     });
-    pushText('ETKİNLİK GİRİŞİ', x + u(110), y + u(84, 'y'), w - u(220), u(46, 'y'), {
+    pushText(tx.launchEntryTitle, x + u(110), y + u(84, 'y'), w - u(220), u(46, 'y'), {
       color: accentText,
       fontSize: u(34, 'y'),
       fontWeight: 900,
@@ -1461,7 +1455,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: `${surfaceShadow}, ${insetShadow}`,
       },
     });
-    pushText('Başlangıç Paneli', x + u(80), y + u(72, 'y'), u(420), u(48, 'y'), {
+    pushText(tx.launchPanelTitle, x + u(80), y + u(72, 'y'), u(420), u(48, 'y'), {
       color: titleColor,
       fontSize: u(34, 'y'),
       fontWeight: 900,
@@ -1548,7 +1542,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: 'none',
       },
     });
-    pushText('Sahne hazır', x + u(160), y + u(118, 'y'), w - u(320), u(54, 'y'), {
+    pushText(tx.launchReadyTitle, x + u(160), y + u(118, 'y'), w - u(320), u(54, 'y'), {
       color: titleColor,
       fontSize: u(38, 'y'),
       fontWeight: 900,
@@ -1667,7 +1661,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: `${surfaceShadow}, ${insetShadow}`,
       },
     });
-    pushText('Seç ve başla', x + u(90), y + u(74, 'y'), w - u(180), u(48, 'y'), {
+    pushText(tx.launchPickTitle, x + u(90), y + u(74, 'y'), w - u(180), u(48, 'y'), {
       color: titleColor,
       fontSize: u(36, 'y'),
       fontWeight: 900,
@@ -1728,7 +1722,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: 'none',
       },
     });
-    pushText('Etkinlik Kontrolü', x + u(64), y + u(22, 'y'), u(500), u(38, 'y'), {
+    pushText(tx.launchControlTitle, x + u(64), y + u(22, 'y'), u(500), u(38, 'y'), {
       color: titleColor,
       fontSize: u(30, 'y'),
       fontWeight: 900,
@@ -1785,7 +1779,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: '0 14px 28px rgba(15,23,42,.1)',
       },
     });
-    pushText('Komut Seçimi', x + u(105), y + u(92, 'y'), u(460), u(44, 'y'), {
+    pushText(tx.launchCommandTitle, x + u(105), y + u(92, 'y'), u(460), u(44, 'y'), {
       color: titleColor,
       fontSize: u(34, 'y'),
       fontWeight: 900,
@@ -1851,7 +1845,7 @@ function buildLaunchPageSceneTemplate(
         boxShadow: 'none',
       },
     });
-    pushText('Hazır mısın?', x + u(120), y + u(110, 'y'), w - u(240), u(58, 'y'), {
+    pushText(tx.launchReadyQuestionTitle, x + u(120), y + u(110, 'y'), w - u(240), u(58, 'y'), {
       color: titleColor,
       fontSize: u(40, 'y'),
       fontWeight: 900,
@@ -1952,7 +1946,7 @@ function buildLaunchPageSceneTemplate(
     ...introButtonTargets
       .filter(Boolean)
       .map((target, index) =>
-        createTemplateTrigger(index, target.id, '__prev__', 'Etkinlik tanıtımına git')
+        createTemplateTrigger(index, target.id, '__prev__', tx.introTriggerName)
       ),
     ...startButtonTargets
       .filter(Boolean)
@@ -1961,7 +1955,7 @@ function buildLaunchPageSceneTemplate(
           index + introButtonTargets.length,
           target.id,
           '__next__',
-          'Etkinliği başlat'
+          tx.startTriggerName
         )
       ),
   ];
@@ -2004,11 +1998,15 @@ function isButtonIntroInteractiveSlot(item = {}) {
   const slotId = String(item.sceneTemplateSlotId || '');
   const label = String(item.label || '').trim();
   const normalizedLabel = label.toLocaleUpperCase('tr-TR');
+  const labelKey = normalizeRuntimeActionLabel(label);
   return (
     slotId.endsWith(':start-button') ||
     slotId.endsWith(':start-icon') ||
     slotId.endsWith(':close-button') ||
     normalizedLabel.includes('ETKİNLİĞİ BAŞLAT') ||
+    labelKey.includes('startactivity') ||
+    labelKey.includes('aktivitatstarten') ||
+    labelKey.includes('aktivittstarten') ||
     ['×', 'X', '✕', '✖'].includes(label)
   );
 }
@@ -2018,12 +2016,16 @@ function isLaunchIntroControl(item = {}) {
   const label = String(item.label || '')
     .trim()
     .toLocaleUpperCase('tr-TR');
+  const labelKey = normalizeRuntimeActionLabel(item.label || '');
   return (
     slotId.endsWith(':intro-button') ||
     slotId.endsWith(':intro-icon') ||
     slotId.endsWith(':intro-icon-bg') ||
     slotId.endsWith(':intro-icon-text') ||
-    label.includes('ETKİNLİK TANITIMI')
+    label.includes('ETKİNLİK TANITIMI') ||
+    labelKey.includes('activityintro') ||
+    labelKey.includes('aktivitatsintro') ||
+    labelKey.includes('aktivittsintro')
   );
 }
 
@@ -2032,12 +2034,16 @@ function isLaunchStartControl(item = {}) {
   const label = String(item.label || '')
     .trim()
     .toLocaleUpperCase('tr-TR');
+  const labelKey = normalizeRuntimeActionLabel(item.label || '');
   return (
     slotId.endsWith(':start-button') ||
     slotId.endsWith(':start-icon') ||
     slotId.endsWith(':start-icon-bg') ||
     slotId.endsWith(':start-icon-text') ||
-    label.includes('ETKİNLİĞİ BAŞLAT')
+    label.includes('ETKİNLİĞİ BAŞLAT') ||
+    labelKey.includes('startactivity') ||
+    labelKey.includes('aktivitatstarten') ||
+    labelKey.includes('aktivittstarten')
   );
 }
 

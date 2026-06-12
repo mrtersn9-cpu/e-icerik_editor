@@ -3,10 +3,11 @@ import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine.js';
 import { getSharedStorylineRendererRuntimeApi } from '../utils/storylineRenderer';
 
-function loadRuntimeRenderer() {
+function loadRuntimeRenderer(i18n = null) {
   // Runtime bundles are generated as script strings; this test evaluates that generated runtime API.
   // eslint-disable-next-line no-new-func
   return new Function(`
+    ${i18n ? `const PAYLOAD = ${JSON.stringify({ i18n })};` : ''}
     ${STORYLINE_RUNTIME_CORE_SCRIPT}
     ${STORYLINE_RUNTIME_ENGINE_SCRIPT}
     ${STORYLINE_RENDERER_CORE_SCRIPT}
@@ -56,6 +57,68 @@ describe('SCORM storyline renderer runtime ids', () => {
     expect(stage.querySelectorAll('.obj').length).toBe(3);
     expect(stage.innerHTML).toContain('data-object-type="draggable"');
     expect(stage.innerHTML).toContain('data-selection-overlay="true"');
+  });
+
+  test('writes object font family into runtime style', () => {
+    const renderer = loadRuntimeRenderer();
+    const html = renderer.storylineRendererObjectHtml(
+      {
+        id: 'button-1',
+        type: 'button',
+        label: 'Kontrol Et',
+        x: 10,
+        y: 20,
+        width: 180,
+        height: 44,
+        style: {
+          fontFamily: 'Open Sans',
+          fontSize: 18,
+          fontWeight: 800,
+        },
+      },
+      {
+        state: {
+          activeLayerId: 'base',
+          hidden: {},
+          objectStates: {},
+          variables: {},
+        },
+      }
+    );
+
+    expect(html).toContain('font-family:&quot;Open Sans&quot;, sans-serif');
+  });
+
+  test('uses production-language sound fallback labels in renderer runtime', () => {
+    const renderer = loadRuntimeRenderer({
+      soundOnLabel: 'Sound On',
+      soundOffLabel: 'Sound Off',
+    });
+
+    const html = renderer.storylineRendererObjectHtml(
+      {
+        id: 'mute-1',
+        type: 'button',
+        label: '',
+        runtimeAction: 'toggle-mute',
+        x: 10,
+        y: 20,
+        width: 180,
+        height: 44,
+      },
+      {
+        state: {
+          activeLayerId: 'base',
+          hidden: {},
+          objectStates: {},
+          variables: {},
+          muted: false,
+        },
+      }
+    );
+
+    expect(html).toContain('Sound Off');
+    expect(html).not.toContain('SESİ KAPAT');
   });
 
   test('renders clone nodes for multi-target (reusable) drag placements', () => {

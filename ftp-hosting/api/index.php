@@ -1782,7 +1782,6 @@ function build_scorm_manifest(array $project, array $assetFiles = [], ?array $st
 {
     $state = normalize_scorm_state($state ?? ($project['state'] ?? []));
     $lmsConfig = is_array($state['lmsConfig'] ?? null) ? $state['lmsConfig'] : [];
-    $standard = normalize_scorm_standard((string) ($lmsConfig['standard'] ?? 'scorm12'));
     $identifier = 'MANIFEST-' . scorm_slug((string) ($project['id'] ?? 'project'));
     $resourceId = 'RES-' . substr(sha1((string) ($project['id'] ?? 'project')), 0, 8);
     $organizationId = 'ORG-' . substr(sha1((string) ($project['name'] ?? 'project')), 0, 8);
@@ -1793,40 +1792,6 @@ function build_scorm_manifest(array $project, array $assetFiles = [], ?array $st
         static fn(string $file): string => '      <file href="' . xml_escape($file) . '"/>',
         $resourceFiles
     ));
-
-    if ($standard === 'scorm2004') {
-        return <<<XML
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest identifier="{$identifier}" version="{$version}"
-  xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"
-  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"
-  xmlns:adlseq="http://www.adlnet.org/xsd/adlseq_v1p3"
-  xmlns:imsss="http://www.imsglobal.org/xsd/imsss"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 imscp_v1p1.xsd
-  http://www.adlnet.org/xsd/adlcp_v1p3 adlcp_v1p3.xsd
-  http://www.adlnet.org/xsd/adlseq_v1p3 adlseq_v1p3.xsd
-  http://www.imsglobal.org/xsd/imsss imsss_v1p0.xsd">
-  <metadata>
-    <schema>ADL SCORM</schema>
-    <schemaversion>2004 4th Edition</schemaversion>
-  </metadata>
-  <organizations default="{$organizationId}">
-    <organization identifier="{$organizationId}">
-      <title>{$title}</title>
-      <item identifier="ITEM-1" identifierref="{$resourceId}">
-        <title>{$title}</title>
-      </item>
-    </organization>
-  </organizations>
-  <resources>
-    <resource identifier="{$resourceId}" type="webcontent" adlcp:scormType="sco" href="index.html">
-{$resourceEntries}
-    </resource>
-  </resources>
-</manifest>
-XML;
-    }
 
     return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1879,8 +1844,7 @@ function build_scorm_readme(array $project, ?array $state = null): string
 
 function normalize_scorm_standard(string $standard): string
 {
-    $normalized = strtolower(trim($standard));
-    return str_contains($normalized, '2004') ? 'scorm2004' : 'scorm12';
+    return 'scorm12';
 }
 
 function scorm_slug(string $value): string

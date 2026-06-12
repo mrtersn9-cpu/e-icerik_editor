@@ -23,6 +23,7 @@ import {
   getButtonPackageMotion,
   getButtonMotionProfile,
   getActivityButtonMotion,
+  getReadyButtonStyleOptions,
 } from './buttonStyling';
 import { getActivityDragDropDefaults } from './dragDrop';
 import { normalizeButtonPairLayoutForActivity } from './editorHelpers';
@@ -164,7 +165,11 @@ export function restyleActivityButtonsForPackage(
     getButtonPackageMotion(pkgId);
   const currentSlideId = committed.currentSlideId || committed.slides?.[0]?.id || '';
   const nextSlides = getActivitySlides(committed).map((slide, index) => {
-    const nextObjects = restyleAllButtonsForPackage(slide.objects || [], pkgId).map((object) =>
+    const nextObjects = restyleAllButtonsForPackage(
+      slide.objects || [],
+      pkgId,
+      getReadyButtonStyleOptions(committed)
+    ).map((object) =>
       object?.type === 'button' && motion ? { ...object, buttonMotion: { ...motion } } : object
     );
     return normalizeSlide(

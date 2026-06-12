@@ -16,9 +16,109 @@ import { normalizeLayerNameKey } from './factories';
 
 const DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID = ANSWER_LAYER_STYLE_PRESETS[0]?.id || 'aurora-glass';
 const SCENE_TEMPLATE_BUTTON_INTRO_ID = 'button-intro';
+const READY_BUTTON_FONT_SIZE_MIN = 10;
+const READY_BUTTON_FONT_SIZE_MAX = 32;
+const READY_BUTTON_FONT_WEIGHT_MIN = 400;
+const READY_BUTTON_FONT_WEIGHT_MAX = 950;
 
 function clampColorChannel(value) {
   return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+function normalizeReadyButtonFontSize(value) {
+  if (value === '' || value == null) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return clampNumber(Math.round(numeric), READY_BUTTON_FONT_SIZE_MIN, READY_BUTTON_FONT_SIZE_MAX);
+}
+function normalizeReadyButtonFontWeight(value) {
+  if (value === '' || value == null) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return clampNumber(
+    Math.round(numeric / 50) * 50,
+    READY_BUTTON_FONT_WEIGHT_MIN,
+    READY_BUTTON_FONT_WEIGHT_MAX
+  );
+}
+function normalizeReadyButtonStyleOptions(options = {}) {
+  return {
+    textColor: String(options.textColor || '').trim(),
+    fontFamily: String(options.fontFamily || '').trim(),
+    fontSize: normalizeReadyButtonFontSize(options.fontSize),
+    fontWeight: normalizeReadyButtonFontWeight(options.fontWeight),
+  };
+}
+function getReadyButtonStyleOptions(source = {}) {
+  return normalizeReadyButtonStyleOptions({
+    textColor: source.readyButtonTextColor ?? source.textColor ?? '',
+    fontFamily: source.readyButtonFontFamily ?? source.fontFamily ?? '',
+    fontSize: source.readyButtonFontSize ?? source.fontSize ?? '',
+    fontWeight: source.readyButtonFontWeight ?? source.fontWeight ?? '',
+  });
+}
+function clearReadyButtonTypographyFromObject(object = {}, options = {}) {
+  const normalized = normalizeReadyButtonStyleOptions(options);
+  const style = { ...(object.style || {}) };
+  const patch = {};
+
+  if (!normalized.fontFamily && object.readyButtonFontFamilyLocked) {
+    delete style.fontFamily;
+    patch.readyButtonFontFamilyLocked = false;
+  }
+  if (normalized.fontSize == null && object.readyButtonFontSizeLocked) {
+    delete style.fontSize;
+    patch.readyButtonFontSizeLocked = false;
+  }
+  if (normalized.fontWeight == null && object.readyButtonFontWeightLocked) {
+    delete style.fontWeight;
+    patch.readyButtonFontWeightLocked = false;
+  }
+
+  return { ...object, ...patch, style };
+}
+function applyReadyButtonBulkStyleToObject(object = {}, options = {}) {
+  const normalized = normalizeReadyButtonStyleOptions(options);
+  const cleared = clearReadyButtonTypographyFromObject(object, normalized);
+  const style = { ...(cleared.style || {}) };
+  const patch = {};
+
+  if (normalized.fontFamily) {
+    style.fontFamily = normalized.fontFamily;
+    patch.readyButtonFontFamilyLocked = true;
+  }
+  if (normalized.fontSize != null) {
+    style.fontSize = normalized.fontSize;
+    style.whiteSpace = 'nowrap';
+    patch.readyButtonFontSizeLocked = true;
+  }
+  if (normalized.fontWeight != null) {
+    style.fontWeight = normalized.fontWeight;
+    patch.readyButtonFontWeightLocked = true;
+  }
+
+  if (normalized.textColor) {
+    const userShadow = readyButtonTextShadowForColor(normalized.textColor);
+    style.color = normalized.textColor;
+    style.colorLocked = true;
+    if (userShadow) style.textShadow = userShadow;
+  } else {
+    style.colorLocked = false;
+  }
+
+  return { ...cleared, ...patch, style };
+}
+function getReadyButtonTextStylePatch(source = {}) {
+  const normalized = getReadyButtonStyleOptions(source);
+  return {
+    ...(normalized.textColor ? { color: normalized.textColor } : {}),
+    ...(normalized.fontFamily ? { fontFamily: normalized.fontFamily } : {}),
+    ...(normalized.fontSize != null ? { fontSize: normalized.fontSize } : {}),
+    ...(normalized.fontWeight != null ? { fontWeight: normalized.fontWeight } : {}),
+    ...(normalized.fontSize != null ? { whiteSpace: 'nowrap' } : {}),
+  };
 }
 function rgbToHex([r, g, b] = [0, 0, 0]) {
   return `#${[r, g, b].map((channel) => clampColorChannel(channel).toString(16).padStart(2, '0')).join('')}`;
@@ -703,10 +803,7 @@ function restyleReadyButtonsForPreset(
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
   const motion = stylePreset?.motion || {};
-  const textColor = String(options.textColor || '').trim();
-  // Kullanıcı rengiyle birlikte harf gölgesi de renge uyarlanır ("köşe rengi" sorunu):
-  // tema gölgesi tema rengine göre hesaplandığından override'da uyumsuz kalıyordu.
-  const userShadow = textColor ? readyButtonTextShadowForColor(textColor) : '';
+  const styleOptions = normalizeReadyButtonStyleOptions(options);
   const list = objects || [];
   const byId = new Map(list.map((item) => [item?.id, item]));
   return list.map((object) => {
@@ -725,24 +822,14 @@ function restyleReadyButtonsForPreset(
       // override'ı uygulanır — böylece "Buton yazı rengi" etkinlikteki TÜM butonların
       // yazı rengini değiştirir. colorLocked → normalize'daki TTKB kontrast düzeltmesi
       // bu rengi EZMESİN. Renk boşsa (Temaya bırak) kilit kaldırılır.
-      if (textColor) {
-        return {
-          ...object,
-          style: {
-            ...(object.style || {}),
-            color: textColor,
-            colorLocked: true,
-            ...(userShadow ? { textShadow: userShadow } : {}),
-          },
-        };
-      }
-      if (object.style?.colorLocked) {
-        return { ...object, style: { ...object.style, colorLocked: false } };
-      }
-      return object;
+      return applyReadyButtonBulkStyleToObject(object, styleOptions);
     }
     const playPausePatch = isPlayPauseReadyButton(object) ? getPlayPauseButtonPatch(object) : {};
-    const built = buildReadyButtonStyle(stylePreset, tone, { ...object, ...playPausePatch });
+    const prepared = clearReadyButtonTypographyFromObject(
+      { ...object, ...playPausePatch },
+      styleOptions
+    );
+    const built = buildReadyButtonStyle(stylePreset, tone, prepared);
     // Yuvarlak ikon dairelerinin (kare-ish) şeklini koru — yalnızca rengi güncelle.
     // Geniş etiket pill'leri yeni temanın köşe yarıçapını alır.
     const prevRadius = Number(object.style?.borderRadius);
@@ -750,22 +837,20 @@ function restyleReadyButtonsForPreset(
     const h = Number(object.height) || 0;
     const keepRound =
       Number.isFinite(prevRadius) && prevRadius >= 100 && w > 0 && h > 0 && Math.abs(w - h) <= h * 0.6;
-    return {
-      ...object,
-      readyButtonTone: tone,
-      ...playPausePatch,
-      style: {
-        ...(object.style || {}),
-        ...built,
-        ...(keepRound ? { borderRadius: prevRadius } : {}),
-        // textColor varsa kullanıcı rengini ve renge uyumlu gölgeyi kilitle (TTKB ezmesin);
-        // yoksa kilidi kaldır ki tema rengine/gölgesine (built.color/textShadow) dönebilsin.
-        ...(textColor
-          ? { color: textColor, colorLocked: true, ...(userShadow ? { textShadow: userShadow } : {}) }
-          : { colorLocked: false }),
+    return applyReadyButtonBulkStyleToObject(
+      {
+        ...prepared,
+        readyButtonTone: tone,
+        ...playPausePatch,
+        style: {
+          ...(prepared.style || {}),
+          ...built,
+          ...(keepRound ? { borderRadius: prevRadius } : {}),
+        },
+        ...(motion ? { buttonMotion: { ...motion } } : {}),
       },
-      ...(motion ? { buttonMotion: { ...motion } } : {}),
-    };
+      styleOptions
+    );
   });
 }
 
@@ -841,8 +926,7 @@ function restyleAnswerLayerObjectsForPreset(
   presetId = DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
   options = {}
 ) {
-  const buttonTextColor = String(options.textColor || '').trim();
-  const userButtonShadow = buttonTextColor ? readyButtonTextShadowForColor(buttonTextColor) : '';
+  const styleOptions = normalizeReadyButtonStyleOptions(options);
   const preset =
     getAnswerLayerStylePresetById(presetId) ||
     getAnswerLayerStylePresetById(DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID);
@@ -908,27 +992,21 @@ function restyleAnswerLayerObjectsForPreset(
       const stripped = raw.replace(/^[^\p{L}\p{N}]+/u, '').trim() || 'ÇÖZÜMÜ GÖSTER';
       return { label: `✎  ${stripped}`, text: `✎  ${stripped}` };
     })();
-    return {
-      ...object,
-      ...solutionLabel,
-      readyButtonTone: tone,
-      buttonMotion: { ...motion, ...(object.buttonMotion || {}) },
-      style: {
-        ...(object.style || {}),
-        ...layerButtonStyle,
-        fontWeight: 900,
-        textAlign: 'center',
-        // Kullanıcı yazı rengi: renge uyumlu gölgeyle birlikte kilitle (TTKB kontrast
-        // ezmesin); boşsa kilidi kaldır.
-        ...(buttonTextColor
-          ? {
-              color: buttonTextColor,
-              colorLocked: true,
-              ...(userButtonShadow ? { textShadow: userButtonShadow } : {}),
-            }
-          : { colorLocked: false }),
+    return applyReadyButtonBulkStyleToObject(
+      {
+        ...object,
+        ...solutionLabel,
+        readyButtonTone: tone,
+        buttonMotion: { ...motion, ...(object.buttonMotion || {}) },
+        style: {
+          ...(object.style || {}),
+          ...layerButtonStyle,
+          fontWeight: 900,
+          textAlign: 'center',
+        },
       },
-    };
+      styleOptions
+    );
   };
 
   return (objects || []).map((object) => {
@@ -1054,30 +1132,30 @@ function restyleAllButtonsForPackage(
   options = {}
 ) {
   const packageMotion = getButtonPackageMotion(pkgId);
-  // Aktivitedeki "Buton yazı rengi" override'ı paket değişiminde de korunur.
-  const textColor = String(options.textColor || '').trim();
-  const userShadow = textColor ? readyButtonTextShadowForColor(textColor) : '';
+  // Aktivitedeki "Buton yazısı" override'ı paket değişiminde de korunur.
+  const styleOptions = normalizeReadyButtonStyleOptions(options);
   return (objects || []).map((object) => {
     if (object?.type !== 'button') return object;
     const tone = getButtonPackageTone(object);
     const playPausePatch = isPlayPauseReadyButton(object) ? getPlayPauseButtonPatch(object) : {};
-    return {
-      ...object,
-      buttonPackageId: pkgId,
-      readyButtonTone: tone,
-      ...(packageMotion ? { buttonMotion: packageMotion } : {}),
-      ...playPausePatch,
-      style: {
-        ...(object.style || {}),
-        ...buildReadyButtonStyleFromPackage(pkgId, tone, {
-          ...object,
-          ...playPausePatch,
-        }),
-        ...(textColor
-          ? { color: textColor, colorLocked: true, ...(userShadow ? { textShadow: userShadow } : {}) }
-          : { colorLocked: false }),
+    const prepared = clearReadyButtonTypographyFromObject(
+      { ...object, ...playPausePatch },
+      styleOptions
+    );
+    return applyReadyButtonBulkStyleToObject(
+      {
+        ...prepared,
+        buttonPackageId: pkgId,
+        readyButtonTone: tone,
+        ...(packageMotion ? { buttonMotion: packageMotion } : {}),
+        ...playPausePatch,
+        style: {
+          ...(prepared.style || {}),
+          ...buildReadyButtonStyleFromPackage(pkgId, tone, prepared),
+        },
       },
-    };
+      styleOptions
+    );
   });
 }
 function getPackageTheme(pkgId) {
@@ -1112,6 +1190,9 @@ export {
   getReadyButtonTone,
   getButtonPackageTone,
   shouldRestyleReadyButton,
+  getReadyButtonStyleOptions,
+  getReadyButtonTextStylePatch,
+  applyReadyButtonBulkStyleToObject,
   isPlayPauseReadyButton,
   isButtonIntroPlayPauseDemoButton,
   getPlayPauseButtonPatch,

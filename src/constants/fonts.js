@@ -1,5 +1,5 @@
 // Genel kabul görmüş ~100 yazı tipi. Sistem fontları (yükleme gerektirmez) + popüler
-// Google Fonts. Google fontları, picker ilk açıldığında tek bir stylesheet ile tembel yüklenir.
+// font aileleri. İnternete çıkmamak için yalnızca public/fonts/fonts.css yerel dosyası denenir.
 // Biçim > Font seçicide her font kendi yazı tipiyle önizlenir.
 
 // Yükleme gerektirmeyen sistem fontları
@@ -23,7 +23,7 @@ export const SYSTEM_FONTS = [
   'Humst777 BlkCn BT',
 ];
 
-// Popüler Google Fonts (~90)
+// Yerel paketlenmiş popüler font adları (~90). Adı "Google" kalan API'ler geriye uyum içindir.
 export const GOOGLE_FONTS = [
   'Roboto',
   'Open Sans',
@@ -141,11 +141,10 @@ export function fontFamilyCss(name = '') {
 
 let googleFontsLinkPromise = null;
 
-// Google fontlarını tek bir stylesheet ile (tembel) yükle. Yalnızca bir kez enjekte edilir.
+// Yerel fontları tek bir stylesheet ile (tembel) yükle. Yalnızca bir kez enjekte edilir.
 // Stylesheet <link> yüklenince resolve olan bir Promise döndürür (idempotent).
-// ÇEVRİMDIŞI: önce sisteme indirilen yerel kopya (public/fonts/fonts.css,
-// `npm run fonts:download` ile üretilir) denenir; yoksa Google CDN'e düşülür.
-// Böylece editör internetsiz ortamda da fontları gösterir.
+// ÇEVRİMDIŞI: public/fonts/fonts.css (`npm run fonts:download` ile üretilir) dışında
+// dış CDN fallback'i yoktur.
 export function ensureGoogleFontsLoaded() {
   if (typeof document === 'undefined') return Promise.resolve();
   if (googleFontsLinkPromise) return googleFontsLinkPromise;
@@ -155,19 +154,7 @@ export function ensureGoogleFontsLoaded() {
     localLink.href = `${process.env.PUBLIC_URL || '.'}/fonts/fonts.css`;
     localLink.setAttribute('data-eicerik-fonts', 'local');
     localLink.onload = () => resolve();
-    localLink.onerror = () => {
-      localLink.remove();
-      const families = GOOGLE_FONTS.map(
-        (name) => `family=${encodeURIComponent(name).replace(/%20/g, '+')}:wght@400;700`
-      ).join('&');
-      const cdnLink = document.createElement('link');
-      cdnLink.rel = 'stylesheet';
-      cdnLink.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
-      cdnLink.setAttribute('data-eicerik-fonts', 'cdn');
-      cdnLink.onload = () => resolve();
-      cdnLink.onerror = () => resolve();
-      document.head.appendChild(cdnLink);
-    };
+    localLink.onerror = () => resolve();
     document.head.appendChild(localLink);
   });
   return googleFontsLinkPromise;

@@ -14,7 +14,13 @@ import {
 // Biçim ribbon'unda font seçici: aranabilir, her font kendi yazı tipiyle ÖNİZLENİR.
 // Google fontları picker ilk açıldığında tembel yüklenir. Kullanıcı kendi font
 // dosyasını (.woff2/.woff/.ttf/.otf) yükleyebilir — çevrimdışı kalıcıdır.
-export default function FontPicker({ value, onChange, disabled = false, width = 150 }) {
+export default function FontPicker({
+  value,
+  onChange,
+  disabled = false,
+  width = 150,
+  emptyLabel = '',
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   // Klavye ile gezilen aktif satır indeksi (yukarı/aşağı ok + Enter).
@@ -30,7 +36,9 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
   const rootRef = useRef(null);
   const listRef = useRef(null);
   const fileInputRef = useRef(null);
-  const current = value || 'Arial';
+  const hasEmptyOption = !!emptyLabel;
+  const currentValue = value || (hasEmptyOption ? '' : 'Arial');
+  const currentLabel = currentValue || emptyLabel || 'Arial';
 
   const markLoaded = (name) =>
     setLoadedFonts((prev) => {
@@ -65,21 +73,23 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
   // Özel fontlar listenin başında gösterilir.
   const allFamilies = useMemo(() => {
     const extras = customFontNames.filter((name) => !FONT_FAMILIES.includes(name));
-    return [...extras, ...FONT_FAMILIES];
-  }, [customFontNames]);
+    return hasEmptyOption ? ['', ...extras, ...FONT_FAMILIES] : [...extras, ...FONT_FAMILIES];
+  }, [customFontNames, hasEmptyOption]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr-TR');
     if (!q) return allFamilies;
-    return allFamilies.filter((name) => name.toLocaleLowerCase('tr-TR').includes(q));
-  }, [allFamilies, query]);
+    return allFamilies.filter((name) =>
+      (name || emptyLabel).toLocaleLowerCase('tr-TR').includes(q)
+    );
+  }, [allFamilies, emptyLabel, query]);
 
   // Açılışta/aramada aktif satırı seçili fonta ya da ilk sonuca getir.
   useEffect(() => {
     if (!open) return;
-    const idx = filtered.indexOf(current);
+    const idx = filtered.indexOf(currentValue);
     setActiveIndex(idx >= 0 ? idx : 0);
-  }, [open, filtered, current]);
+  }, [open, filtered, currentValue]);
 
   // Aktif satırı görünür alanda tut.
   useEffect(() => {
@@ -89,8 +99,8 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
   }, [activeIndex, open]);
 
   const commitFont = (name) => {
-    if (!name) return;
-    onChange?.(name);
+    if (!name && !hasEmptyOption) return;
+    onChange?.(name || '');
     setOpen(false);
   };
 
@@ -138,11 +148,12 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
       requestedRef.current.add(name);
       loadGoogleFont(name).then(markLoaded);
     };
-    request(current);
+    request(currentValue);
     if (open) filtered.forEach(request);
-  }, [open, filtered, current]);
+  }, [open, filtered, currentValue]);
 
   const previewFamily = (name) => (loadedFonts.has(name) ? fontFamilyCss(name) : undefined);
+  const dropdownWidth = typeof width === 'number' ? Math.max(220, width) : '100%';
 
   return (
     <div ref={rootRef} style={{ position: 'relative', width }}>
@@ -150,7 +161,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
         type="button"
         disabled={disabled}
         onClick={() => setOpen((value_) => !value_)}
-        title={current}
+        title={currentLabel}
         style={{
           width: '100%',
           height: 28,
@@ -160,7 +171,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
           color: '#1f2937',
           cursor: disabled ? 'default' : 'pointer',
           fontSize: 12,
-          fontFamily: previewFamily(current),
+          fontFamily: previewFamily(currentValue),
           textAlign: 'left',
           padding: '0 8px',
           display: 'flex',
@@ -172,7 +183,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
           textOverflow: 'ellipsis',
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{current}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentLabel}</span>
         <span style={{ fontFamily: 'inherit', opacity: 0.5, flexShrink: 0 }}>▾</span>
       </button>
       {open ? (
@@ -182,7 +193,8 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
             top: 30,
             left: 0,
             zIndex: 5000,
-            width: Math.max(220, width),
+            width: dropdownWidth,
+            minWidth: 220,
             background: '#ffffff',
             border: '1px solid #d8e1ec',
             borderRadius: 10,
@@ -208,16 +220,26 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
               outline: 'none',
             }}
           />
-          <div ref={listRef} style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div
+            ref={listRef}
+            style={{
+              maxHeight: 'min(360px, calc(100vh - 260px))',
+              minHeight: 180,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             {filtered.length === 0 ? (
               <div style={{ padding: 8, fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>Sonuç yok</div>
             ) : (
               filtered.map((name, index) => {
+                const label = name || emptyLabel;
                 const isActive = index === activeIndex;
-                const isCurrent = name === current;
+                const isCurrent = name === currentValue;
                 return (
                   <button
-                    key={name}
+                    key={name || '__empty_font__'}
                     type="button"
                     data-font-index={index}
                     onClick={() => commitFont(name)}
@@ -243,7 +265,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {name}
+                    {label}
                   </button>
                 );
               })
@@ -274,7 +296,7 @@ export default function FontPicker({ value, onChange, disabled = false, width = 
               flexShrink: 0,
             }}
           >
-            + Özel Font Yükle (.woff2/.ttf)
+            + Özel Font Yükle (.woff2/.ttf/.otf)
           </button>
           {uploadError ? (
             <div style={{ fontSize: 11, color: '#dc2626', padding: '0 2px', flexShrink: 0 }}>

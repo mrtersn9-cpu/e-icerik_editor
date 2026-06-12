@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 
 import { DEFAULT_ACTIVITY_SETTINGS } from '../../constants';
+import { getReadyButtonTextStylePatch } from '../../logic/buttonStyling';
 import { shuffleArray } from '../../logic/uiPrimitives';
 import {
   evaluateStorylineRuntimeMatching,
@@ -41,6 +42,28 @@ function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function previewButtonTextStyle(activity) {
+  return {
+    ...getReadyButtonTextStylePatch(activity),
+    whiteSpace: 'nowrap',
+  };
+}
+
+function previewActionButtonStyle(activity, variant = 'primary', extra = {}) {
+  const primary = variant === 'primary';
+  return {
+    padding: '10px 18px',
+    borderRadius: 8,
+    border: primary ? 'none' : '1px solid #cbd5e1',
+    background: primary ? '#1d4ed8' : '#fff',
+    color: primary ? '#fff' : '#0f172a',
+    fontWeight: primary ? 900 : 800,
+    cursor: 'pointer',
+    ...extra,
+    ...previewButtonTextStyle(activity),
+  };
 }
 
 export function PreviewPuzzleOverlay({ activity, onResult }) {
@@ -105,7 +128,7 @@ export function PreviewPuzzleOverlay({ activity, onResult }) {
         );
       })()}
       {result && canRetry && (
-        <button onClick={() => setResult(null)} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700 }}>
+        <button onClick={() => setResult(null)} style={previewActionButtonStyle(activity, 'secondary', { marginTop: 8, padding: '6px 14px', borderRadius: 6, fontWeight: 700 })}>
           Tekrar Dene
         </button>
       )}
@@ -183,10 +206,10 @@ export function PreviewNumericFlow({ activity }) {
         />
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
         {maxAttempts > 0 && <span style={{ fontSize: 12, color: '#64748b' }}>Deneme: {attempts} / {maxAttempts}</span>}
@@ -323,10 +346,10 @@ export function PreviewSurveyFlow({ activity }) {
         ))}
       </div>
       <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={handleCheck} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900 }}>
+        <button onClick={handleCheck} style={previewActionButtonStyle(activity, 'primary')}>
           Gönder
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
       </div>
@@ -444,10 +467,10 @@ export function PreviewHotspotFlow({ activity }) {
         })}
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
         {maxAttempts > 0 && <span style={{ fontSize: 12, color: '#64748b' }}>Deneme: {attempts} / {maxAttempts}</span>}
@@ -479,7 +502,7 @@ function FeedbackOverlay({ result, activity, onRestart, earnedPoints, totalPoint
       )}
       <div style={{ fontSize: 12, color: '#94a3b8' }}>{animation}</div>
       <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={onRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={onRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           {settings.restartText || 'Yeniden Başlat'}
         </button>
       </div>
@@ -495,7 +518,7 @@ function HintBox({ activity }) {
     <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
       {hints.hintText && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: visible ? 8 : 0 }}>
-          <button onClick={() => setVisible((v) => !v)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, fontWeight: 800 }}>
+          <button onClick={() => setVisible((v) => !v)} style={previewActionButtonStyle(activity, 'secondary', { padding: '4px 10px', borderRadius: 6, fontSize: 12 })}>
             {visible ? 'İpucunu Gizle' : 'İpucu Göster'}
           </button>
         </div>
@@ -619,10 +642,10 @@ export function PreviewMatchingFlow({ activity }) {
         </div>
       </div>
       <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
         {maxAttempts > 0 && <span style={{ fontSize: 12, color: '#64748b' }}>Deneme: {attempts} / {maxAttempts}</span>}
@@ -705,16 +728,16 @@ export function PreviewSequenceFlow({ activity }) {
           >
             <span style={{ fontWeight: 900, color: '#64748b' }}>{activity.sequenceAutoNumber !== false ? index + 1 : '•'}</span>
             <span style={{ fontWeight: 800 }}>{item.label}</span>
-            <button onClick={() => move(index, -1)} disabled={index === 0} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', fontSize: 12 }}>Yukarı</button>
-            <button onClick={() => move(index, 1)} disabled={index === items.length - 1} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', fontSize: 12 }}>Aşağı</button>
+            <button onClick={() => move(index, -1)} disabled={index === 0} style={previewActionButtonStyle(activity, 'secondary', { padding: '4px 8px', borderRadius: 6, background: '#f8fafc', fontSize: 12 })}>Yukarı</button>
+            <button onClick={() => move(index, 1)} disabled={index === items.length - 1} style={previewActionButtonStyle(activity, 'secondary', { padding: '4px 8px', borderRadius: 6, background: '#f8fafc', fontSize: 12 })}>Aşağı</button>
           </div>
         ))}
       </div>
       <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Sıfırla
         </button>
         {maxAttempts > 0 && <span style={{ fontSize: 12, color: '#64748b' }}>Deneme: {attempts} / {maxAttempts}</span>}
@@ -802,14 +825,14 @@ export function PreviewTextEntryFlow({ activity }) {
         {value.length}{activity.textEntryMaxLength ? ` / ${activity.textEntryMaxLength}` : ''} karakter
       </div>
       <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
         {activity.textEntryVoiceInput && (
-          <button onClick={startVoice} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f0fdf4', color: '#166534', fontWeight: 800 }}>
+          <button onClick={startVoice} style={previewActionButtonStyle(activity, 'secondary', { background: '#f0fdf4', color: '#166534' })}>
             🎤 Sesle Yaz
           </button>
         )}
@@ -906,10 +929,10 @@ export function PreviewFillBlankFlow({ activity }) {
         })}
       </div>
       <div style={{ marginTop: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 900, opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 }}>
+        <button onClick={handleCheck} disabled={maxAttempts > 0 && attempts >= maxAttempts} style={previewActionButtonStyle(activity, 'primary', { opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1 })}>
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
-        <button onClick={handleRestart} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800 }}>
+        <button onClick={handleRestart} style={previewActionButtonStyle(activity, 'secondary')}>
           Temizle
         </button>
         {maxAttempts > 0 && <span style={{ fontSize: 12, color: '#64748b' }}>Deneme: {attempts} / {maxAttempts}</span>}
@@ -1117,29 +1140,18 @@ export function PreviewMixedFlow({ activity }) {
         <button
           onClick={handleCheck}
           disabled={maxAttempts > 0 && attempts >= maxAttempts}
-          style={{
+          style={previewActionButtonStyle(activity, 'primary', {
             padding: '10px 20px',
-            borderRadius: 8,
-            border: 'none',
-            background: '#1d4ed8',
-            color: '#fff',
-            fontWeight: 900,
-            cursor: 'pointer',
             opacity: maxAttempts > 0 && attempts >= maxAttempts ? 0.5 : 1
-          }}
+          })}
         >
           {settings.checkButtonText || 'Kontrol Et'}
         </button>
         <button
           onClick={handleRestart}
-          style={{
+          style={previewActionButtonStyle(activity, 'secondary', {
             padding: '10px 20px',
-            borderRadius: 8,
-            border: '1px solid #cbd5e1',
-            background: '#fff',
-            fontWeight: 800,
-            cursor: 'pointer'
-          }}
+          })}
         >
           Temizle
         </button>

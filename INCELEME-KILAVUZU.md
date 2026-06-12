@@ -41,21 +41,26 @@ kaldığı yerden devam eder. Böylece hiçbir bulgu kaybolmaz ve tamlık denetl
    kuralın DIŞINDADIR — orası bizim alanımız, serbest (yine de güvenlik/gizlilik/
    çevrimdışı çalışma riski olarak bilgi notuna girer). Kullanıcının manuel
    eklediği linkler için de SCORM export'ta TTKB/KVKK/telif uyarısı verilmelidir.
-4. **Her aşama = yeni oturum.** Önceki oturumun raporu dosyada olduğu için bağlam kaybolmaz.
-5. **Kapsam dışı dizinleri her prompt'ta belirt** (aşağıdaki prompt'larda hazır):
+4. **Buton toplu font/stil değişimi TTKB açısından kritik akıştır.** Hazır buton
+   setlerinde font ailesi, punto, kalınlık ve renk topluca değiştirilebilmeli;
+   aynı paket veya activity override içindeki tüm butonlar aynı tipografi kararını
+   almalı. Bu değişiklik editör, önizleme ve SCORM çıktısında tutarlı görünmeli;
+   buton metinleri tek satır, okunaklı ve kontrastı yeterli kalmalıdır.
+5. **Her aşama = yeni oturum.** Önceki oturumun raporu dosyada olduğu için bağlam kaybolmaz.
+6. **Kapsam dışı dizinleri her prompt'ta belirt** (aşağıdaki prompt'larda hazır):
    `node_modules/`, `yedekler/`, `build/`, `temp_bulmaca/`, `tmp_bulmaca_inceleme/`,
    `GERI-YUKLEME-ICIN/`, `data/` gibi üretilmiş/yedek içerikler. `public/fonts/`
    kod incelemesi için kapsam dışıdır; ancak font referanslarının yerel dosyaya
    çözüldüğü ve SCORM paketine gömüldüğü Aşama 4/5'te kontrol edilir.
-6. **İncelemeden önce temiz commit at — ama körlemesine değil.** Önce `git status` ile
+7. **İncelemeden önce temiz commit at — ama körlemesine değil.** Önce `git status` ile
    değişiklikleri gözden geçir; gizli bilgi, build çıktısı, zip/büyük dosya veya geçici
    dosya yoksa commit at. `git add -A` doğrudan kullanma — şifre, yedek veya temp
    dosyaları yanlışlıkla commit'e girebilir.
-7. **Gizli bilgiler rapora yazılmaz.** İnceleme sırasında API anahtarı, token, FTP
+8. **Gizli bilgiler rapora yazılmaz.** İnceleme sırasında API anahtarı, token, FTP
    şifresi gibi bir değer bulunursa raporda yalnızca dosya:satır ve risk türü yer alır,
    değerin kendisi asla yazılmaz. URL içinde token/key/session gibi query parametresi
    geçiyorsa o değer de maskelenir.
-8. İnceleme aşamalarında Fable 5 **sadece okur ve rapor yazar**, kod değiştirmez.
+9. İnceleme aşamalarında Fable 5 **sadece okur ve rapor yazar**, kod değiştirmez.
    Düzeltmeler en sonda, rapor üzerinden ayrı oturumlarda yapılır (Aşama 6).
 
 ---
@@ -76,9 +81,11 @@ docs/inceleme/ klasörünü oluştur ve içine 00-PLAN.md dosyası yaz. Bu dosya
 sistemin inceleme aşamalarını (kod incelemesi bölge bölge, tıklanabilir öge envanteri
 ve testi, görsel denetim, çapraz kontroller, birleşik rapor) ve her aşamanın
 durum takibini (Bekliyor/Devam/Bitti) tablo halinde tut. Plana, tüm aşamalarda
-geçerli iki kuralı not düş: (1) öğrenciye görünen önizleme/HTML/SCORM çıktısı
+geçerli üç kuralı not düş: (1) öğrenciye görünen önizleme/HTML/SCORM çıktısı
 TTKB denetimine girecek materyal sayılır, (2) bulunan gizli bilgilerin değeri
-raporlara asla yazılmaz. Henüz inceleme yapma, sadece plan dosyasını hazırla.
+raporlara asla yazılmaz, (3) hazır butonlarda toplu font ailesi/punto/kalınlık/
+yazı rengi değişimi kritik TTKB akışıdır; editör, önizleme ve SCORM çıktısında
+tutarlı uygulanmalıdır. Henüz inceleme yapma, sadece plan dosyasını hazırla.
 ```
 
 ---
@@ -120,6 +127,11 @@ GERI-YUKLEME-ICIN/ ve data/ kapsam DIŞIDIR.
 - Durum yönetimi: Zustand store'da tutarsız güncellemeler, undo/redo'yu
   bozan doğrudan mutasyonlar
 - Hata yönetimi: yutulmuş hatalar, kullanıcıya hiç gösterilmeyen başarısızlıklar
+- Hazır butonlar toplu font/stil akışı: Tasarım/Stiller > Buton Setleri
+  kontrollerinin font ailesi, punto, kalınlık ve yazı rengini aynı paket ve
+  activity-level override içindeki tüm butonlara tutarlı uygulayıp uygulamadığını;
+  yeni oluşturulan butonlara, undo/redo'ya, önizleme/SCORM üretimine ve tek satır
+  okunabilirlik/kontrast kurallarına sızan hata olup olmadığını kontrol et
 - Dış bağlantılar — KESİN KURAL (SCORM çıktısı için): kullanıcı manuel eklemedikçe
   dışa aktarılan paket hiçbir dış kaynaktan bir şey çekemez. SCORM çıktısına veya
   öğrenci oynatıcısına girebilecek kodda dış kaynağa giden HER referansı tara —
@@ -171,7 +183,10 @@ Görev: src/ altındaki ve kökteki .jsx/.js/.tsx/.ts dosyalarında kullanıcıy
 etkileşen TÜM ögelerin envanterini çıkar: onClick, onDoubleClick, onMouseDown,
 onContextMenu,
 onDragStart/onDrop, onChange, onKeyDown ile bağlanmış her öge; tüm <button>,
-menü, sekme, popover, sürükle-bırak hedefi, klavye kısayolu.
+menü, sekme, popover, sürükle-bırak hedefi, klavye kısayolu. Tasarım/Stiller
+panelindeki hazır butonlar bölümünü özellikle tara: buton yazı rengi, toplu font
+ailesi, toplu punto, toplu kalınlık ve hazır buton setlerine uygulanan tüm toplu
+stil kontrolleri ayrı envanter maddesi olmalı.
 node_modules/, yedekler/, build/ kapsam dışı.
 
 Sonucu docs/inceleme/07-tiklanabilir-envanter.md dosyasına kontrol listesi
@@ -221,11 +236,17 @@ canlı test et: <BÖLÜM ADLARI, örn. "üst araç çubuğu" ve "sol panel">
 6. Öğrenciye görünen tarafta TTKB riski gördüğünde (bozuk düğme, etkileşim
    sızıntısı, popup altında tıklanabilir kalan katman, okunmaz metin) ayrıca
    "TTKB riski" etiketiyle işaretle.
-7. Her test edilen ögeyi envanterde şu formatla işaretle:
+7. Tasarım/Stiller > Buton Setleri > Hazır Butonlar akışında toplu font değişimini
+   ayrıca test et: font ailesi, punto, kalınlık ve yazı rengi değiştir; tüm hazır
+   butonlara, yeni oluşturulan butonlara ve activity-level override olan bir
+   etkinlikteki tüm butonlara aynı anda uygulanıyor mu doğrula. Undo/redo sonrası
+   değerler doğru dönüyor mu, önizlemede aynı görünüyor mu ve metinler tek satır
+   okunaklı kalıyor mu kontrol et.
+8. Her test edilen ögeyi envanterde şu formatla işaretle:
    [x] GEÇTİ — kısa not
    [!] SORUNLU — sorunun bir cümlelik özeti
    [?] TEST EDİLEMEDİ — nedeni
-8. Sorunları docs/inceleme/08-islev-test-bulgulari.md dosyasına ekle:
+9. Sorunları docs/inceleme/08-islev-test-bulgulari.md dosyasına ekle:
    öge, yeniden üretme adımları, beklenen vs gerçekleşen davranış,
    varsa konsol hatası, ekran görüntüsü yolu.
 
@@ -272,7 +293,12 @@ Görev: Editörün ve önizleme/oynatıcının görsel denetimini yap.
    doğru kullanılmış mı, popup arkasındaki karartma temel etkinliği okunur
    bırakıyor mu, katman içeriği taban katmanın üzerinde mi render oluyor,
    aynı paketteki düğmeler aynı animasyon profilini mi kullanıyor.
-7. Bulguları docs/inceleme/09-gorsel-bulgular.md dosyasına yaz:
+7. Buton toplu font değişimi için ayrı görsel geçiş yap: hazır butonlarda font
+   ailesi/punto/kalınlık/yazı rengi topluca değiştirildikten sonra editör ve
+   önizlemede tüm butonlar aynı tipografi sistemini koruyor mu, uzun Türkçe
+   etiketler tek satır kalıyor mu, küçük puntoda okunabilirlik ve büyük puntoda
+   taşma/kırpılma sorunu oluşuyor mu kontrol et.
+8. Bulguları docs/inceleme/09-gorsel-bulgular.md dosyasına yaz:
    ekran + çözünürlük, sorunun tarifi, ekran görüntüsü dosya yolu,
    ilgili bileşen/CSS dosyası tahmini.
 
@@ -317,6 +343,10 @@ docs/inceleme/10-capraz-kontroller.md dosyasına raporla:
    imsmanifest ile dosya bütünlüğünü doğrula. SCORM çıktısı YALNIZCA SCORM 1.2
    olmalı: pakette veya kodda SCORM 2004, xAPI, cmi5, LTI veya dış tracking
    belirtisi varsa risk olarak raporla. Pakette dış URL var mı kontrol et.
+   Örnek içerikte hazır butonların toplu font ailesi/punto/kalınlık/yazı rengi
+   değiştirilmiş olmalı; SCORM içindeki öğrenci oynatıcısında bu font ayarları
+   aynen yansıyor mu, metinler tek satır ve okunaklı mı, kullanılan font dosyaları
+   paket içinde yerel mi doğrula.
 6. package.json bağımlılıklarında bilinen güvenlik açığı taraması: npm audit
    sonucunu özetle (düzeltme YAPMA, sadece raporla). Gizli bilgi (API anahtarı,
    şifre) tespit edersen değerini rapora yazma; dosya:satır + risk türü yeter.
@@ -337,8 +367,9 @@ docs/inceleme/99-BIRLESIK-RAPOR.md dosyasını oluştur:
    (yanlış çalışan özellik) → Orta (UX/görsel) → Düşük (kozmetik/temizlik).
    Öğrenciye görünen çıktıda TTKB riski taşıyan bulguları (SCORM/önizleme
    tarafındaki bozuk düğme, etkileşim sızıntısı, SCORM paketinde kullanıcının
-   manuel eklemediği halde var olan dış bağlantı/tracking, okunmazlık) en az
-   Yüksek olarak sınıflandır.
+   manuel eklemediği halde var olan dış bağlantı/tracking, okunmazlık, hazır
+   butonlarda toplu font değişiminin tutarsız uygulanması veya buton metnini
+   kırpması/sarması) en az Yüksek olarak sınıflandır.
 3. Her bulguya bir kimlik ver (B-001, B-002...) ve kanıt türünü belirt:
    statik analiz / canlı test / ekran görüntüsü / build-test sonucu / varsayım.
 4. Önerilen düzeltme sırasını ve hangi bulguların birlikte düzeltilmesi
