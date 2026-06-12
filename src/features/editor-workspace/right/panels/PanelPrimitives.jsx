@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { ColorPickerField } from '../../../../components/ui';
 import { EDITOR_THEME } from '../../../../theme';
 import { workspaceChrome } from '../../chromeTokens';
 
@@ -18,47 +19,6 @@ const controlBase = {
   outline: 'none',
   boxSizing: 'border-box',
 };
-
-function useDeferredColor(value = '#ffffff', onCommit, delay = 120) {
-  const [draft, setDraft] = useState(value || '#ffffff');
-  const timerRef = useRef(null);
-  const latestValueRef = useRef(value || '#ffffff');
-
-  useEffect(() => {
-    const nextValue = value || '#ffffff';
-    latestValueRef.current = nextValue;
-    setDraft(nextValue);
-  }, [value]);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    []
-  );
-
-  const commit = (nextValue) => {
-    if (!nextValue || nextValue === latestValueRef.current) return;
-    latestValueRef.current = nextValue;
-    onCommit?.(nextValue);
-  };
-
-  const scheduleCommit = (nextValue) => {
-    setDraft(nextValue);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => commit(nextValue), delay);
-  };
-
-  const flush = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    commit(draft);
-  };
-
-  return { draft, flush, scheduleCommit };
-}
 
 export function PanelShell({ children, subtitle, title, action }) {
   return (
@@ -675,23 +635,17 @@ export function TextAreaInput({ disabled = false, onChange, placeholder = '', ro
 }
 
 export function ColorInput({ ariaLabel, onChange, value = '#ffffff' }) {
-  const { draft, flush, scheduleCommit } = useDeferredColor(value, onChange);
-
+  // Palet + renk kodu + son kullanılanlar popover'ı; API geriye dönük uyumlu:
+  // onChange doğrudan renk değeriyle çağrılır.
   return (
-    <input
-      type="color"
-      value={draft || '#ffffff'}
-      aria-label={ariaLabel}
+    <ColorPickerField
+      value={value || '#ffffff'}
+      ariaLabel={ariaLabel}
       title={ariaLabel}
-      onInput={(event) => scheduleCommit(event.target.value)}
-      onChange={(event) => scheduleCommit(event.target.value)}
-      onBlur={flush}
-      onPointerUp={flush}
-      style={{
-        ...controlBase,
-        padding: 2,
-        cursor: 'pointer',
-      }}
+      onPick={(color) => onChange?.(color)}
+      width="100%"
+      height={26}
+      borderRadius={7}
     />
   );
 }

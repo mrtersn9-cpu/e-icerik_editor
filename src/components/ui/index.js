@@ -3,6 +3,7 @@ export { Inp } from './Input';
 export { SelectInp } from './Select';
 export { Modal } from './Modal';
 export { ShapePreviewIcon } from './ShapePreviewIcon';
+export { ColorPickerPopover, ColorPickerField } from './ColorPickerPopover';
 export { ToastProvider } from './Toast';
 export { Skeleton } from './Skeleton';
 export { EmptyState } from './EmptyState';

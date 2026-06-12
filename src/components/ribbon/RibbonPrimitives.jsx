@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 
 import { workspaceChrome } from '../../features/editor-workspace/chromeTokens';
 import { EDITOR_THEME } from '../../theme';
+import { ColorPickerField } from '../ui';
 
 const toneColors = {
   blue: EDITOR_THEME.objectTones.blue.strong,
@@ -54,51 +55,6 @@ export function RibbonPopoverProvider({ children, activeTab }) {
       {children}
     </RibbonPopoverContext.Provider>
   );
-}
-
-function useDeferredColor({ value, onCommit, eventMode = false, delay = 120 }) {
-  const [draft, setDraft] = useState(value || '#ffffff');
-  const timerRef = useRef(null);
-  const latestValueRef = useRef(value || '#ffffff');
-
-  useEffect(() => {
-    const nextValue = value || '#ffffff';
-    latestValueRef.current = nextValue;
-    setDraft(nextValue);
-  }, [value]);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    []
-  );
-
-  const commit = (nextValue) => {
-    if (!nextValue || nextValue === latestValueRef.current) return;
-    latestValueRef.current = nextValue;
-    if (eventMode) {
-      onCommit?.({ target: { value: nextValue }, currentTarget: { value: nextValue } });
-      return;
-    }
-    onCommit?.(nextValue);
-  };
-
-  const scheduleCommit = (nextValue) => {
-    setDraft(nextValue);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => commit(nextValue), delay);
-  };
-
-  const flush = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    commit(draft);
-  };
-
-  return { draft, flush, scheduleCommit };
 }
 
 const iconStroke = {
@@ -930,33 +886,17 @@ export function RibbonNumberInput({
 }
 
 export function RibbonColorInput({ value, onChange, disabled = false, title }) {
-  const { draft, flush, scheduleCommit } = useDeferredColor({
-    value,
-    onCommit: onChange,
-    eventMode: true,
-  });
-
+  // Palet + renk kodu + son kullanılanlar popover'ı; API geriye dönük uyumlu:
+  // onChange yine event benzeri ({target:{value}}) nesneyle çağrılır.
   return (
-    <input
-      type="color"
-      value={draft}
-      onInput={(event) => scheduleCommit(event.target.value)}
-      onChange={(event) => scheduleCommit(event.target.value)}
-      onBlur={flush}
-      onPointerUp={flush}
+    <ColorPickerField
+      value={value}
       disabled={disabled}
       title={title}
-      style={{
-        width: 24,
-        minWidth: 24,
-        height: 24,
-        padding: 1,
-        border: `1px solid ${ribbonUi.controlBorder}`,
-        borderRadius: EDITOR_THEME.radiusSm,
-        background: ribbonUi.controlBg,
-        cursor: disabled ? 'default' : 'pointer',
-        ...(disabled ? disabledStyle : null),
-      }}
+      onPick={(color) => onChange?.({ target: { value: color }, currentTarget: { value: color } })}
+      width={24}
+      height={24}
+      borderRadius={EDITOR_THEME.radiusSm}
     />
   );
 }
