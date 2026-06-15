@@ -166,9 +166,10 @@ export function generateDiceBirdDemoTemplate(activity = {}) {
     diceObj,
     birdObj,
     questionTextObj,
-    ...targetObjects.filter(
-      (object) => object?.generatedBy !== 'custom-widget-demo' && object?.type !== 'custom-widget'
-    ),
+    // Yalnizca onceki demo nesnelerini kaldir (generatedBy='custom-widget-demo').
+    // Eski filtre type!=='custom-widget' ile kullanicinin ELLE ekledigi tum widget'lari
+    // da siliyordu (veri kaybi); kullanici widget'lari (zip-import vb.) korunur.
+    ...targetObjects.filter((object) => object?.generatedBy !== 'custom-widget-demo'),
   ];
   const layers = [
     ...(Array.isArray(targetSlide.layers) && targetSlide.layers.length
