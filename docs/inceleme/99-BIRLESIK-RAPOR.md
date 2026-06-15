@@ -20,32 +20,35 @@
 
 ## Düzeltme Durumu (2026-06-15 oturumu)
 
-**Düzeltildi + doğrulandı (build + 304 test yeşil):**
+**Düzeltildi + doğrulandı (build + 307 test yeşil):**
 | Bulgu | Commit | Not |
 |---|---|---|
-| B-310 (+B-314) SVG dış-link | `7c184c7` | editör + SCORM runtime sanitizer; 2 test eklendi |
-| B-335 maxAttempts `??` | `dc8379d` | |
-| B-340 BranchingDiagram trigger.value | `dc8379d` | |
-| B-345 MixedActivityEditor import | `dc8379d` | render çökmesi giderildi |
-| B-334 ActivityTextEditor çift onUpdate | `4c2d01b` | tek patch |
-| B-331 kilitli hedef menü | `4c2d01b` | 6 madde `disabled` |
-| B-322 SCORM widget şişmesi | `dee036d` | |
-| B-333 PDF anchor dedup | `dee036d` | referansla dedup |
-| B-332 cevap katmanı elle nesneler | (bu commit) | yalnız üretilmiş nesneler siliniyor |
+| B-310 (+B-314) SVG dış-link | `7c184c7` | editör + SCORM runtime sanitizer; 2 test |
+| B-335/340/345 maxAttempts/BranchingDiagram/MixedActivity | `dc8379d` | render çökmesi dahil |
+| B-334/331 ActivityTextEditor/kilitli hedef menü | `4c2d01b` | tek patch + 6 madde disabled |
+| B-322/333 SCORM widget şişmesi/PDF anchor | `dee036d` | |
+| B-332 cevap katmanı elle nesneler | `f966c69` | yalnız üretilmiş nesneler siliniyor |
 | B-101 ölü kod | `54c42f8` | PreviewComponents+previewEngine silindi |
+| **B-321** wordsearch/maze/memory tamamlama | `2c6ef0f`* | jsdom'da uçtan uca test |
+| **B-320** formül motoru SCORM bundle'a gömüldü | (commit) | parseAndEvaluate inline + test |
+| **B-313** export uyarısı gömülü+protokolsüz URL | (commit) | w3.org namespace eleniyor |
+| Orta-TTKB Türkçe metin/terim (activityScoring/factories) | (commit) | Sürükle/Bırak/Buton/Sahne |
+| Orta formül `1.2.3` reddi (sessiz kırpma yok) | (commit) | bundle yeniden üretildi + test |
+| Orta/Düşük PuzzleEditor etiket + Anket mock dağılım | (commit) | deterministik |
 
-**Kalan — verify ortamı / karar gerektiriyor (bu oturumda uygulanMADI):**
-- **B-301 PHP auth (KRİTİK)** — PHP/MySQL ortamı olmadan güvenli doğrulanamaz; yanlış
-  gate uygulamayı kilitleyebilir. apiClient'in tüm uçlarda X-User-Id/X-Session-Id
-  gönderdiği teyit edilip gate öyle eklenmeli. **Öneri: ayrı, doğrulamalı bir oturumda.**
-- **B-320/B-321 SCORM doğruluk** — gerçek SCORM player'da test gerektirir (formül bundle'a
-  gömme; wordsearch/maze/memory tamamlama). Bundle değişikliği riskli.
-- **B-311/B-312/B-313 export uyarısı** — embed/widget/protokolsüz dış link için export
-  uyarısı; EIcerikEditor export akışı + uyarı UI'si gerektirir. (B-310 SVG fetch'i zaten
-  engelledi; bunlar uyarı/engel katmanı.)
-- **B-323 Türkçe toUpperCase** — cevap saklama biçimi doğrulanmadan değiştirmek çalışan
-  durumları bozabilir; runtime test gerekir.
-- **~290 Orta/Düşük** — toplu; tek tek adversarial doğrulama + düzeltme ayrı turlar.
+> *B-321 ve sonrası commit hash'leri git log'da; B-311 zaten mevcut export uyarısına
+> takılıyordu (embedUrl top-level string).
+
+**Kalan — verify ortamı / karar gerektiriyor (uygulanMADI):**
+- **B-301 PHP auth (KRİTİK)** — kullanıcı kararıyla doğrulamalı ayrı oturuma bırakıldı
+  (PHP/MySQL ortamı + apiClient header teyidi gerekir).
+- **B-312 widget içi dış kaynak taraması** — widget rawAssets binary içeriği export
+  uyarısında taranmıyor (B-322 rawAssets'i payload'dan çıkarıyor; B-313 string taramayı
+  güçlendirdi). Tam kapsam için widget HTML/JS içeriğinin export öncesi taranması gerekir.
+- **B-323 Türkçe toUpperCase** — cevap saklama biçimi doğrulanmadan değiştirmek riskli;
+  runtime test gerekir.
+- **~280 Orta/Düşük (uzun kuyruk)** — düşük-riskli olanlar batch'ler halinde sürüyor;
+  kalanı ilgili alanlara dokundukça artımlı yapılması öneriliyor.
 
 ---
 
