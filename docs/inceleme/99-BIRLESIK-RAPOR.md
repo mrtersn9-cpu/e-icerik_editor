@@ -38,6 +38,11 @@
 | **B-301 PHP auth (KRİTİK)** | (commit) | **gerçek XAMPP PHP 8.2 + MySQL'de doğrulandı** |
 | **B-312** widget dış-kaynak uyarısı (yükleme) | (commit) | scanWidgetSecurity uyarıları yüzeye çıkıyor |
 | Orta ölü bileşen + SceneRightPanel yanlış alan | (commit) | DragDropDebugPanel/ActiveLayerSummary silindi |
+| Orta timeline keyframe in-place mutasyonu | (commit) | dizi kopyalanıyor |
+| Orta grafik SVG renk escape (5 yer) + mobil pinch guard | (commit) | enjeksiyon yüzeyi kapatıldı |
+| Orta RibbonNumberInput sınır dışı emit | (commit) | sınır içi emit, blur'da clamp |
+| Orta SlideStrip işlevsiz Liste/Grid toggle | (commit) | yalancı kontrol kaldırıldı |
+| Orta demo şablonu kullanıcı widget'larını siliyordu | (commit) | yalnız demo nesneleri kaldırılıyor |
 
 > Commit hash'leri için `git log` (8587a62 sonrası). B-311 zaten mevcut export uyarısına
 > takılıyor (embedUrl top-level string).
