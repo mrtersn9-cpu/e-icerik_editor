@@ -704,7 +704,11 @@ function createPreviewHtmlSignature(value = '') {
 
 const REDACTED_SECRET_VALUE = '__REDACTED_SECRET__';
 const SENSITIVE_LMS_KEYS = ['xapiKey', 'xapiSecret', 'ltiConsumerKey', 'ltiSharedSecret'];
-const EXTERNAL_URL_RE = /^https?:\/\//i;
+// Hem tam-string hem string ICINE gomulu (svgMarkup/HTML/CSS) dis kaynaklari yakalar;
+// protokolsuz //host.tld de bir HTTPS LMS'te dis istek ceker. w3.org gibi XML namespace
+// URL'leri fetch degildir, ayri elenir.
+const EXTERNAL_URL_SCAN_RE = /(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}[^\s"'<>)]*/gi;
+const SAFE_NAMESPACE_URL_RE = /\b(?:www\.)?w3c?\.org\b/i;
 
 function hasLmsSecrets(value = {}) {
   return SENSITIVE_LMS_KEYS.some(
@@ -749,11 +753,15 @@ function normalizeScorm12LmsConfig(config = {}) {
 function collectExternalUrls(value, path = '', found = new Map()) {
   if (value == null) return found;
   if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (EXTERNAL_URL_RE.test(trimmed)) {
-      const list = found.get(trimmed) || [];
-      list.push(path || 'state');
-      found.set(trimmed, list);
+    const matches = value.match(EXTERNAL_URL_SCAN_RE);
+    if (matches) {
+      matches.forEach((raw) => {
+        const url = raw.trim();
+        if (SAFE_NAMESPACE_URL_RE.test(url)) return; // XML namespace, dis fetch degil
+        const list = found.get(url) || [];
+        list.push(path || 'state');
+        found.set(url, list);
+      });
     }
     return found;
   }
