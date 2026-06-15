@@ -40,7 +40,13 @@ Kapsam: `ftp-hosting/`
 
 ## Tur 2 — Derin Güvenlik İncelemesi (OWASP odaklı, 2026-06-15)
 
-### B6-K1 — KRİTİK: İçerik uçlarında yetkilendirme yok (yetkilendirme atlama) [DOĞRULANDI]
+### B6-K1 — KRİTİK: İçerik uçlarında yetkilendirme yok (yetkilendirme atlama) [DÜZELTİLDİ ✓]
+
+> **DURUM (2026-06-15): Düzeltildi ve gerçek XAMPP PHP 8.2 + MySQL ortamında doğrulandı.**
+> `require_active_session($pdo)` geçidi eklendi (dispatch başında, `/auth/*` ve `/admin/backup`
+> hariç tüm uçlara); `apiClient.uploadMediaFile` oturum başlığı gönderiyor. Test: oturumsuz/sahte
+> → 401, login → 200, geçerli oturum → 200, oturumsuz `/upload` → 401. Detay: 99-BIRLESIK-RAPOR.md.
+
 
 - Dosya:satır: `ftp-hosting/api/index.php:173` (ve tüm veri uçları)
 - Kanıt türü: Statik analiz + **manuel doğrulama** (grep: tek auth kapısı satır 164

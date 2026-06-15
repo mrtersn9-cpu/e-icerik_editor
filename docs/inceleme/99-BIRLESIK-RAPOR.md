@@ -35,20 +35,30 @@
 | Orta-TTKB Türkçe metin/terim (activityScoring/factories) | (commit) | Sürükle/Bırak/Buton/Sahne |
 | Orta formül `1.2.3` reddi (sessiz kırpma yok) | (commit) | bundle yeniden üretildi + test |
 | Orta/Düşük PuzzleEditor etiket + Anket mock dağılım | (commit) | deterministik |
+| **B-301 PHP auth (KRİTİK)** | (commit) | **gerçek XAMPP PHP 8.2 + MySQL'de doğrulandı** |
+| **B-312** widget dış-kaynak uyarısı (yükleme) | (commit) | scanWidgetSecurity uyarıları yüzeye çıkıyor |
+| Orta ölü bileşen + SceneRightPanel yanlış alan | (commit) | DragDropDebugPanel/ActiveLayerSummary silindi |
 
-> *B-321 ve sonrası commit hash'leri git log'da; B-311 zaten mevcut export uyarısına
-> takılıyordu (embedUrl top-level string).
+> Commit hash'leri için `git log` (8587a62 sonrası). B-311 zaten mevcut export uyarısına
+> takılıyor (embedUrl top-level string).
 
-**Kalan — verify ortamı / karar gerektiriyor (uygulanMADI):**
-- **B-301 PHP auth (KRİTİK)** — kullanıcı kararıyla doğrulamalı ayrı oturuma bırakıldı
-  (PHP/MySQL ortamı + apiClient header teyidi gerekir).
-- **B-312 widget içi dış kaynak taraması** — widget rawAssets binary içeriği export
-  uyarısında taranmıyor (B-322 rawAssets'i payload'dan çıkarıyor; B-313 string taramayı
-  güçlendirdi). Tam kapsam için widget HTML/JS içeriğinin export öncesi taranması gerekir.
-- **B-323 Türkçe toUpperCase** — cevap saklama biçimi doğrulanmadan değiştirmek riskli;
-  runtime test gerekir.
-- **~280 Orta/Düşük (uzun kuyruk)** — düşük-riskli olanlar batch'ler halinde sürüyor;
-  kalanı ilgili alanlara dokundukça artımlı yapılması öneriliyor.
+### B-301 doğrulama (gerçek ortam)
+Yerel XAMPP PHP 8.2.12 + MySQL'de izole `eicerik_test` DB kuruldu ve test edildi:
+- Oturumsuz `GET /projects` → **önce 200 (açık doğrulandı)**, fix sonrası **401 AUTH_REQUIRED**.
+- `POST /auth/login` (geçerli kimlik) → **200**; geçerli oturumla `GET /projects` → **200**.
+- Sahte oturumla → **401 SESSION_INVALID**; oturumsuz `/upload` → **401**, geçerli oturumla auth'u geçiyor.
+Test ortamı sonrasında temizlendi; `config.php` (gitignore'lu) yerel placeholder'ına geri alındı.
+
+**Kalan — karar/ortam gerektiriyor veya bilinçli ertelendi:**
+- **B-323 Türkçe toUpperCase — İNCELENDİ, UYGULANMADI (regresyon riski).** Cevaplar editörde
+  girişte düz `value.toUpperCase()` ile saklanıyor (`PuzzleEditor.jsx:313`), ızgara ve runtime
+  karşılaştırması da düz toUpperCase → **tüm hat tutarlı**. Yalnız runtime'ı `tr` locale'e çevirmek
+  saklanan 'I' ile yazılan 'İ' arasında uyuşmazlık (regresyon) yaratır. Doğru çözüm editör+runtime
+  kapsayan bütünsel normalizasyon — ayrı, dikkatli bir iş.
+- **B-312 tam kapsam** — widget HTML/JS binary içeriğinin export-öncesi taranması hâlâ açık
+  (yükleme uyarısı eklendi; binary tarama ayrı iş). B-322 rawAssets'i payload'dan çıkarıyor.
+- **~270 Orta/Düşük (uzun kuyruk)** — düşük-riskliler batch'ler halinde sürüyor; kalanı ilgili
+  alanlara dokundukça artımlı yapılması öneriliyor.
 
 ---
 
@@ -59,8 +69,10 @@
 `/versions`, `/publish`, `/restore`, `/duplicate` vb. **kimlik/oturum kontrolü yapmıyor.** Üretim
 paylaşımlı FTP/PHP olduğundan API URL'sini bilen herkes tüm projeleri okuyup değiştirebilir/silebilir
 ve dosya yükleyebilir. Kanıt türü: statik + manuel grep doğrulaması. → rapor 06 B6-K1.
-**Düzeltme:** admin dışı tüm uçlara `require_active_session($pdo)` geçidi (X-User-Id + X-Session-Id
-→ `user_sessions` doğrulama, aksi 401).
+**Düzeltme (YAPILDI + gerçek ortamda doğrulandı):** admin dışı tüm uçlara `require_active_session($pdo)`
+geçidi eklendi (X-User-Id + X-Session-Id → `user_sessions` doğrulama, aksi 401); `/auth/*` ve
+`/admin/backup` muaf. `apiClient.uploadMediaFile` artık oturum başlığı gönderiyor. XAMPP PHP 8.2 +
+MySQL'de 4 senaryo ile test edildi (yukarıdaki "B-301 doğrulama" bölümü).
 
 ---
 
