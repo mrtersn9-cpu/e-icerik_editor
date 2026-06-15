@@ -2779,12 +2779,13 @@ const StageCanvas = forwardRef(function StageCanvas(
               // Pano işlemleri
               items.push({
                 label: 'Kes',
+                disabled: isLockedTarget,
                 onClick: () => {
                   if (copySelected() !== false) deleteSelected();
                 },
               });
-              items.push({ label: 'Kopyala', onClick: () => copySelected() });
-              items.push({ label: 'Çoğalt', onClick: duplicateSelected });
+              items.push({ label: 'Kopyala', disabled: isLockedTarget, onClick: () => copySelected() });
+              items.push({ label: 'Çoğalt', disabled: isLockedTarget, onClick: duplicateSelected });
               items.push({ label: 'Yapıştır', disabled: !hasClip, onClick: () => pasteClipboard() });
               items.push({ separator: true });
               // Bağlam duyarlı Grupla/Ayır (dinamik tek madde)
@@ -2838,8 +2839,8 @@ const StageCanvas = forwardRef(function StageCanvas(
                   ],
                 });
               }
-              items.push({ label: 'Öne Getir', onClick: bringFront });
-              items.push({ label: 'Arkaya Gönder', onClick: sendBack });
+              items.push({ label: 'Öne Getir', disabled: isLockedTarget, onClick: bringFront });
+              items.push({ label: 'Arkaya Gönder', disabled: isLockedTarget, onClick: sendBack });
               if (moveLayers.length) {
                 items.push({
                   label: 'Katmana Taşı',
@@ -2860,7 +2861,7 @@ const StageCanvas = forwardRef(function StageCanvas(
                 onClick: () => patchObj(target.id, { visible: target.visible === false }),
               });
               items.push({ separator: true });
-              items.push({ label: 'Sil', danger: true, onClick: deleteSelected });
+              items.push({ label: 'Sil', danger: true, disabled: isLockedTarget, onClick: deleteSelected });
             } else {
               if (stageBackgroundObject) {
                 items.push({

@@ -361,8 +361,11 @@ function ActivityTextEditor({
       desc: 'Hazır tema renkleri, ikonlar ve tanıtım ekranı ayarları.',
       enabled: settings.showButtonPackageIntro !== false && packageScreen.enabled !== false,
       onToggle: (v) => {
-        patchSettings({ showButtonPackageIntro: v });
-        patchPackage({ enabled: v });
+        // Tek patch: iki ardisik onUpdate bayat activity yaydigindan ilk yazim kayboluyordu.
+        patch({
+          settings: { ...settings, showButtonPackageIntro: v },
+          buttonPackageScreen: { ...packageScreen, enabled: v },
+        });
       },
       textFields: [
         {
@@ -431,8 +434,11 @@ function ActivityTextEditor({
       desc: 'Kuralların ve açıklamaların gösterildiği menü ekranı.',
       enabled: settings.showMenuScreen !== false && menuScreen.enabled !== false,
       onToggle: (v) => {
-        patchSettings({ showMenuScreen: v });
-        patchMenu({ enabled: v });
+        // Tek patch: kayip guncellemeyi onlemek icin settings + menuScreen birlikte.
+        patch({
+          settings: { ...settings, showMenuScreen: v },
+          menuScreen: { ...menuScreen, enabled: v },
+        });
       },
       textFields: [
         {
