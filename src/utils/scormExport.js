@@ -1,4 +1,5 @@
 import { getCustomFonts } from '../constants/fonts';
+import { FORMULA_ENGINE_SCRIPT } from '../generated/formulaEngineCore.js';
 import { STORYLINE_RENDERER_CORE_SCRIPT } from '../generated/storylineRendererCore.js';
 import { STORYLINE_RUNTIME_CORE_SCRIPT } from '../generated/storylineRuntimeCore.js';
 import { STORYLINE_RUNTIME_ENGINE_SCRIPT } from '../generated/storylineRuntimeEngine.js';
@@ -383,6 +384,7 @@ const SCORM=(function(){
   return{init,set,get,commit,finish,completeCourse,suspend,sessionTime}
 })();
 function num(value,fallback){const n=Number(value);return Number.isFinite(n)?n:fallback}
+${FORMULA_ENGINE_SCRIPT}
 ${STORYLINE_RUNTIME_CORE_SCRIPT}
 ${STORYLINE_RUNTIME_ENGINE_SCRIPT}
 ${STORYLINE_RENDERER_CORE_SCRIPT}

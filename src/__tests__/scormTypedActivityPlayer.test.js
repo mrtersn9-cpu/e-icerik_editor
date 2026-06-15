@@ -62,6 +62,26 @@ describe('SCORM typed activity player', () => {
     expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
   });
 
+  test('B-320: formül motoru (parseAndEvaluate) SCORM bundle\'ına gömülür', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'f1',
+      activities: [
+        {
+          id: 'f1',
+          name: 'Form',
+          type: 'fill-blank',
+          fillBlankSentence: 'A ___',
+          fillBlankAnswers: [{ id: 'b0', acceptedValues: ['x'] }],
+        },
+      ],
+    });
+    // DegiskenAta formul yolu parseAndEvaluate cagiriyor; bundle'da tanimli olmali.
+    expect(html).toContain('function parseAndEvaluate');
+    expect(html).toContain('function tokenize');
+    expect(html).toContain('function evaluateRPN');
+    // Bundle'in butun olarak gecerli kosmasi mevcut jsdom-exec testleriyle dogrulaniyor.
+  });
+
   test('B-321: wordsearch için Kontrol Et butonu render edilir ve tamamlanır', () => {
     const html = buildStorylinePlayerHtml({
       selActId: 'ws-1',
