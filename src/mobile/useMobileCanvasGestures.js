@@ -64,7 +64,7 @@ export default function useMobileCanvasGestures({
       const [a, b] = event.touches;
       const ratio = dist(a, b) / st.startDist;
       const next = clamp(st.startScale * ratio, MOBILE_CANVAS.minScale, MOBILE_CANVAS.maxScale);
-      handlersRef.current.onZoomChange(Number(next.toFixed(3)));
+      handlersRef.current.onZoomChange?.(Number(next.toFixed(3)));
       // orta noktanın hareketi kadar kaydır (zoom yaparken pozisyon sabitleme)
       const m = mid(a, b);
       node.scrollLeft = st.startScroll.left + (st.startMid.x - m.x);

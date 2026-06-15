@@ -95,7 +95,7 @@ function renderBar(points) {
       const h = (p.value / max) * chartH;
       const y = baseY - h;
       const label = `<text x="${x + barW / 2}" y="${VIEW_H - PAD + 12}" font-size="9" fill="#64748b" text-anchor="middle">${esc(p.label)}</text>`;
-      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2" fill="${p.color}"/>${label}`;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2" fill="${esc(p.color)}"/>${label}`;
     })
     .join('');
   return `<line x1="${PAD}" y1="${baseY}" x2="${VIEW_W - PAD}" y2="${baseY}" stroke="#cbd5e1"/>${bars}`;
@@ -116,13 +116,13 @@ function renderLine(points) {
   const dots = coords
     .map(
       (c) =>
-        `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3" fill="${c.p.color}"/>` +
+        `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3" fill="${esc(c.p.color)}"/>` +
         `<text x="${c.x.toFixed(1)}" y="${VIEW_H - PAD + 12}" font-size="9" fill="#64748b" text-anchor="middle">${esc(c.p.label)}</text>`
     )
     .join('');
   return (
     `<line x1="${PAD}" y1="${baseY}" x2="${VIEW_W - PAD}" y2="${baseY}" stroke="#cbd5e1"/>` +
-    `<path d="${path}" fill="none" stroke="${points[0]?.color || CHART_PALETTE[0]}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}`
+    `<path d="${path}" fill="none" stroke="${esc(points[0]?.color || CHART_PALETTE[0])}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}`
   );
 }
 
@@ -133,7 +133,7 @@ function renderPie(points) {
   const r = Math.min(VIEW_W, VIEW_H) / 2 - PAD;
   let angle = -Math.PI / 2;
   if (points.length === 1) {
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${points[0].color}"/>`;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${esc(points[0].color)}"/>`;
   }
   return points
     .map((p) => {
@@ -144,7 +144,7 @@ function renderPie(points) {
       const x2 = cx + r * Math.cos(angle);
       const y2 = cy + r * Math.sin(angle);
       const largeArc = slice > Math.PI ? 1 : 0;
-      return `<path d="M${cx} ${cy} L${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${p.color}"/>`;
+      return `<path d="M${cx} ${cy} L${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${esc(p.color)}"/>`;
     })
     .join('');
 }

@@ -65,7 +65,9 @@ function normalizeTimelineItem(item = {}, index = 0, objects = []) {
     }))
     .sort((a, b) => a.time - b.time);
 
-  const seededKeyframes = keyframes.length > 0 ? keyframes : fallback.keyframes;
+  // Diziyi kopyala: bos durumda fallback.keyframes referansina unshift/push ile in-place
+  // mutasyon, ...fallback ile donen nesneyle paylasilan referansi bozuyordu (undo/redo riski).
+  const seededKeyframes = [...(keyframes.length > 0 ? keyframes : fallback.keyframes)];
 
   if (seededKeyframes[0].time !== 0) {
     seededKeyframes.unshift({
