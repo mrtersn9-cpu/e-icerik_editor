@@ -84,22 +84,22 @@ export function getAutoAnswerSummary(activity) {
     );
     const pairs = getDragDropPairsFromMatches(getCorrectDragMatches(activity)).map(
       ({ dragId, dropId }) =>
-        `${dragById[dragId]?.label || 'Surukle'} → ${dropById[dropId]?.label || 'Birak'}`
+        `${dragById[dragId]?.label || 'Sürükle'} → ${dropById[dropId]?.label || 'Bırak'}`
     );
-    return pairs.length ? pairs : ['Dogru eslesme henuz olusmadi.'];
+    return pairs.length ? pairs : ['Doğru eşleşme henüz oluşmadı.'];
   }
   const selectedOptionLabels = (activity.mcOptions || [])
     .filter((o) => o.isCorrect)
-    .map((o) => o.label || 'Secenek');
+    .map((o) => o.label || 'Seçenek');
   if (selectedOptionLabels.length) return [selectedOptionLabels.join(', ')];
   if (Array.isArray(activity.selectionSlots) && activity.selectionSlots.length) {
     const labels = activity.selectionSlots.map((slot, index) => {
-      if (!slot?.correctChoice) return `${index + 1}. soru: anahtar okunamadi`;
+      if (!slot?.correctChoice) return `${index + 1}. soru: anahtar okunamadı`;
       return `${index + 1}. soru: ${slot.correctLabel || String(slot.correctChoice).toUpperCase()}`;
     });
-    return labels.length ? labels : ['Dogru secenek henuz tanimlanmadi.'];
+    return labels.length ? labels : ['Doğru seçenek henüz tanımlanmadı.'];
   }
-  return ['Dogru secenek henuz tanimlanmadi.'];
+  return ['Doğru seçenek henüz tanımlanmadı.'];
 }
 
 // Çoktan seçmeli etkinlikte doğru seçeneklerin id listesini döndürür.

@@ -316,7 +316,7 @@ function createButtonPresetObject(presetId = 'btn-blue') {
   const object = createObject('button');
   return {
     ...object,
-    label: 'Button',
+    label: 'Buton',
     width: preset?.w || object.width,
     height: preset?.h || object.height,
     style: {
@@ -831,10 +831,10 @@ function createCanvasShapeObject(label, x, y, width, height, style = {}) {
   };
 }
 
-function createSlide(name = 'Slider 1', index = 0) {
+function createSlide(name = 'Sahne 1', index = 0) {
   return {
     id: uid(),
-    name: name || `Slider ${index + 1}`,
+    name: name || `Sahne ${index + 1}`,
     sceneName: `Sahne ${index + 1}`,
     sceneTemplateId: '',
     sceneTemplatePresetId: '',
