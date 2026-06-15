@@ -55,7 +55,9 @@ function tokenize(expression) {
         i++;
       }
       const num = parseFloat(numStr);
-      if (Number.isNaN(num)) {
+      // Birden fazla ondalık nokta ('1.2.3') parseFloat ile sessizce kırpılıp 1.2
+      // oluyordu; nokta sayısı 1'i aşarsa geçersiz say (sessiz veri bozulmasını önle).
+      if (Number.isNaN(num) || (numStr.match(/\\./g) || []).length > 1) {
         throw new Error(\`Geçersiz sayı formatı: \${numStr}\`);
       }
       tokens.push({ type: 'NUMBER', value: num });

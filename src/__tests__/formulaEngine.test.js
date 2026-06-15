@@ -41,6 +41,12 @@ describe('Güvenli Formula Motoru (Safe Formula Engine) Birim Testleri', () => {
     it('bilinmeyen karakter durumunda hata fırlatmalıdır', () => {
       expect(() => tokenize('2 @ 3')).toThrow('Geçersiz karakter tespit edildi: "@"');
     });
+
+    it('birden fazla ondalık nokta içeren sayıyı reddetmelidir (sessiz kırpma yok)', () => {
+      expect(() => tokenize('1.2.3')).toThrow('Geçersiz sayı formatı: 1.2.3');
+      // parseAndEvaluate de bu hatayı yüzeye çıkarmalı, sessizce 1.2'ye düşmemeli
+      expect(() => parseAndEvaluate('1.2.3 + 1')).toThrow(/Geçersiz sayı formatı/);
+    });
   });
 
   describe('Shunting-yard Algoritması ve RPN', () => {
