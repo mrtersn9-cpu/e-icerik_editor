@@ -38,7 +38,50 @@ Kapsam: `ftp-hosting/`
 - Önerilen düzeltme: Aktif export akışı ve PHP fallback akışı için dış link/embed
   varlığında uyarı/engel davranışı otomatik testle doğrulansın.
 
+## Tur 2 — Derin Güvenlik İncelemesi (OWASP odaklı, 2026-06-15)
+
+### B6-K1 — KRİTİK: İçerik uçlarında yetkilendirme yok (yetkilendirme atlama) [DOĞRULANDI]
+
+- Dosya:satır: `ftp-hosting/api/index.php:173` (ve tüm veri uçları)
+- Kanıt türü: Statik analiz + **manuel doğrulama** (grep: tek auth kapısı satır 164
+  `require_admin_token`, yalnız `/admin/backup` için).
+- Sorun: `/auth/login` + `user_sessions` tablosuyla bir oturum mekanizması kurulmuş ama
+  **yalnız `/admin/backup`** korunuyor. `/workspace`, `/state` (GET+PUT), `/projects`
+  (GET/POST/DELETE), `/projects/{id}/draft` (PUT), `/versions`, `/publish`, `/restore`,
+  `/duplicate`, `/upload` — **hiçbiri kimlik/oturum kontrolü yapmıyor.** `.htaccess`'te de
+  Basic auth yok.
+- Etki: API URL'sini bilen herkes (paylaşımlı FTP host'ta tahmin edilebilir) tüm projeleri
+  okuyabilir, değiştirebilir, silebilir ve dosya yükleyebilir. Login akışı fiilen
+  gösterimlik. **Üretim ortamı PHP/MySQL paylaşımlı FTP olduğundan canlı ve ciddi.**
+- Önerilen düzeltme: admin/backup dışındaki tüm yazma (ve tercihen okuma) uçlarının başına
+  `X-User-Id` + `X-Session-Id`'yi `user_sessions`'a karşı doğrulayan ortak bir
+  `require_active_session($pdo)` geçidi ekle; geçersiz/süresi dolmuş oturumda 401 dön.
+
+### B6-Y1 — Kitap kilidinde kimlik doğrulanmadan başlık güveniliyor (kilit sahteciliği)
+
+- `ftp-hosting/api/index.php:431` — `lock`/`unlock` `HTTP_X_USER_ID`/`HTTP_X_SESSION_ID`'yi
+  doğrudan alıp yalnız boş olup olmadığını kontrol ediyor; `user_sessions`'a karşı
+  doğrulamıyor. Saldırgan rastgele başlık üretip başkasının kitabını kilitleyebilir/kilidini
+  çalabilir. **Fix:** işlemden önce oturumu doğrula, `user_name`'i doğrulanmış kayıttan türet.
+
+### B6-Y2 — Kimliksiz dosya yükleme ucu (kimlik yok + sınırsız)
+
+- `ftp-hosting/api/index.php:360` — `/upload` oturum/kimlik kontrolü yapmıyor; herkese açık.
+  MIME `finfo` ile doğrulanıyor ve dosya adı `random_bytes` ile üretiliyor (iyi), ama kimlik
+  doğrulaması olmadığından internetten herkes diski doldurabilir (DoS) ve `/static/uploads`
+  altında kalıcı servis edilen dosya bırakabilir. Boyut/oran sınırı yok. B6-K1 ile birleşince
+  somut kötüye kullanım yüzeyi. **Fix:** aktif oturum şartı + sunucu tarafı boyut/oran sınırı.
+
+### Orta
+
+- `ftp-hosting/api/index.php` — (B6 Orta bulguları workflow çıktısında; çoğunlukla giriş
+  doğrulama ve hata mesajı detayları)
+
+> Not: Gizli değerler (varsa) rapora yazılmadı; yalnız dosya:satır + risk türü belirtildi.
+> `config.php` tarafında sabit kodlanmış kritik secret tespit edilmedi (yalnız Düşük notlar).
+
 ## İncelenen Dosya Grupları
 
-- `ftp-hosting/api/index.php`
+- `ftp-hosting/api/index.php` (1859 satır — tamamı)
+- `ftp-hosting/api/config.php`
 - `ftp-hosting/scorm/`

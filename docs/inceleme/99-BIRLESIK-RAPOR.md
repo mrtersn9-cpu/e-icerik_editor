@@ -1,128 +1,153 @@
 # 99 — Birleşik Rapor ve Düzeltme Planı
 
-Bu rapor 2026-06-12 tarihli ilk Codex denetim turunun birleşik çıktısıdır. Statik
-analiz, otomatik etkileşim taraması ve komut kontrolleri yapıldı; canlı Playwright
-tıklama, ekran görüntüsü inceleme ve gerçek SCORM zip çevrimdışı ağ testi henüz
-yapılmadı.
+İki denetim turunun birleşik çıktısı:
+- **Tur 1 (Codex, 2026-06-12):** Hazır buton font akışı odaklı; 6 bulgu (B-001..B-006)
+  **düzeltildi** (commit `ca10fa4`).
+- **Tur 2 (Derin çok-ajanlı inceleme, 2026-06-15):** Tüm `src/` + `server.mjs` + `scripts/` +
+  `public/` + `ftp-hosting/` (PHP) satır satır; ~55 inceleme ajanı + canlı Playwright duman testi
+  + manuel doğrulama. Bu rapor Tur 2'yi konsolide eder; bölge ayrıntıları `01`–`10`'da.
 
-## Bulgular
+## Tur 2 Bulgu Dağılımı (düzeltmeler sonrası, yaklaşık)
 
-### B-001 — Yüksek — Hazır buton toplu font/stil ayarı typed SCORM oynatıcıya taşınmıyor
+| Önem | Adet | Not |
+|---|---|---|
+| Kritik | **1** | PHP yetkilendirme atlama (üretim güvenlik) |
+| Yüksek | ~43 | dış-link/KESİN KURAL kümesi + SCORM doğruluk + state bütünlüğü + güvenlik |
+| Orta | ~105 | |
+| Düşük | ~190 | |
 
-- Durum: Düzeltildi (commit atılmadı).
-- Kanıt türü: Statik analiz
-- Dosya:satır: `src/utils/storylineRuntime.js:117`, `src/utils/storylineRuntime.js:225`,
-  `src/utils/scormTypedActivityPlayer.js:10`, `src/utils/scormTypedActivityPlayer.js:154`,
-  `src/utils/scormExport.js:310`, `src/utils/scormExport.js:364`
-- TTKB riski: Evet.
-- Sorun: Runtime deck beyaz listesinde `readyButtonTextColor`, `readyButtonFontFamily`,
-  `readyButtonFontSize`, `readyButtonFontWeight` yok. Typed SCORM player da sabit
-  `.typed-btn` stili kullanıyor.
-- Etki: Editördeki toplu font ailesi/punto/kalınlık/yazı rengi değişimi bazı öğrenci
-  SCORM etkinliklerinde görünmeyebilir.
-- Önerilen düzeltme: Runtime deck'e hazır buton yazı stil alanlarını ekle; typed
-  player butonlarına ortak CSS değişkeni/inline stil uygula; SCORM HTML testini ekle.
-- Yapılan düzeltme: Runtime deck'e `readyButtonTextColor`, `readyButtonFontFamily`,
-  `readyButtonFontSize`, `readyButtonFontWeight` alanları eklendi. Typed SCORM player
-  bu alanları CSS değişkenlerine bağlayarak `.typed-btn` kontrollerine uyguluyor.
-  Özel font yalnız hazır buton tipografisinde kullanılsa bile SCORM HTML'e `@font-face`
-  olarak gömülüyor.
+> Doğrulama 2 "Kritik"i çürüttü (aşağıda) → tek gerçek Kritik PHP auth.
 
-### B-002 — Yüksek — PHP export helper içinde SCORM 2004 üretim yolu duruyor
+---
 
-- Durum: Düzeltildi (commit atılmadı).
-- Kanıt türü: Statik analiz
-- Dosya:satır: `ftp-hosting/api/index.php:1776`, `ftp-hosting/api/index.php:1797`,
-  `ftp-hosting/api/index.php:1883`
-- TTKB/ürün riski: Evet.
-- Sorun: Ürün kuralı yalnız SCORM 1.2 olmasına rağmen PHP helper `scorm2004` dalına
-  sahip.
-- Etki: Dormant yol yeniden bağlanırsa veya eski state ile çalışırsa ürün kuralına
-  aykırı paket üretilebilir.
-- Önerilen düzeltme: SCORM 2004 dalını kaldır; 1.2 dışındaki standardı reddet veya
-  her zaman `scorm12` normalize et.
-- Yapılan düzeltme: PHP manifest helper içindeki SCORM 2004 dalı kaldırıldı.
-  `normalize_scorm_standard()` artık yalnızca `scorm12` döndürüyor.
+## KRİTİK
 
-### B-003 — Orta — Önizleme flow'larında toplu font kapsaması kanıtlanmamış
+### B-301 — PHP API'de yetkilendirme yok (yetkilendirme atlama) · DOĞRULANDI
+`ftp-hosting/api/index.php` — Yalnız `/admin/backup` korunuyor; `/state`, `/projects`, `/upload`,
+`/versions`, `/publish`, `/restore`, `/duplicate` vb. **kimlik/oturum kontrolü yapmıyor.** Üretim
+paylaşımlı FTP/PHP olduğundan API URL'sini bilen herkes tüm projeleri okuyup değiştirebilir/silebilir
+ve dosya yükleyebilir. Kanıt türü: statik + manuel grep doğrulaması. → rapor 06 B6-K1.
+**Düzeltme:** admin dışı tüm uçlara `require_active_session($pdo)` geçidi (X-User-Id + X-Session-Id
+→ `user_sessions` doğrulama, aksi 401).
 
-- Durum: Düzeltildi (commit atılmadı).
-- Kanıt türü: Statik analiz / test boşluğu
-- Dosya:satır: `src/components/preview/PreviewComponents.jsx:1773`,
-  `src/components/preview/PreviewComponents.jsx:3202`
-- Sorun: Hazır buton font patch'i belirli preview flow'larda kullanılıyor; diğer
-  preview flow'ların tamamında aynı davranış statik olarak kanıtlanmadı.
-- Etki: Editör önizlemesinde bazı etkinlik tipleri toplu font değişimini göstermeyebilir.
-- Önerilen düzeltme: Preview buton stilleri ortak helper'a taşınsın; her etkinlik tipi
-  için görsel/canlı test eklensin.
-- Yapılan düzeltme: Eski React preview flow'larındaki öğrenci aksiyon butonları
-  `getReadyButtonTextStylePatch()` tabanlı ortak helper'a bağlandı. SCORM ile aynı
-  preview zaten `buildStorylinePlayerHtml()` yolunu kullandığı için B-001 düzeltmesini
-  miras alıyor.
+---
 
-### B-004 — Orta — Hazır buton toplu font için SCORM runtime testi eksik
+## YÜKSEK — gruplandırılmış
 
-- Durum: Düzeltildi (commit atılmadı).
-- Kanıt türü: Test sonucu / test boşluğu
-- Dosya:satır: `src/__tests__/readyButtonTextColor.test.js:128`,
-  `src/__tests__/scormTypedActivityPlayer.test.js:1`
-- Sorun: Mevcut testler restyle katmanını doğruluyor; SCORM typed player'da font/color
-  yansımasını doğrulamıyor.
-- Etki: B-001 gibi SCORM kaçakları testlerden geçebilir.
-- Önerilen düzeltme: `buildStorylinePlayerHtml()` ile üretilen HTML'de ve jsdom DOM'unda
-  typed buton stillerini doğrulayan test ekle.
-- Yapılan düzeltme: `scormTypedActivityPlayer.test.js` typed SCORM player'da CSS
-  değişkenlerinin DOM'a yansıdığını doğruluyor. `scormCustomFonts.test.js` hazır buton
-  toplu fontunda kullanılan özel fontun SCORM HTML'e gömüldüğünü doğruluyor.
+### A. KESİN KURAL / SCORM dış-link kümesi (en yüksek öncelikli tema, DOĞRULANDI)
+Kullanıcı manuel eklemeden dış istek SCORM paketine sızabilen yollar:
+- **B-310** SVG sanitize'leri `http(s)`'i koruyor → SVG'ye gömülü dış görsel SCORM'a sızıyor.
+  `src/generated/storylineRendererCore.js:4` (runtime, pakete giren) + `src/utils/editorHelpers.js:119`.
+  jsdom + manuel doğrulandı. → rapor 04, 02 B2-Y1.
+- **B-311** `embed` nesnesi dış `embedUrl`'i SCORM'da iframe yüklüyor; `scormMediaInline` kapsam
+  dışı. Manuel link → **export uyarısı zorunlu** (şu an garanti değil). `storylineRendererCore.js:30`.
+- **B-312** Dış kaynak içeren yüklenen widget uyarısız SCORM'a giriyor; `result.warnings` yutuluyor.
+  `widgetZipParser.js:230/223`, `LibraryWorkspace.jsx:593`. → rapor 02.
+- **B-313** Dış-link tespiti protokolsüz `//` kaçırıyor + güçlü tarayıcı ölü kod, zayıf kopya
+  kullanılıyor. `lmsSecurity.js:6/48` + `EIcerikEditor.jsx:749`. → rapor 04.
+- **B-314** PDF SVG dış referansı raporlanıyor ama içerikten silinmiyor. `pdfActivityIntegration.js:58`.
 
-### B-005 — Düşük — SCORM manifest namespace URL'leri katı dış URL taramasında yanlış pozitif olabilir
+> Bu küme TTKB/KVKK ve KESİN KURAL açısından en kritik düzeltme grubudur. Önerilen ortak çözüm:
+> SCORM hedefli tek bir sanitizasyon/inline katmanı (yalnız `#` ve `data:image/` güvenli; tüm
+> `http(s)`/`//` ya gömülür ya da export öncesi engellenir + manuel link uyarısı tetiklenir).
 
-- Durum: Kapatıldı / standart istisna olarak belgelendi.
-- Kanıt türü: Statik analiz
-- Dosya:satır: `src/utils/scormExport.js:255`, `src/utils/scormExport.js:928`
-- Sorun: XML namespace/schema URL'leri pakette `http://` olarak geçiyor. Bunlar normalde
-  fetch değildir, ancak katı paket taraması risk diye işaretleyebilir.
-- Önerilen düzeltme: İstisnayı dokümante et veya `schemaLocation` kullanımını yerel XSD
-  odaklı sadeleştir.
-- Yapılan düzeltme: `src/utils/scormExport.js` içinde SCORM 1.2 namespace URI'lerinin
-  runtime dış istek olmadığı ve XSD dosyalarının pakete yerel eklendiği açıklandı.
-  Bu URI'leri kaldırmak SCORM uyumluluğu riski taşıdığı için kod tarafında standart
-  namespace korunuyor.
+### B. SCORM doğruluk / tamlık
+- **B-320** `parseAndEvaluate` SCORM bundle'ında yok → formüllü `DegiskenAta` SCORM'da sessizce
+  bozuk (editörde çalışıyor). `generated/storylineRuntimeEngine.js:902`.
+- **B-321** wordsearch/maze/memory'de "Kontrol Et" yok → etkinlik tamamlanmıyor, SCORM skor/durum
+  güncellenmiyor. `scormTypedActivityPlayer.js:937`.
+- **B-322** Tekrarlı widget `rawAssets` payload'a gömülüyor (paket şişmesi). `scormExport.js:459`.
+- **B-323** Türkçe i/İ `toUpperCase` yanlış → doğru cevap hatalı reddediliyor (Orta sınırı).
+  `scormTypedActivityPlayer.js:676`.
 
-### B-006 — Bilgi — Editör kabuğu Google Fonts kullanıyor
+### C. Editör veri bütünlüğü / durum yönetimi
+- **B-330** `duplicateActivity` referans remap yapmıyor → bozuk kopya (near-critical).
+  `LibraryWorkspace.jsx:531`.
+- **B-331** Kilitli hedef sağ tık menüsü yanlış nesneyi siliyor. `StageCanvas.jsx:2780`.
+- **B-332** Cevap katmanındaki elle nesneler "Sahneye Uygula"da sessizce siliniyor.
+  `activityObjectGenerators.js:105`.
+- **B-333** PDF anchor dedup `line.id` ile çalışmıyor; 2.+ ifade düşüyor. `pdfUtils.js:1149`.
+- **B-334** `ActivityTextEditor` Tema/Menü anahtarı çift onUpdate → kayıp güncelleme. `:363/:433`.
+- **B-335** `maxAttempts=0` (sınırsız) sessizce 3'e dönüşüyor (`||` vs `??`). `cevapSchema.js:42`.
+- **B-336** Karma öğe tip değişimi cevapsız çıkmaza sokuyor. `KarmaCevapPanel.jsx:74`.
+- **B-337** Timeline sürükleme her move'da commit → undo geçmişini yok ediyor.
+  `useTimelineController.js:263`.
+- **B-338** SurukleBirak otomatik katman üretimi (mount'ta) + undo kirliliği. `:160/:425`.
+- **B-339** FormatRightPanel "URLAc"ta URL alanı yok. `:268`.
+- **B-340** BranchingDiagram `trigger.value` yerine olmayan `targetActivityId` okuyor. `:26`.
+- **B-341** Bul-Değiştir slayt nesnelerini atlıyor (sessiz "0 eşleşme"). `useRibbonController.js:1376`.
+- **B-342** Store toast altyapısı ölü; paralel ikinci sistem → bildirim kaybı. `useEditorStore.js:119`.
+- **B-343** Runtime audio cleanup'ta durdurulmuyor (hayalet ses). `storyline-preview/index.jsx:2284`.
+- **B-344** Soru düzenlenince bayat `puzzlePlaced` ile önizleme/SCORM. `PuzzleEditor.jsx:43`.
+- **B-345** `MixedActivityEditor` prop'suz çağırıyor → render çökmesi (şu an maskeli). `:9`.
+- **B-346** `ReviewThreadsModal` yutulmuş hata. `:57`.
+- **B-347** TtkbCompliance Auto-Fix bayat snapshot yarışı. `:269`.
+- **B-348** Timeline tek `dragRef` paylaşımı → temizlik kaybı. `useTimelineController.js:99`.
 
-- Durum: Düzeltildi (commit atılmadı).
-- Kanıt türü: Statik analiz
-- Dosya:satır: `public/index.html:7`, `public/index.html:9`, `src/constants/fonts.js:165`
-- Sorun: Editör tarafı Google Fonts'a bağlanabiliyor. Mevcut politika bunu SCORM dış
-  link ihlali saymıyor.
-- Önerilen düzeltme: Editörün de tamamen çevrimdışı çalışması hedeflenirse yerel font
-  manifestine geç.
-- Yapılan düzeltme: `public/index.html` içindeki Google Fonts preload/stylesheet
-  bağlantıları kaldırıldı. `src/constants/fonts.js` artık yalnızca yerel
-  `public/fonts/fonts.css` dosyasını dener; CDN fallback yoktur.
+### D. Güvenlik (yerel sunucu + PHP)
+- **B-350** `server.mjs` LMS/xAPI/LTI sırları yazma yolunda temizlenmiyor → DB'ye kalıcı. `:1182`.
+- **B-351** `server.mjs` token header fallback ile atlanabilir. `:392` (Orta).
+- **B-352** PHP kitap kilidi sahteciliği (kimlik doğrulanmadan başlık güveni). `index.php:431`.
+- **B-353** PHP kimliksiz + sınırsız dosya yükleme. `index.php:360`.
+
+### E. Repo hijyeni / tehlikeli scriptler
+- **B-360** Tek seferlik `scripts/cleanup-editor.mjs:258` ve `extract-runtime-inline.mjs:85`
+  yedeksiz/onaysız kaynağı/SCORM runtime'ı ezebiliyor. `git rm` veya guard. (Diğer `extract-*.mjs`
+  ve `restore-editor-scenes.mjs` de aynı sınıf.)
+
+---
+
+## ÇÜRÜTÜLEN / DÜZELTİLEN
+
+- **B-101 (eski "Kritik — önizleme çöküşü") → Orta, ölü kod.** `previewEngine.js` +
+  `PreviewComponents.jsx` (≈5000 satır) **yetim/ölü**; canlı önizleme `storyline-preview`'dan
+  geliyor. Canlı test 0 hata; build "was not found" uyarısı yok. Gerçek iş: ölü kod temizliği.
+  (`ButtonPackageIntroDiagram` "Kritik" bulgusu da aynı ölü dosyada → çürütüldü.)
+- **Tur 1 B-001..B-006:** Codex turunda düzeltildi (commit `ca10fa4`): hazır buton font akışı
+  runtime/typed player'a taşındı, PHP SCORM 2004 dalı kaldırıldı, editör Google Fonts bağlantıları
+  kaldırıldı, SCORM/font testleri eklendi.
+- **`npm audit` çelişkisi:** Codex "0 vulnerability" demişti; taze çalıştırmada 41 açık (2 kritik,
+  18 yüksek) — hepsi `react-scripts`/build araçları, SCORM paketine girmez (Orta-dev). → rapor 10.
+
+---
 
 ## Önerilen Düzeltme Sırası
 
-1. B-001 ve B-004: Düzeltildi.
-2. B-002: Düzeltildi.
-3. B-003: Düzeltildi; canlı görsel test hala ayrıca önerilir.
-4. B-005: Standart SCORM namespace istisnası olarak belgelendi.
-5. B-006: Düzeltildi.
+1. **B-301 (PHP auth)** — üretim güvenliği; tek başına en yüksek risk.
+2. **A kümesi (B-310..B-314)** — KESİN KURAL/TTKB; ortak SCORM sanitizasyon+inline+uyarı katmanı.
+   B-312 (widget) ile birlikte yapılmalı (aynı export yolu).
+3. **B-320, B-321** — SCORM doğruluk (formül + tamamlama); öğrenci sonucu/skoru etkiliyor.
+4. **B-330, B-331, B-332, B-333** — sessiz veri kaybı/bozulma (kopya, kilitli silme, cevap katmanı, PDF).
+5. **B-334..B-348** — state/UX; ilgili dosya gruplarına göre kümele (timeline B-337/B-348 birlikte,
+   ActivityTextEditor B-334 tek commit, cevap panelleri birlikte).
+6. **B-350..B-353** — güvenlik (sır temizleme + PHP kilit/upload).
+7. **B-360 + B-101 ölü kod** — repo temizliği (silme); regresyon riski düşük, en sona.
 
-## Tamlık Eleştirisi
+Her düzeltme sonrası ilgili davranış canlı doğrulanmalı (/verify). Kritik+Yüksek bitince Aşama 3
+canlı tıklama turu regresyon için tekrarlanmalı.
 
-- Canlı tıklama testi yapılmadı; `07-tiklanabilir-envanter.md` ham statik envanterdir.
-- Görsel ekran görüntüsü seti üretilmedi; `09-gorsel-bulgular.md` görsel risk önceliği
-  içerir.
-- Gerçek SCORM zip üretimi, zip açma, dosya bütünlüğü ve tarayıcıda çevrimdışı ağ
-  trafiği izleme yapılmadı. Buna rağmen SCORM HTML üretimi jsdom testleriyle doğrulandı.
-- Kirli çalışma ağacı üzerinde inceleme yapıldı; mevcut değişiklikler kullanıcı/önceki
-  çalışma kabul edilerek geri alınmadı.
+---
 
-## Komut Özeti
+## Tamlık Eleştirisi (Eksik Kalanlar)
 
-- `npm run lint`: Başarılı, uyarısız.
-- `npm run test -- --runInBand`: Başarılı, 39 suite / 299 test.
-- `npm run build`: Başarılı, bundle size ve `fs.F_OK` uyarısı var.
-- `npm audit --omit=dev`: 0 vulnerability.
+**Yapıldı:** Tüm `src/` (304 dosya), `server.mjs`, `dev.mjs`, `scripts/`, `public/` (widget/sdk),
+`ftp-hosting/` PHP satır satır incelendi; lint/test/build/audit; kaynak dış-link taraması; canlı
+editör+önizleme duman testi; 3 çözünürlük ekran görüntüsü; KESİN KURAL statik + jsdom doğrulaması.
+
+**Eksik kalanlar (sonraki tur):**
+1. **Aşama 2 envanteri tamamlanmadı** — `07` ham; 109 canlı butonun tek tek "vaadettiği işi yapıyor
+   mu" testi yapılmadı.
+2. **Aşama 3 derin canlı test** — her etkinlik tipinden örnek proje kurup bulmaca/eşleştirme/
+   sürükle-bırak/karma akışları tek tek tıklanmadı. Bulmaca çökme (B1-Y3/Y4) ve SCORM tamamlama
+   (B-321) canlı tekrar üretilmeli.
+3. **Gerçek SCORM zip çevrimdışı ağ testi** — paket üretip tarayıcıda ağ trafiği izleme yapılmadı.
+   KESİN KURAL statik doğrulandı; canlı ağ teyidi açık (B-310/B-311/B-312 için kritik).
+4. **Görsel tarama kısmi** — çözünürlük görüntüleri önizleme modalıyla alındı; editörün kendisi
+   farklı boyutlarda, boş/dolu proje, tüm paneller-açık, 1024×768 ve mobil editör kabuğu taranmadı.
+5. **Orta/Düşük doğrulama** — Yüksek+Kritik manuel/çapraz doğrulandı; ~295 Orta/Düşük tek tek
+   adversarial doğrulamadan geçmedi (bazı yanlış-pozitif olabilir; düzeltmeden önce kontrol edilmeli).
+6. **PHP canlı test** — `index.php` statik incelendi; gerçek MySQL ortamında auth/SQL davranışı
+   çalıştırılmadı.
+
+> Kapsam dışı (kasıtlı): `node_modules/`, `yedekler/`, `build/`, `temp_bulmaca/`,
+> `tmp_bulmaca_inceleme/`, `GERI-YUKLEME-ICIN/`, `data/`, `public/fonts/`.

@@ -2,12 +2,27 @@
 
 ## Komut Sonuçları
 
+### Tur 1 (Codex, 2026-06-12)
+
 - `npm run lint`: Başarılı, uyarısız.
 - `npm run test -- --runInBand`: Başarılı. 39 test suite, 299 test geçti.
-- `npm run build`: Başarılı. Uyarılar:
-  - CRA bundle size uyarısı: build çıktısı önerilenden büyük.
-  - Node tarafında `fs.F_OK` deprecation uyarısı.
-- `npm audit --omit=dev`: `0 vulnerabilities`.
+- `npm run build`: Başarılı (bundle size + `fs.F_OK` uyarısı).
+- `npm audit --omit=dev`: `0 vulnerabilities` (bkz. Tur 2 çelişkisi).
+
+### Tur 2 (Derin denetim, 2026-06-15)
+
+- `npm run lint`: **Başarılı, uyarısız.**
+- `npm test`: **Başarılı. 39 suite / 302 test geçti** (Codex'ten 3 test fazla — yeni
+  eklenen SCORM/font testleri).
+- `npm run build`: **Başarılı, "Compiled successfully".** `fs.F_OK` deprecation uyarısı.
+- `npm audit --omit=dev`: **41 açık (9 düşük, 12 orta, 18 yüksek, 2 KRİTİK).**
+  - ÇELİŞKİ: Codex "0 vulnerability" demişti; taze çalıştırmada 41 açık görüldü.
+  - Kök neden: `react-scripts` ve geçişli bağımlılıkları (`webpack-dev-server` → `ws`
+    vb.) `package.json`'da **dependencies** altında olduğu için `--omit=dev` bunları
+    elemiyor. Bunlar **build/geliştirme aracı** bağımlılıkları; üretilen statik SCORM
+    paketine GİRMEZ, dolayısıyla öğrenci/runtime güvenlik riski oluşturmaz.
+  - Yine de "2 kritik + 18 yüksek" geliştirme ortamı riski olarak Orta öncelikli
+    bulgudur (B-DEV-AUDIT). `npm audit fix` veya CRA'dan Vite'a geçiş değerlendirilmeli.
 
 ## Dış Bağlantı Taraması
 
@@ -32,6 +47,28 @@ dış URL kalıpları arandı.
 
 Mevcut politika editör tarafındaki dış kaynakları SCORM dış link yasağına dahil
 etmiyor; bu yüzden ihlal değil, bilgi notudur.
+
+### Tur 2 — Taze dış bağlantı taraması (2026-06-15)
+
+Sıkı tarama (`fetch/XMLHttpRequest/.src=/new Image/href=/src=/@import/url()` + dış
+domain) yapıldı. Bulgular:
+
+- **Editör kaynağında (src/, public/) kod-kaynaklı dış fetch YOK.** Tüm gerçek
+  `https://` referansları:
+  - `FormatRightPanel.jsx:269`, `InteractionBuilderDialog.jsx:214,753`: "URL Aç"
+    tetikleyicisi için **placeholder** (`'https://'`). Bu kullanıcının manuel
+    ekleyeceği içerik linkidir — izinli istisna; SCORM export'ta uyarı tetiklemeli.
+  - `widgetZipParser.js:114`: widget zip'lerinde harici CDN/HTTP **engelleme**
+    kontrolü (koruyucu, olumlu).
+  - `editorHelpers.js:123-124`: `http(s)` ön ek **kontrolü** (fetch değil).
+  - Test fixture'ları (`ornek.com`, `cdn.example.com`, `evil.example`): kasıtlı
+    güvenlik testi girdileri, üretime girmez.
+- **B-006 doğrulandı:** `public/index.html` Google Fonts içermiyor;
+  `src/constants/fonts.js:147` "dış CDN fallback'i yoktur" notuyla yalnız yerel
+  `public/fonts/fonts.css` kullanıyor.
+- KESİN KURAL (SCORM dış link yasağı) editör kaynağında **statik olarak karşılanıyor.**
+  Kesin teyit için gerçek SCORM zip'i üretip tarayıcıda çevrimdışı ağ trafiği
+  izlenmeli (Aşama 3/5 canlı kısmı — bu turda yapılmadı).
 
 ## SCORM Paketi
 

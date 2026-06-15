@@ -2,40 +2,169 @@
 
 Kapsam: `src/store/`, `src/editor-logic/`, `src/logic/`
 
-Bu turda özellikle hazır buton toplu font/stil akışının veri modelinde nasıl saklandığı,
-tema uygulamasına nasıl girdiği ve undo/redo açısından tek güncelleme olarak işlenip
-işlenmediği incelendi.
+İki tur halinde incelendi:
+- **Tur 1 (Codex, 2026-06-12):** Hazır buton toplu font/stil akışı (veri modeli, tema, undo/redo).
+- **Tur 2 (Derin çok-ajanlı inceleme, 2026-06-15):** 31 dosya 11 parçaya bölünüp satır satır
+  okundu. stage-canvas dahil tüm parçalar tamamlandı.
 
-## Bulgular
+## Özet (Tur 2)
 
-### Orta — Hazır buton font akışı için SCORM/typed runtime test boşluğu
+| Önem | Adet |
+|---|---|
+| Kritik | 0 |
+| Yüksek | 7 (+ stage-canvas: 1 Yüksek) |
+| Orta | ~22 (+ stage-canvas: 6) |
+| Düşük | ~33 |
 
-- Dosya:satır: `src/__tests__/readyButtonTextColor.test.js:128`, `src/__tests__/readyButtonTextColor.test.js:157`, `src/__tests__/readyButtonTextColor.test.js:211`
-- Sorun: Testler `restyleReadyButtonsForPreset`, `restyleAllButtonsForPackage` ve
-  cevap katmanı nesnelerinde font ailesi/punto/kalınlık alanlarının uygulandığını
-  doğruluyor. Ancak aynı ayarların runtime deck'e, typed SCORM oynatıcıya ve
-  export edilen HTML'e taşındığını doğrulayan test yok.
-- Etki: Toplu font akışı veri/restyle katmanında yeşil görünse bile öğrenciye görünen
-  SCORM çıktısında bozulma kaçabilir. Bu TTKB açısından özellikle buton tek satır
-  okunabilirliği ve aynı rol tipografi tutarlılığı için riskli.
-- Önerilen düzeltme: `storylineRuntimeDeck` veya `scormTypedActivityPlayer` testlerine
-  `readyButtonFontFamily`, `readyButtonFontSize`, `readyButtonFontWeight` ve
-  `readyButtonTextColor` alanlarının export HTML/typed button stiline yansıdığını
-  kanıtlayan test ekle.
+> **DÜZELTME (canlı testle doğrulandı):** İlk tur "B1-K1 Kritik — önizleme çöküşü" olarak
+> işaretlenmişti. Canlı test (Aşama 3) ve build/grep doğrulaması bunu **çürüttü**: ilgili
+> dosyalar ÖLÜ KOD. Aşağıda Orta'ya indirildi (B1-O0). Önizleme canlı testte sıfır hatayla
+> açıldı.
 
-## Notlar
+---
 
-- `src/logic/buttonStyling.js:24` ve devamında font boyutu/kalınlığı clamp ediliyor;
-  bu TTKB tarafında aşırı küçük/büyük punto riskini azaltan doğru yönde bir koruma.
-- `src/logic/buttonStyling.js:113` içindeki `getReadyButtonTextStylePatch()` önizleme
-  bileşenleri için sade bir stil patch'i üretiyor; ancak rapor 04'te belirtildiği
-  gibi bu patch SCORM typed player'a taşınmıyor.
+## KRİTİK
 
-## İncelenen Dosya Grupları
+Yok. (Önceki tur fazla-sınıflandırma; bkz. B1-O0.)
 
-- `src/logic/buttonStyling.js`
-- `src/logic/activityRestyle.js`
-- `src/logic/themeApplication.js`
-- `src/editor-logic/colorUtils.js`
-- `src/__tests__/readyButtonTextColor.test.js`
+### B1-O0 (eski "Kritik") — `previewEngine.js` + `PreviewComponents.jsx` ÖLÜ KOD, içinde latent bozuk import — Orta (ölü-kod)
 
+- Dosya:satır: `src/logic/previewEngine.js:4-9`, `src/components/preview/PreviewComponents.jsx:44-49`
+- Kanıt türü: Statik analiz + **canlı test + build/grep doğrulaması**
+- Tespit: Bu iki dosya `./timeline`'dan `getCanvasObjects/getActivityLayers/isObjectTimelineActive/
+  getTimelineMotionStyle` import ediyor; timeline.js bunları export ETMİYOR (gerçek tanımlar
+  `activityHelpers.js` ve `storyline-preview/index.jsx`'te). İlk turda "render'da çöker → Kritik"
+  denmişti.
+- **Çürütme (neden Kritik DEĞİL):**
+  1. `PreviewComponents.jsx` **hiçbir modül tarafından import edilmiyor** (grep boş) →
+     yetim/ölü dosya (4457 satır). `previewEngine.js` (501 satır) yalnız onun tarafından
+     import ediliyor → o da ölü.
+  2. Canlı önizleme `src/components/storyline-preview/index.jsx`'ten geliyor (EIcerikEditor.jsx:45)
+     ve gerekli fonksiyonları yerel/doğru kaynaktan alıyor.
+  3. **Canlı test:** Editör + önizleme açıldı, **0 konsol/sayfa hatası**, çöküş izi YOK.
+  4. `npm run build` → "Compiled successfully", "was not found" uyarısı YOK (ölü dosya
+     webpack grafiğine girmiyor).
+- Gerçek sorun: ~5000 satır ölü/yetim kod (eski önizleme uygulaması, `storyline-preview` ile
+  değiştirilmiş) + içinde latent bozuk import → biri PreviewComponents'i tekrar bağlarsa çöker.
+- Önerilen düzeltme: `PreviewComponents.jsx` ve `previewEngine.js` silinmeli (veya kanıtlı
+  şekilde aktifse import'ları `activityHelpers`/`storyline-preview`'e yönlendirilip teste
+  bağlanmalı). Mevcut durumda silme tercih edilir.
+
+---
+
+## YÜKSEK
+
+### B1-Y1 — PDF satır tekilleştirme `line.id` ile çalışmıyor, ikinci ifadeden sonra çapa üretilmiyor
+- `src/logic/pdfUtils.js:1149` — `findPdfAnchorLineForText` `usedLineIds.add(line.id)` yapıyor
+  ama satır nesnelerinde `id` alanı yok. İlk eşleşmede `add(undefined)`, sonraki çağrıda
+  `!has(undefined)` = false → tüm satırlar elenir, `null` döner. Checkbox/TrueFalse storyboard
+  tabanlı seçimde yalnızca 1. ifade için çapa üretilir; sonraki ifadeler sessizce düşer.
+  TTKB ölçme-değerlendirme riski. **Fix:** satır nesnelerine kararlı `id` üret veya referans/index ile dedup.
+
+### B1-Y2 — Cevap katmanındaki elle eklenmiş nesneler sessizce siliniyor
+- `src/logic/activityObjectGenerators.js:105` — `removeAutoGeneratedObjects` filtresi
+  `obj.layerId !== 'cevap' && !obj.autoGenerated`; 'cevap' katmanındaki TÜM nesneleri siler.
+  Kullanıcının elle eklediği açıklama/görsel/buton "Sahneye Uygula"da uyarısız kaybolur;
+  `answer-template` retry paneli de ezilir. **Fix:** filtreyi yalnız üretilmiş nesnelere
+  daralt veya silme öncesi onay göster.
+
+### B1-Y3 — Kelime avında grid'den uzun kelime dizi taşması ve çökme
+- `src/logic/puzzleGenerators.js:253` — `cleanWords` kelime uzunluğunun grid'e sığıp
+  sığmadığını kontrol etmiyor. 3×3 gridde 5 harfli kelime → `grid[r]` undefined → TypeError,
+  editör çöker. **Fix:** uzunluk koşulu ekle, sınır kontrolü yap.
+
+### B1-Y4 — Çift boyutlu labirentte bitiş noktası ulaşılamaz duvarda kalıyor
+- `src/logic/puzzleGenerators.js:401` — `generateMaze` yolları tek indekslerde açar; rows/cols
+  çift olduğunda `result[rows-2][cols-2]` çift indeks = DFS'in ulaşmadığı duvar hücresi, ama
+  oraya `isEnd=true` yazılır → labirent çözülemez. **Fix:** boyutları tek sayıya normalize et
+  veya bitişi gerçek erişilebilir hücreye koy.
+
+### B1-Y5 — Timeline'da tek `dragRef` beş sürükleme oturumunca paylaşılıyor
+- `src/features/timeline/useTimelineController.js:99` — beginClipDrag/CueDrag/FloatingDrag/
+  FloatingResize aynı `dragRef.current`'a yazıyor. Aktif sürükleme sırasında unmount olursa
+  asılı pointermove/up listener'ları kaldırılamaz. **Fix:** oturum başına ayrı ref veya
+  unmount'ta tüm asılı oturumları temizle.
+
+### B1-Y6 — Store'daki toast altyapısı tamamen ölü; paralel ikinci toast sistemi kullanılıyor
+- `src/store/useEditorStore.js:119` — `toasts/addToast/removeToast` hiç kullanılmıyor;
+  `EIcerikEditor.jsx:1423-1477` ayrı yerel toast sistemi çalışıyor. `store.addToast` çağıran
+  bildirim ekranda görünmez → sessiz kaybolan kullanıcı bildirimi riski. **Fix:** tek toast
+  kaynağına indir.
+
+### B1-Y7 (stage-canvas) — Kilitli hedefin sağ tık menüsünde seçim-tabanlı eylemler devre dışı değil
+- `src/logic/StageCanvas.jsx:2780` — Kes/Kopyala/Çoğalt/Öne Getir/Arkaya Gönder/Sil
+  maddelerinde `disabled: isLockedTarget` yok; `latestSelectedIdsRef.current` üzerinden
+  çalışıyor. A+B seçiliyken kilitli C'ye sağ tıklayıp Sil → C yerine A+B silinir (yıkıcı,
+  yanlış hedef). **Fix:** bu altı maddeye `disabled: isLockedTarget` ekle.
+
+---
+
+## ORTA (özet liste)
+
+- `src/editor-logic/colorUtils.js:74` — `contrastSafeButtonStyle` paket boxShadow/textShadow'unu
+  her zaman eziyor; SCORM/önizlemede paketin görsel kimliği (neon/kabartma) kaybolur.
+- `src/editor-logic/colorUtils.js:39` — Glossy beyaz parlama katmanları kontrast hesabını
+  saptırıyor; sınır tonlarda yanlış metin rengi → TTKB kontrast garantisi zayıflar.
+- `src/logic/buttonStyling.js:1021` — Tam ekran karartma tespiti sabit 1000×600 eşiğiyle;
+  sahne 1920×1080 (veya kullanıcı değiştirince) eşik bayatlıyor → karartma opak panele döner.
+- `src/logic/buttonStyling.js:956` — Kapat/× butonu iki restyle yolunda farklı renk (danger vs
+  theme); sıraya bağlı, "aynı işlev aynı görsel dil" ihlali.
+- `src/logic/activityObjectGenerators.js:122` — Doğru-Yanlış çözüm katmanı doğru cevabı
+  göstermiyor (selection gösteriyor); tür tutarsızlığı, çözüm kalitesi.
+- `src/logic/answerSceneSetGenerator.js:532` — Kendine işaret eden `linkedActionTargetId`;
+  çift KatmanaGec tetikleyicisiyle birleşince katman geçişi iki kez tetiklenebilir.
+- `src/logic/factories.js:319` — Buton preseti varsayılan etiketi İngilizce `'Button'`
+  (createObject 'Buton' verir); SCORM'a İngilizce metin sızar.
+- `src/logic/factories.js:834` — `createSlide` varsayılan adı `'Slider N'` (kaydırıcı);
+  doğrusu 'Sahne N'. SlideStrip'e yansıyor.
+- `src/logic/pdfObjectFactory.js:304` — PDF sürükle-bırak cevap anahtarı sessizce index'e
+  düşebilir → yanlış doğru-cevap; ölçme doğruluğu riski.
+- `src/logic/contentLanguage.js:692` — Üretim dili seçimi kullanıcının elle yazdığı ekran
+  metinlerini koşulsuz eziyor (geri alınamaz içerik kaybı); test bunu doğruluyor.
+- `src/logic/contentLanguage.js:735` — `buttonPackageScreen.items` sıfırdan üretiliyor;
+  kullanıcı override'ları (ikon/label/desc) kayboluyor (`resolveThemePackageItems` kullanılmalı).
+- `src/logic/formulaEngine.js:48` — `tokenize` çoklu ondalık noktayı (`1.2.3`) sessizce kabul
+  edip `1.2`'ye kırpıyor; formül/puanlama sessiz veri bozulması.
+- `src/logic/activityScoring.js:174` — `scoreActivity` ve `scoreSequence/Matching/TextEntry/
+  Numeric/FillBlank/Survey` hiçbir yerden çağrılmıyor (ölü/yarım bağlı puanlama). Bu türler
+  üründeyse yanlış puanlama riski.
+- `src/logic/activityScoring.js:87` — Öğrenciye görünen cevap özetinde Türkçe karakter eksik
+  metinler ('Surukle', 'Birak', 'henuz olusmadi' vb.). TTKB dil/yazım.
+- `src/logic/timeline.js:90` — `normalizeTimelineItem` `track`'i her zaman index ile eziyor;
+  kullanıcı sıralaması bozulabilir, `track` yanıltıcı alan.
+- `src/logic/timeline.js:68` — `seededKeyframes` fallback dizisine in-place unshift/push;
+  undo/redo snapshot'larında paylaşılan referans riski.
+- `src/logic/editorHelpers.js:100` — `getEditorGroupedObjectEntries` primary nesneyi giriş
+  sırasına bağlı seçiyor; gruplama tutarsızlığı.
+- `src/logic/activityRestyle.js:164` — Paket değişiminde buton hareketi yeni paket yerine eski
+  profilden alınıyor; `buttonPackageId` argümanı fiilen etkisiz.
+- `src/logic/sceneTemplates.js:615` — `buildLaunchPageSceneTemplate` (~1350 satır) tamamen ölü
+  (üretim `applySceneTemplateToSlide:2172`'de bilinçle atlanıyor); çelişen iki kaynak.
+- `src/logic/pdfUtils.js:905,1349` — Canvas tespit yardımcıları (detectPdfGreenCells vb.) ölü
+  + `annotMarkLines` üretici-tüketici şema uyuşmazlığı (stageH/checked yok).
+- stage-canvas Orta'ları (StageCanvas.jsx): bağlam menüsü bayat ref'ten selForMenu (2699),
+  pasteClipboard zIndex sayımdan türetiyor (655), pointercancel dinlenmiyor (1031), vektör/
+  bezier sürüklemesi her move'da onUpdate (2538), video/ses ekleme hatası yakalanmıyor (449),
+  sanitize edilemeyen SVG sessizce yutulur (510).
+
+## DÜŞÜK (özet)
+
+~33 düşük bulgu: ölü kod (`drawDecorativeSide`, tek seferlik `extract-*.mjs` script'leri repoda),
+demo buton ikon tutarsızlıkları (glif vs SVG, ses ikonu emoji + ters on/off), tanıtım panelinde
+TEKRARLA/YENİDEN BAŞLAT tekrarı, sürükle-bırak `Promise.all` catch'siz (StageCanvas:787) vb.
+Tam liste workflow çıktısında; düzeltme önceliği Aşama 6'da.
+
+---
+
+## İncelenen Dosyalar (Tur 2 — tamamı okundu)
+
+`StageCanvas.jsx`, `sceneTemplates.js`, `pdfUtils.js`, `buttonStyling.js`, `colorUtils.js`,
+`answerSceneSetGenerator.js`, `activityObjectGenerators.js`, `factories.js`, `activityFactory.js`,
+`pdfObjectFactory.js`, `contentLanguage.js`, `stateNormalizer.js`, `slideNormalization.js`,
+`normalize.js`, `previewEngine.js`, `formulaEngine.js`, `variableHelpers.js`, `activityScoring.js`,
+`puzzleGenerators.js`, `dragDrop.js`, `resizeGeometry.js`, `objectLayout.js`, `uiPrimitives.js`,
+`ObjectContextMenu.jsx`, `editorHelpers.js`, `timeline.js`, `useEditorStore.js`,
+`activityTemplateGenerators.js`, `activityRestyle.js`, `activityHelpers.js`, `themeApplication.js`.
+
+> `src/features/timeline/useTimelineController.js` Bölge 1 incelemesinde bağlam olarak
+> denetlendi (asıl bölgesi B3); bulgu burada raporlandı.
