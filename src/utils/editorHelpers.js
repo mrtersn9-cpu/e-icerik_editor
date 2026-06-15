@@ -274,6 +274,22 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// Ad -> URL-dostu slug. Turkce karakterleri ASCII'ye indirger, kucuk harfe cevirir,
+// alfanumerik olmayanlari tek tireye sikistirir. Yalniz okunabilirlik icindir; URL'de
+// kanonik anahtar yine id'dir (slug~id melezi). Cikti: /^[a-z0-9-]*$/, en cok 50 karakter.
+export function slugify(name = '') {
+  const trMap = { ç: 'c', ğ: 'g', ı: 'i', İ: 'i', ö: 'o', ş: 's', ü: 'u', Ç: 'c', Ğ: 'g', Ö: 'o', Ş: 's', Ü: 'u' };
+  return String(name || '')
+    .replace(/[çğıİöşüÇĞÖŞÜ]/g, (ch) => trMap[ch] || ch)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+    .replace(/-+$/g, '');
+}
+
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }

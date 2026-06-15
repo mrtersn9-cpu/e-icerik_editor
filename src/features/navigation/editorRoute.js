@@ -1,4 +1,23 @@
+import { slugify } from '../../utils/editorHelpers';
+
 export const EIC_NAV_VERSION = 1;
+
+// URL segmenti: okunabilirlik icin "slug~id" melezi. Ayrac '~' (URL-guvenli, ne slug'da
+// ne uid id'sinde bulunur) oldugu icin id her zaman son '~' sonrasidir; slug'siz/eski
+// (yalniz id) URL'ler de calismaya devam eder. Kanonik anahtar daima id'dir.
+const ID_SLUG_SEPARATOR = '~';
+
+function buildRouteSegment(id, name) {
+  const encodedId = encodeURIComponent(id);
+  const slug = slugify(name || '');
+  return slug ? `${slug}${ID_SLUG_SEPARATOR}${encodedId}` : encodedId;
+}
+
+function extractRouteId(rawSegment) {
+  const decoded = decodeURIComponent(String(rawSegment || ''));
+  const sepIndex = decoded.lastIndexOf(ID_SLUG_SEPARATOR);
+  return sepIndex >= 0 ? decoded.slice(sepIndex + 1) : decoded;
+}
 
 export function normalizeEditorRoute(route = {}) {
   return {
@@ -21,9 +40,9 @@ export function parseEditorHashRoute(hash = '') {
   const actMatch = path.match(/\/activity\/([^/]+)/);
 
   return normalizeEditorRoute({
-    pubId: decodeURIComponent(pubMatch[1]),
-    bookId: bookMatch ? decodeURIComponent(bookMatch[1]) : null,
-    actId: actMatch ? decodeURIComponent(actMatch[1]) : null,
+    pubId: extractRouteId(pubMatch[1]),
+    bookId: bookMatch ? extractRouteId(bookMatch[1]) : null,
+    actId: actMatch ? extractRouteId(actMatch[1]) : null,
   });
 }
 
@@ -32,9 +51,13 @@ export function buildEditorHashRoute(route = {}) {
   if (normalized.textStudio) return '#text-studio';
   if (!normalized.pubId) return '';
 
-  let hash = `#/publisher/${encodeURIComponent(normalized.pubId)}`;
-  if (normalized.bookId) hash += `/book/${encodeURIComponent(normalized.bookId)}`;
-  if (normalized.bookId && normalized.actId) hash += `/activity/${encodeURIComponent(normalized.actId)}`;
+  // route.pubName/bookName/actName verilirse okunabilir slug eklenir (slug~id);
+  // verilmezse yalniz id yazilir (geriye donuk uyum). Lookup daima id ile yapilir.
+  let hash = `#/publisher/${buildRouteSegment(normalized.pubId, route.pubName)}`;
+  if (normalized.bookId) hash += `/book/${buildRouteSegment(normalized.bookId, route.bookName)}`;
+  if (normalized.bookId && normalized.actId) {
+    hash += `/activity/${buildRouteSegment(normalized.actId, route.actName)}`;
+  }
   return hash;
 }
 

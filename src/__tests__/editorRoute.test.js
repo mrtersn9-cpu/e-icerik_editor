@@ -31,6 +31,39 @@ test('editor route parse and build keep existing hash contract', () => {
   });
 });
 
+test('melez slug: ad verilince URL okunabilir, id sonda kanonik; eski linkler calisir', () => {
+  // Ad verildiginde slug~id segmentleri uretilir
+  const built = buildEditorHashRoute({
+    pubId: 'mq50z',
+    bookId: 'mq51a',
+    actId: 'mq52b',
+    pubName: 'Ahmet Yayınları',
+    bookName: '10. Sınıf Tarih',
+    actName: 'Fransız Devrimi!',
+  });
+  expect(built).toBe(
+    '#/publisher/ahmet-yayinlari~mq50z/book/10-sinif-tarih~mq51a/activity/fransiz-devrimi~mq52b'
+  );
+  // Parse, slug'i atip yalniz id'yi cikarir
+  expect(parseEditorHashRoute(built)).toEqual({
+    pubId: 'mq50z',
+    bookId: 'mq51a',
+    actId: 'mq52b',
+    textStudio: false,
+  });
+  // Eski (slug'siz) URL'ler aynen calisir
+  expect(parseEditorHashRoute('#/publisher/mq50z/book/mq51a/activity/mq52b')).toEqual({
+    pubId: 'mq50z',
+    bookId: 'mq51a',
+    actId: 'mq52b',
+    textStudio: false,
+  });
+  // Ad yoksa yalniz id yazilir (geri uyum)
+  expect(buildEditorHashRoute({ pubId: 'mq50z', bookId: 'mq51a' })).toBe(
+    '#/publisher/mq50z/book/mq51a'
+  );
+});
+
 test('invalid routes resolve to nearest valid library level', () => {
   expect(resolveEditorRoute({ pubId: 'pub-1', bookId: 'book-1', actId: 'missing' }, state)).toEqual({
     pubId: 'pub-1',

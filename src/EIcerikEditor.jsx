@@ -1526,7 +1526,15 @@ export default function EIcerikEditor() {
         : browserHistoryCursorRef.current + 1;
     browserHistoryCursorRef.current = cursor;
     const navState = createEditorHistoryState(route, cursor, kind, overlayId);
-    const url = buildEditorUrl(route, window.location);
+    // URL'e okunabilir slug ekle (slug~id); history state plain id'lerle kalir.
+    const present = presentRef.current || {};
+    const urlRoute = {
+      ...route,
+      pubName: (present.publishers || []).find((item) => item.id === route.pubId)?.name,
+      bookName: (present.books || []).find((item) => item.id === route.bookId)?.name,
+      actName: (present.activities || []).find((item) => item.id === route.actId)?.name,
+    };
+    const url = buildEditorUrl(urlRoute, window.location);
     if (mode === 'replace') {
       window.history.replaceState(navState, '', url);
     } else {
