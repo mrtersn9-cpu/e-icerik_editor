@@ -840,7 +840,13 @@ export function RibbonNumberInput({
     setDraft(raw);
     // Ara durumlar (boş, "-", ".") commit edilmez; kullanıcı yazmaya devam edebilir.
     if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-    if (Number.isFinite(Number(raw))) emit(raw);
+    if (Number.isFinite(Number(raw))) {
+      // Sınır dışı değeri her tuşta DIŞARI emit etme; aksi halde max=100 iken yazılan
+      // 999 anlık olarak state'e/SCORM'a sızıyordu. Sınır içindeyse emit; sınır dışı
+      // değer blur'da kelepçelenip emit edilir (taslak kullanıcının yazdığını gösterir).
+      const num = Number(raw);
+      if (clampToBounds(num) === num) emit(raw);
+    }
   };
 
   const handleBlur = () => {
