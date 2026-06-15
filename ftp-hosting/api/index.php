@@ -160,6 +160,14 @@ try {
 }
 
 try {
+    // GUVENLIK (B-301): Icerik uclari aktif oturum gerektirir. Muaf olanlar:
+    // /auth/* (oturum bootstrap/yonetimi) ve /admin/backup (kendi admin-token gatei var).
+    // /health bu blogun disinda (yukarida) ele alinir.
+    $sessionExemptPath = (strncmp($path, '/auth/', 6) === 0) || ($path === '/admin/backup');
+    if (!$sessionExemptPath) {
+        require_active_session($pdo);
+    }
+
     if ($path === '/admin/backup' && $method === 'GET') {
         require_admin_token($config);
         send_sql_download(build_mysql_backup($pdo), 'eicerik-mysql-backup-' . gmdate('Ymd-His') . '.sql');
@@ -792,6 +800,38 @@ function require_admin_token(array $config): void
             'ok' => false,
             'code' => 'ADMIN_FORBIDDEN',
             'error' => 'Admin yetkisi gerekli.',
+        ]);
+    }
+}
+
+// GUVENLIK (B-301): Gelen X-User-Id + X-Session-Id'yi user_sessions tablosuna karsi
+// dogrular; gecersiz/eksikse 401 ile durdurur. Boylece icerik uclari (/state, /projects,
+// /upload, /versions ...) kimlik dogrulamasi olmadan okunamaz/yazilamaz.
+function require_active_session(PDO $pdo): void
+{
+    $userId = trim((string) ($_SERVER['HTTP_X_USER_ID'] ?? ''));
+    $sessionId = trim((string) ($_SERVER['HTTP_X_SESSION_ID'] ?? ''));
+    if ($userId === '' || $sessionId === '') {
+        send_json(401, [
+            'ok' => false,
+            'code' => 'AUTH_REQUIRED',
+            'error' => 'Kimlik dogrulama gerekli.',
+        ]);
+    }
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM user_sessions WHERE session_id = :sid AND user_id = :uid LIMIT 1'
+        );
+        $stmt->execute([':sid' => $sessionId, ':uid' => $userId]);
+        $valid = (bool) $stmt->fetchColumn();
+    } catch (Throwable $error) {
+        $valid = false;
+    }
+    if (!$valid) {
+        send_json(401, [
+            'ok' => false,
+            'code' => 'SESSION_INVALID',
+            'error' => 'Oturum gecersiz veya suresi dolmus.',
         ]);
     }
 }

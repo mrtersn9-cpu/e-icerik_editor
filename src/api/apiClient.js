@@ -207,10 +207,17 @@ export function fileToDataUrl(file) {
 export async function uploadMediaFile(file) {
   if (!file) return '';
   try {
+    const auth = readStoredAuth();
     const formData = new FormData();
     formData.append('file', file);
     const response = await fetch(getApiUrl('/upload'), {
       method: 'POST',
+      // /upload artik aktif oturum gerektiriyor (B-301); apiRequest gibi oturum basliklarini gonder.
+      headers: {
+        ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+        ...(auth?.userId ? { 'X-User-Id': auth.userId } : {}),
+        ...(auth?.sessionId ? { 'X-Session-Id': auth.sessionId } : {}),
+      },
       body: formData,
     });
     if (!response.ok) {
