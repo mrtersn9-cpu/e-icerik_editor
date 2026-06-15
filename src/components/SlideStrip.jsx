@@ -572,12 +572,10 @@ export function SlideStrip({
   const slides = getActivitySlides(activity);
   const currentSlideId = activity?.currentSlideId || slides[0]?.id;
   const [thumbZoom, setThumbZoom] = useState(1);
-  const [layoutMode, setLayoutMode] = useState(vertical ? 'list' : 'grid');
   const { outgoing } = useMemo(
     () => getSlideConnectionMap(activity, slides, getActivitySlideTarget),
     [activity, slides, getActivitySlideTarget]
   );
-  const effectiveLayoutMode = vertical ? 'list' : layoutMode;
   const thumbWidth = Math.max(vertical ? 126 : 118, Math.round((vertical ? 132 : 138) * thumbZoom));
   const thumbHeight = Math.max(vertical ? 70 : 68, Math.round((vertical ? 74 : 78) * thumbZoom));
 
@@ -1003,44 +1001,8 @@ export function SlideStrip({
           </button>
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {!vertical && (
-            <>
-              <button
-                onClick={() => setLayoutMode('list')}
-                style={{
-                  height: 22,
-                  padding: '0 8px',
-                  borderRadius: 4,
-                  border: `1px solid ${effectiveLayoutMode === 'list' ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`,
-                  background:
-                    effectiveLayoutMode === 'list' ? EDITOR_THEME.shellAccentSoft : 'transparent',
-                  color: effectiveLayoutMode === 'list' ? '#a5e6ff' : EDITOR_THEME.shellMutedSoft,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                ☰
-              </button>
-              <button
-                onClick={() => setLayoutMode('grid')}
-                style={{
-                  height: 22,
-                  padding: '0 8px',
-                  borderRadius: 4,
-                  border: `1px solid ${effectiveLayoutMode === 'grid' ? EDITOR_THEME.shellAccentBorder : EDITOR_THEME.shellBorderSoft}`,
-                  background:
-                    effectiveLayoutMode === 'grid' ? EDITOR_THEME.shellAccentSoft : 'transparent',
-                  color: effectiveLayoutMode === 'grid' ? '#a5e6ff' : EDITOR_THEME.shellMutedSoft,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                ⊞
-              </button>
-            </>
-          )}
+          {/* Liste/Grid toggle kaldirildi: grid modu gercek bir duzen degisikligi yapmiyordu
+              (yalniz buton vurgusu); islevsiz kontrol kafa karistiriciydi (AGENTS broken buttons). */}
           <button
             onClick={() =>
               setThumbZoom((value) => clamp(Number((value - 0.1).toFixed(2)), 0.6, 1.8))
