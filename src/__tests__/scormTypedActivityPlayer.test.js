@@ -62,6 +62,42 @@ describe('SCORM typed activity player', () => {
     expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
   });
 
+  test('B-321: wordsearch için Kontrol Et butonu render edilir ve tamamlanır', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'ws-1',
+      activities: [
+        {
+          id: 'ws-1',
+          name: 'Kelime Avı',
+          type: 'puzzle',
+          puzzleType: 'wordsearch',
+          puzzleGrid: { rows: 1, cols: 3, cells: [[{ letter: 'A' }, { letter: 'L' }, { letter: 'P' }]] },
+          puzzlePlaced: [{ id: 'w1', answer: 'ALP' }],
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    // Fix öncesi typedRenderWordsearch typedActions çağırmadığı için bu buton yoktu.
+    const checkBtn = document.querySelector('.typed-actions .typed-btn');
+    expect(checkBtn).toBeTruthy();
+
+    // Kelimeyi bul: ilk ve son hücreye tıkla (A..P -> "ALP")
+    const cells = document.querySelectorAll('.typed-word-cell');
+    expect(cells.length).toBe(3);
+    cells[0].click();
+    document.querySelectorAll('.typed-word-cell')[2].click();
+
+    // Kontrol Et -> tamamlandı geri bildirimi
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+  });
+
   test('carries ready button typography into typed SCORM player controls', () => {
     const html = buildStorylinePlayerHtml({
       selActId: 'fill-typography',

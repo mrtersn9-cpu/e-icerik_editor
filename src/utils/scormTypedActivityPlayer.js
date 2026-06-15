@@ -936,6 +936,7 @@ function typedRenderWordsearch(root, current) {
   }));
   root.appendChild(grid);
   root.appendChild(typedEl("p", "typed-counter", "Bulunan: " + found.length + " / " + (current.puzzlePlaced || []).length));
+  typedActions(root, current);
 }
 function typedWordLine(start, end) {
   const deltaRow = end.row - start.row;
@@ -981,6 +982,7 @@ function typedRenderMaze(root, current) {
     }, false));
   });
   root.appendChild(controls);
+  typedActions(root, current);
 }
 function typedRenderMemory(root, current) {
   const cards = current.puzzlePlaced || [];
@@ -1009,6 +1011,7 @@ function typedRenderMemory(root, current) {
   });
   root.appendChild(grid);
   root.appendChild(typedEl("p", "typed-counter", typedText("matchedLabel", "Eşleşen") + ": " + matched.length + " / " + Math.floor(cards.length / 2)));
+  typedActions(root, current);
 }
 function typedRenderSudoku(root, current) {
   const cells = (current.puzzleGrid && current.puzzleGrid.cells) || [];
