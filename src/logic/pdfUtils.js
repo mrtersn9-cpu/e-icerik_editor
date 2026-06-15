@@ -1151,7 +1151,10 @@ function findPdfAnchorLineForText(lines = [], target = '', usedLineIds = new Set
   if (!normalizedTarget) return null;
 
   const candidates = (Array.isArray(lines) ? lines : [])
-    .filter((line) => !usedLineIds.has(line?.id))
+    // Dedup satir nesnesi REFERANSIYLA yapilir; satirlarda kararli bir id alani
+    // olmayabilir (buildPdfTextLines id uretmiyor), bu yuzden line.id ile dedup
+    // ikinci ogeden sonra tum satirlari eliyordu.
+    .filter((line) => !usedLineIds.has(line))
     .map((line) => {
       const cleanedText = stripTrailingCheckMark(
         stripPdfAnchorListPrefix(sanitizePdfText(line?.text || ''))
@@ -1197,7 +1200,7 @@ function buildPdfSelectionLayoutFromStoryboard(draft = {}, page = {}) {
       .map((item, index) => {
         const line = findPdfAnchorLineForText(lines, item?.text || '', usedLineIds);
         if (!line) return null;
-        usedLineIds.add(line.id);
+        usedLineIds.add(line);
         return {
           text: sanitizePdfText(item?.text || line.text || ''),
           x: Number(line.x || 0),
@@ -1246,7 +1249,7 @@ function buildPdfSelectionLayoutFromStoryboard(draft = {}, page = {}) {
       .map((item, index) => {
         const line = findPdfAnchorLineForText(lines, item?.statement || '', usedLineIds);
         if (!line) return null;
-        usedLineIds.add(line.id);
+        usedLineIds.add(line);
         return {
           text: sanitizePdfText(item?.statement || line.text || ''),
           x: Number(line.x || 0),

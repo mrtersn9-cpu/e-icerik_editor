@@ -455,11 +455,16 @@ export function buildScorm12Zip(state, lmsConfig = {}, options = {}) {
           w.basePath = `widgets/custom/${widgetId}`;
           w.entryUrl = `widgets/custom/${widgetId}/${w.entry || 'index.html'}`;
           delete w.blobMap;
-          
+          // Her widget nesnesinden rawAssets'i temizle (tekrarli ayni widget'ta ham
+          // binary'nin payload JSON'una gomulup paketi sisirmesini onle). Dosya ekleme
+          // yalniz ilk islemede yapilir; temizlik processedWidgetIds'ten bagimsizdir.
+          const widgetRawAssets = w.rawAssets;
+          delete w.rawAssets;
+
           if (!processedWidgetIds.has(widgetId)) {
             processedWidgetIds.add(widgetId);
-            if (w.rawAssets) {
-              Object.entries(w.rawAssets).forEach(([filePath, fileBytes]) => {
+            if (widgetRawAssets) {
+              Object.entries(widgetRawAssets).forEach(([filePath, fileBytes]) => {
                 let bytes = fileBytes;
                 if (fileBytes && typeof fileBytes === 'object' && !(fileBytes instanceof Uint8Array)) {
                   bytes = new Uint8Array(Object.values(fileBytes));
@@ -478,7 +483,6 @@ export function buildScorm12Zip(state, lmsConfig = {}, options = {}) {
                   data: bytes,
                 });
               });
-              delete w.rawAssets;
             } else if (widgetId === 'dice-v1') {
               const diceAssets = {
                 'index.html': `<!DOCTYPE html>
