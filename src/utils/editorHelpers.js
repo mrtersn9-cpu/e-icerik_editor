@@ -99,7 +99,10 @@ export function sanitizeSvgMarkup(markup = '') {
       .replace(/@import[\s\S]*?;/gi, '')
       .replace(/expression\s*\([^)]*\)/gi, '')
       .replace(/behavior\s*:[^;"}]+;?/gi, '')
-      .replace(/url\s*\(\s*(['"]?)\s*(?:javascript:|vbscript:|data:text\/html)[^)]*\)/gi, '');
+      .replace(/url\s*\(\s*(['"]?)\s*(?:javascript:|vbscript:|data:text\/html)[^)]*\)/gi, '')
+      // KESIN KURAL: SCORM ciktisina giren SVG/CSS hicbir dis kaynaktan cekemez.
+      // url(http(s)://...), url(//...), url(ftp:/ws:...) gibi uzak referanslari notrlestir.
+      .replace(/url\s*\(\s*(['"]?)\s*(?:https?:|ftps?:|wss?:)?\/\/[^)]*\)/gi, 'none');
 
   const cleanElement = (element) => {
     [
@@ -116,12 +119,13 @@ export function sanitizeSvgMarkup(markup = '') {
         const value = String(attribute.value || '').trim();
         const uriValue = value.replace(/\s+/g, '').toLowerCase();
         const isEventHandler = name.startsWith('on');
+        // KESIN KURAL: SCORM ciktisina giren SVG hicbir dis kaynaktan cekemez.
+        // Yalnizca ic fragment (#...) ve gomulu data:image/ guvenli; http(s)://,
+        // protokolsuz //, goreli ve diger semalar (javascript: dahil) kaldirilir.
         const isUnsafeUri =
           ['href', 'xlink:href', 'src'].includes(name) &&
           uriValue &&
           !uriValue.startsWith('#') &&
-          !uriValue.startsWith('http://') &&
-          !uriValue.startsWith('https://') &&
           !uriValue.startsWith('data:image/');
         if (name === 'style') {
           const safeStyle = sanitizeCssText(value);
