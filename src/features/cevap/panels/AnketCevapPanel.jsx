@@ -107,13 +107,14 @@ export default function AnketCevapPanel({ activity, onUpdate }) {
               </div>
               {q.type === 'likert' || q.type === 'choice' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {(q.options || []).map((opt) => (
-                    <div key={opt} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {(q.options || []).map((opt, optIdx) => (
+                    <div key={`${optIdx}-${opt}`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, width: 80, color: '#475569' }}>{opt}</span>
                       <div style={{ flex: 1, height: 14, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
                         <div
                           style={{
-                            width: `${Math.round(Math.random() * 80 + 10)}%`,
+                            // Mock dağılım: her render'da zıplamasın diye deterministik (Math.random degil)
+                            width: `${25 + ((optIdx * 27 + String(opt || '').length * 13) % 60)}%`,
                             height: '100%',
                             background: '#3b82f6',
                             borderRadius: 4,

@@ -151,7 +151,7 @@ export default function PuzzleEditor({ activity, onUpdate }) {
                   marginTop: 4,
                 }}
               >
-                <option value="crossword">Kare Bulmaca (Crossword)</option>
+                <option value="crossword">Kare Bulmaca</option>
                 <option value="wordsearch">Kelime Avı</option>
                 <option value="sudoku">Sudoku</option>
                 <option value="memory">Hafıza Kartı</option>
