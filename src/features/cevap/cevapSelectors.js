@@ -1,6 +1,9 @@
 import { ACTIVITY_TYPES } from '../../constants';
 
 export function getActivityTypeLabel(activity = {}) {
+  // Doğru-Yanlış etkinlikleri veri modelinde type='selection' + activityKind='true-false'
+  // olarak saklanır; generic "Seçme" etiketi yerine doğru türü göster.
+  if (isTrueFalseActivity(activity)) return 'Doğru-Yanlış';
   return ACTIVITY_TYPES.find((type) => type.id === activity.type)?.label || 'Etkinlik';
 }
 
