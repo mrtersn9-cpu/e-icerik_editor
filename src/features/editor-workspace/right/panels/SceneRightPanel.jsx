@@ -58,7 +58,7 @@ export default function SceneRightPanel({ controller }) {
             <TextAreaInput
               rows={2}
               value={currentSlide.description || activity.notes || ''}
-              onChange={(value) => patchActivity({ notes: value })}
+              onChange={(value) => patchSlide({ description: value })}
             />
           </FieldLabel>
           <FieldLabel>
