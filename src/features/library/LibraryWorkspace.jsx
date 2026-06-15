@@ -595,6 +595,17 @@ export default function LibraryWorkspace({
         notify(result.error || 'ZIP doğrulanamadı.', 'warning');
         return;
       }
+      // B-312: scanWidgetSecurity dış kaynak/ağ isteği uyarılarını yutuyordu. AGENTS gereği
+      // dış kaynak içeren içerik kullanıcıya bildirilmeli (SCORM çevrimdışı çalışmayabilir).
+      const widgetWarnings = (result.warnings || [])
+        .map((w) => (typeof w === 'string' ? w : w?.message))
+        .filter(Boolean);
+      if (widgetWarnings.length) {
+        notify(
+          `Uyarı: Bu widget ${widgetWarnings.length} dış kaynak/ağ isteği içeriyor — SCORM paketi çevrimdışı çalışmayabilir; TTKB/KVKK/telif açısından kontrol edin.`,
+          'warning'
+        );
+      }
       const widgetId = result.manifest.id;
       const widgetName = result.manifest.name;
       const widgetInstanceId = `obj_widget_${widgetId}_${uid().slice(0, 6)}`;
