@@ -1,6 +1,12 @@
+import { getCorrectDragMatches as defaultGetCorrectDragMatches } from '../../logic/activityHelpers';
+
 import SelectionEditor from './SelectionEditor';
 
-export default function MixedActivityEditor({ activity, onUpdate, getCorrectDragMatches }) {
+export default function MixedActivityEditor({
+  activity,
+  onUpdate,
+  getCorrectDragMatches = defaultGetCorrectDragMatches,
+}) {
   const objects = activity.objects || [];
   const draggables = objects.filter((o) => o.type === 'draggable');
   const dropzones = objects.filter((o) => o.type === 'dropzone');

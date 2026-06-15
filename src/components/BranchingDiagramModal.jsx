@@ -23,10 +23,14 @@ export default function BranchingDiagramModal({
     activities.forEach((act) => {
       if (act.nextActivityId) addEdge(act.id, act.nextActivityId, 'sonraki', '#64748b');
       (act.triggers || []).forEach((trigger) => {
-        if (trigger.action === 'SayfaGec' && trigger.targetActivityId)
-          addEdge(act.id, trigger.targetActivityId, trigger.label || 'SayfaGec', '#2563eb');
-        if (trigger.action === 'SliderGec' && trigger.targetActivityId)
-          addEdge(act.id, trigger.targetActivityId, trigger.label || 'SlideraGec', '#7c3aed');
+        // Hedef etkinlik id'si trigger.value alaninda tutulur (targetActivityId yok).
+        // '__next__'/'__prev__' gibi goreli degerler gercek bir dugume isaret etmez, atla.
+        const target = trigger.value;
+        const isRelative = typeof target === 'string' && target.startsWith('__');
+        if (trigger.action === 'SayfaGec' && target && !isRelative)
+          addEdge(act.id, target, trigger.label || 'SayfaGec', '#2563eb');
+        if (trigger.action === 'SliderGec' && target && !isRelative)
+          addEdge(act.id, target, trigger.label || 'SlideraGec', '#7c3aed');
       });
     });
     return { nodes, edges };

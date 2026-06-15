@@ -39,7 +39,7 @@ export const DEFAULT_ANSWER_ACCESSIBILITY = {
 export function getAnswerControl(activity = {}) {
   return {
     ...DEFAULT_ANSWER_CONTROL,
-    maxAttempts: activity.settings?.maxAttempts || DEFAULT_ANSWER_CONTROL.maxAttempts,
+    maxAttempts: activity.settings?.maxAttempts ?? DEFAULT_ANSWER_CONTROL.maxAttempts,
     checkButtonText: activity.settings?.checkButtonText || DEFAULT_ANSWER_CONTROL.checkButtonText,
     showAnswerText: activity.settings?.answerButtonText || DEFAULT_ANSWER_CONTROL.showAnswerText,
     restartText: activity.settings?.restartFlowText || DEFAULT_ANSWER_CONTROL.restartText,
