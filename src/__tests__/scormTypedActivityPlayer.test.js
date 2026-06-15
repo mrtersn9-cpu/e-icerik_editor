@@ -118,6 +118,34 @@ describe('SCORM typed activity player', () => {
     expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
   });
 
+  test('içerik dili=en iken wordsearch sayacı İngilizce (Bulunan değil Found)', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'ws-en',
+      activities: [
+        {
+          id: 'ws-en',
+          name: 'Word Search',
+          type: 'puzzle',
+          puzzleType: 'wordsearch',
+          contentLanguage: 'en',
+          puzzleGrid: { rows: 1, cols: 3, cells: [[{ letter: 'A' }, { letter: 'L' }, { letter: 'P' }]] },
+          puzzlePlaced: [{ id: 'w1', answer: 'ALP' }],
+        },
+      ],
+    });
+    // i18n paketi seçilen dille gelmeli
+    expect(html).toContain('"foundLabel":"Found"');
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Close</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+    const counter = document.querySelector('.typed-counter');
+    expect(counter).toBeTruthy();
+    expect(counter.textContent).toContain('Found');
+    expect(counter.textContent).not.toContain('Bulunan');
+  });
+
   test('carries ready button typography into typed SCORM player controls', () => {
     const html = buildStorylinePlayerHtml({
       selActId: 'fill-typography',

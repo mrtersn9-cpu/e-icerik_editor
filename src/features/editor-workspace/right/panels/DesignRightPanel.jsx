@@ -267,8 +267,9 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
     ];
   const currentContentLanguage =
     controller.currentContentLanguage || getActivityContentLanguage(activity);
-  const contentLanguageHint =
-    contentLanguageHints[currentContentLanguage] || contentLanguageHints.tr;
+  // Editor UI metni her zaman Turkce (CLAUDE.md: UI tamamen Turkce). Uretim dili 'en'
+  // secilse bile bu aciklama Turkce kalir; yalnizca URETILEN icerik secilen dile gecer.
+  const contentLanguageHint = contentLanguageHints.tr;
   const hasReadyButtonFontOverride =
     !!activity.readyButtonFontFamily ||
     !!activity.readyButtonFontSize ||

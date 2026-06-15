@@ -439,7 +439,7 @@ function typedRenderMixed(root, current) {
         const label = typedEl("label", "typed-match");
         label.appendChild(document.createTextNode((pair.left || "") + " "));
         const select = document.createElement("select");
-        select.setAttribute("aria-label", (pair.left || "Eşleştirme") + " için seçim");
+        select.setAttribute("aria-label", (pair.left ? pair.left + " " : "") + typedText("selectionLabel", "seçimi"));
         select.appendChild(new Option(typedText("selectPlaceholder", "Seçiniz..."), ""));
         (item.pairs || []).forEach(option => select.appendChild(new Option(option.right || "", option.right || "")));
         select.value = values[pair.id] || "";
@@ -820,7 +820,7 @@ function typedRenderCrossword(root, current) {
     const key = rowIndex + "," + columnIndex;
     const cellDiv = typedEl("div", "typed-cell");
     cellDiv.tabIndex = 0;
-    cellDiv.setAttribute("aria-label", "Satır " + (rowIndex + 1) + " sütun " + (columnIndex + 1));
+    cellDiv.setAttribute("aria-label", typedText("rowLabel", "Satır") + " " + (rowIndex + 1) + " " + typedText("columnLabel", "sütun") + " " + (columnIndex + 1));
 
     if (cell.number) {
       const numSpan = typedEl("span", "typed-cell-number", cell.number);
@@ -935,7 +935,7 @@ function typedRenderWordsearch(root, current) {
     grid.appendChild(button);
   }));
   root.appendChild(grid);
-  root.appendChild(typedEl("p", "typed-counter", "Bulunan: " + found.length + " / " + (current.puzzlePlaced || []).length));
+  root.appendChild(typedEl("p", "typed-counter", typedText("foundLabel", "Bulunan") + ": " + found.length + " / " + (current.puzzlePlaced || []).length));
   typedActions(root, current);
 }
 function typedWordLine(start, end) {
@@ -1147,7 +1147,7 @@ function typedRenderHotspot(root, current) {
     }, false);
     button.className = "typed-hotspot" + (selected ? " selected" : "");
     button.setAttribute("aria-pressed", selected ? "true" : "false");
-    button.setAttribute("aria-label", item.label || "Etkin alan");
+    button.setAttribute("aria-label", item.label || typedText("hotspotAreaLabel", "Etkin alan"));
     button.style.left = (Number(item.x) || 0) * scale + "px";
     button.style.top = (Number(item.y) || 0) * scale + "px";
     button.style.width = Math.max(34, (Number(item.width) || 64) * scale) + "px";
@@ -1162,7 +1162,7 @@ function renderTypedActivity(current) {
   stage.style.background = current.backgroundColor || "#fff";
   const root = typedEl("main", "typed-activity");
   typedApplyButtonTypography(root, current);
-  root.appendChild(typedEl("h1", "typed-title", current.activityName || "Etkinlik"));
+  root.appendChild(typedEl("h1", "typed-title", current.activityName || typedText("activityTitle", "Etkinlik")));
   if (current.type === "fill-blank") typedRenderFillBlank(root, current);
   else if (current.type === "mixed") typedRenderMixed(root, current);
   else if (current.type === "puzzle") typedRenderPuzzle(root, current);
