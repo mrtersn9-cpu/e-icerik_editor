@@ -22,14 +22,22 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function fetchAsDataUrl(url, maxBytesPerFile) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
-  if (maxBytesPerFile && blob.size > maxBytesPerFile) {
-    throw new Error(`Dosya çok büyük (${Math.round(blob.size / (1024 * 1024))} MB)`);
+async function fetchAsDataUrl(url, maxBytesPerFile, timeoutMs = 20000) {
+  // Zaman aşımı: askıda kalan bir medya URL'si tüm export'u sonsuza dek kilitlemesin.
+  // Aşımda fetch reddedilir; çağıran bunu "başarısız" olarak kaydeder, export sürer.
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller && timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (maxBytesPerFile && blob.size > maxBytesPerFile) {
+      throw new Error(`Dosya çok büyük (${Math.round(blob.size / (1024 * 1024))} MB)`);
+    }
+    return { dataUrl: await blobToDataUrl(blob), bytes: blob.size };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return { dataUrl: await blobToDataUrl(blob), bytes: blob.size };
 }
 
 // Derin gezinme: INLINE_MEDIA_FIELDS alanlarındaki http(s) değerlerin

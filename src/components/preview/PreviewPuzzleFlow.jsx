@@ -861,7 +861,10 @@ function WordSearchGrid({ activity, onAnswer }) {
   const isFound = (r, c) => {
     return placed.some((p) => {
       if (!foundWords.includes(p.id)) return false;
+      // Korumasız erişim eksik/bozuk veride (direction/answer yok) tüm ızgarayı çökertiyordu.
+      if (typeof p.direction !== 'string' || !p.answer) return false;
       const [dr, dc] = p.direction.split(',').map(Number);
+      if (!Number.isFinite(dr) || !Number.isFinite(dc)) return false;
       for (let i = 0; i < p.answer.length; i++) {
         if ((p.startRow ?? p.row) + dr * i === r && (p.startCol ?? p.col) + dc * i === c) return true;
       }
