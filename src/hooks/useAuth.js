@@ -52,9 +52,10 @@ export function readStoredAuth() {
   if (!raw) return null;
   try {
     const auth = JSON.parse(raw);
-    // Migrate existing tab-scoped sessions and keep reload/reopen behavior consistent.
-    writeStorageValue('localStorage', raw);
-    writeStorageValue('sessionStorage', raw);
+    // Iki depoyu senkronla (sekme-kapsamli oturum gocu) — yalniz FARKLIYSA yaz; her
+    // okumada gereksiz storage yazimi yapma.
+    if (localValue !== raw) writeStorageValue('localStorage', raw);
+    if (sessionValue !== raw) writeStorageValue('sessionStorage', raw);
     return auth;
   } catch {
     return null;
