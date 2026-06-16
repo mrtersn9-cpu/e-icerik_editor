@@ -69,8 +69,20 @@ Test ortamı sonrasında temizlendi; `config.php` (gitignore'lu) yerel placehold
   konsol/0 sayfa hatası** (regresyon yok); slug URL'leri canlı doğrulandı; 1920 kütüphane + taze
   mobil editör görsel temiz (resize-sonrası kırpılma yanlış alarmdı).
 
+**Orta/Düşük batch (devam, 2026-06-15):**
+- **scormMediaInline.fetchAsDataUrl** — 20s timeout eklendi (askıda medya URL'si export'u kilitlemesin).
+- **PreviewPuzzleFlow.isFound** — korumasız `direction.split`/`answer` guard'landı (WordSearch beyaz ekran).
+- **StageCanvas.handleStageDrop** — `Promise.allSettled` (tek bozuk dosya tüm bırakmayı iptal etmiyor).
+- **useAuth.readStoredAuth** — her okumada storage yazımı kaldırıldı (yalnız bayatsa senkronlar).
+
 **Kalan — karar/ortam gerektiriyor veya bilinçli ertelendi:**
 - **B-323 tam i/ı ayrımı** — saklama migrasyonu gerektiriyor (fold ile pratik sorun giderildi).
+- **buttonStyling isFullDim sabit 1000×600** — oransal yapmak fonksiyona sahne boyutu threading'i
+  gerektiriyor (varsayılan 1920×1080'de çalışıyor; özel küçük sahnede sorun). Moderate, ertelendi.
+- **HomeRightPanel slidesiz etkinlik Ad/Süre** — `patchCurrentSlide` no-slide davranışı veri-modeli
+  netliği gerektiriyor; riskli, ertelendi.
+- **~250 kalan Orta/Düşük kozmetik** — ilgili dosyaya dokundukça artımlı.
+- (Lint: `ui/Button/Input/Modal/Select` JSDoc `valid-jsdoc` uyarıları — önceden var, 0 hata, kozmetik.)
 - **B-312 tam kapsam** — widget HTML/JS binary içeriğinin export-öncesi taranması hâlâ açık
   (yükleme uyarısı eklendi; binary tarama ayrı iş). B-322 rawAssets'i payload'dan çıkarıyor.
 - **~270 Orta/Düşük (uzun kuyruk)** — düşük-riskliler batch'ler halinde sürüyor; kalanı ilgili
