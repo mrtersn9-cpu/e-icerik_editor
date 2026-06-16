@@ -784,7 +784,10 @@ const StageCanvas = forwardRef(function StageCanvas(
       const point = toStage(event.clientX, event.clientY);
       // Birden çok dosya tek seferde okunup TEK onUpdate ile eklenir; aksi halde
       // FileReader'ın async'liği latestRef'i bayatlatıp ilk dosyaları kaybettirir.
-      Promise.all(imageFiles.map((file) => fileToDataUrl(file))).then((dataUrls) => {
+      // allSettled: tek bozuk dosya tüm bırakmayı iptal etmesin + unhandled rejection olmasın;
+      // sağlam dosyalar eklenir (null'lar aşağıda zaten atlanır).
+      Promise.allSettled(imageFiles.map((file) => fileToDataUrl(file))).then((results) => {
+        const dataUrls = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
         const a = latestRef.current;
         const objs = a.objects || [];
         const sw = Number(a.stageWidth) || 1920;
