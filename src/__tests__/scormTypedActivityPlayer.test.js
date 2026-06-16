@@ -146,6 +146,35 @@ describe('SCORM typed activity player', () => {
     expect(counter.textContent).not.toContain('Bulunan');
   });
 
+  test('B-323: Türkçe i-varyantı (ızgara I, cevap İ) fold ile eşleşir', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'ws-tr',
+      activities: [
+        {
+          id: 'ws-tr',
+          name: 'Kelime',
+          type: 'puzzle',
+          puzzleType: 'wordsearch',
+          // Izgara düz 'I' harfleriyle, cevap dotlu 'İ' ile saklanmış (uyumsuzluk senaryosu)
+          puzzleGrid: { rows: 1, cols: 3, cells: [[{ letter: 'I' }, { letter: 'L' }, { letter: 'K' }]] },
+          puzzlePlaced: [{ id: 'w1', answer: 'İLK' }],
+        },
+      ],
+    });
+    expect(html).toContain('function typedFold');
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+    const cells = document.querySelectorAll('.typed-word-cell');
+    expect(cells.length).toBe(3);
+    cells[0].click();
+    document.querySelectorAll('.typed-word-cell')[2].click();
+    // Fold öncesi 'İLK' !== 'ILK' idi (bulunamazdı); fold ile bulunur -> sayaç 1/1
+    expect(document.querySelector('.typed-counter')?.textContent).toContain('1 / 1');
+  });
+
   test('carries ready button typography into typed SCORM player controls', () => {
     const html = buildStorylinePlayerHtml({
       selActId: 'fill-typography',

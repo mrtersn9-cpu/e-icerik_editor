@@ -88,6 +88,12 @@ export const TYPED_ACTIVITY_PLAYER_SCRIPT = `
 function typedText(key, fallback) {
   return (typeof PAYLOAD !== "undefined" && PAYLOAD.i18n && PAYLOAD.i18n[key]) || fallback;
 }
+// Cevap karsilastirmasi: buyuk harfe cevir + Turkce i-varyantlarini (i/ı/İ/I) tek forma
+// katla. Boylece cevapta literal 'İ' olsa bile kullanicinin yazdigi 'i'/'ı' eslesir
+// (eski davranis zaten i/ı->I idi; bu yalniz literal İ reddini giderir, saklama degismez).
+function typedFold(value) {
+  return String(value == null ? "" : value).toUpperCase().replace(/İ/g, "I");
+}
 function typedActivitySupported(slide) {
   return !!(slide && ["fill-blank", "mixed", "puzzle", "hotspot", "sequence"].includes(slide.type));
 }
@@ -672,8 +678,8 @@ function openCrosswordModal(word, current, gridCellEl) {
   function checkAnswer() {
     const activeStatus = qStatus[word.id] || "unanswered";
     if (activeStatus === "correct" || activeStatus === "revealed") return;
-    const userInput = modalInput.join("").toUpperCase();
-    const answer = (word.answer || "").toUpperCase();
+    const userInput = typedFold(modalInput.join(""));
+    const answer = typedFold(word.answer || "");
     const isCorrect = userInput === answer;
 
     attempts[word.id] = (attempts[word.id] || 0) + 1;
@@ -925,7 +931,8 @@ function typedRenderWordsearch(root, current) {
       const line = typedWordLine(state.puzzleWordStart, { row: rowIndex, column: columnIndex });
       const word = line.map(position => (cells[position.row] && cells[position.row][position.column] && cells[position.row][position.column].letter) || "").join("");
       const reverse = word.split("").reverse().join("");
-      const match = (current.puzzlePlaced || []).find(item => !found.includes(item.id) && (item.answer === word || item.answer === reverse));
+      const wf = typedFold(word), rf = typedFold(reverse);
+      const match = (current.puzzlePlaced || []).find(item => !found.includes(item.id) && (typedFold(item.answer) === wf || typedFold(item.answer) === rf));
       if (match) found.push(match.id);
       state.puzzleWordStart = null;
       state.typedActivityResult = null;
