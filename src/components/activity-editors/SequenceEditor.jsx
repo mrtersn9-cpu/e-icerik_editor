@@ -1,5 +1,7 @@
 import { uid } from '../../utils/editorHelpers';
 
+import { editorCardStyle, editorTitleStyle } from './editorStyles';
+
 export default function SequenceEditor({ activity, onUpdate }) {
   const items = activity.sequenceItems || [];
   const patch = (p) => onUpdate({ ...activity, ...p });
@@ -21,28 +23,10 @@ export default function SequenceEditor({ activity, onUpdate }) {
     [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
     patch({ sequenceItems: next.map((i, idx) => ({ ...i, order: idx + 1 })) });
   };
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#7c3aed',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Doğru Sıralama
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Doğru Sıralama</div>
         <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.7, marginBottom: 10 }}>
           Öğeleri doğru sıraya göre düzenle. Öğrenci bunları karıştırılmış olarak görecek.
         </div>
@@ -61,7 +45,7 @@ export default function SequenceEditor({ activity, onUpdate }) {
             type="checkbox"
             checked={activity.sequenceShuffle !== false}
             onChange={(e) => patch({ sequenceShuffle: e.target.checked })}
-            style={{ accentColor: '#7c3aed' }}
+            style={{ accentColor: 'var(--eic-light-accent)' }}
           />{' '}
           Öğrenciye karıştırılmış göster
         </label>
@@ -74,9 +58,9 @@ export default function SequenceEditor({ activity, onUpdate }) {
                 minHeight: 30,
                 padding: '0 10px',
                 borderRadius: 10,
-                border: `1px solid ${activity.sequenceDirection === d ? '#a78bfa' : '#cbd5e1'}`,
-                background: activity.sequenceDirection === d ? '#ede9fe' : '#ffffff',
-                color: activity.sequenceDirection === d ? '#6d28d9' : '#475569',
+                border: `1px solid ${activity.sequenceDirection === d ? 'var(--eic-light-accent-border)' : '#cbd5e1'}`,
+                background: activity.sequenceDirection === d ? 'var(--eic-light-accent-soft)' : '#ffffff',
+                color: activity.sequenceDirection === d ? 'var(--eic-light-accent-strong)' : '#475569',
                 fontSize: 11,
                 fontWeight: 800,
                 cursor: 'pointer',
@@ -105,8 +89,8 @@ export default function SequenceEditor({ activity, onUpdate }) {
                 width: 24,
                 height: 24,
                 borderRadius: 999,
-                background: '#ede9fe',
-                color: '#7c3aed',
+                background: 'var(--eic-light-accent-soft)',
+                color: 'var(--eic-light-accent)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -167,7 +151,7 @@ export default function SequenceEditor({ activity, onUpdate }) {
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                color: '#ef4444',
+                color: 'var(--eic-tone-red-base)',
                 fontSize: 14,
               }}
             >
@@ -181,9 +165,9 @@ export default function SequenceEditor({ activity, onUpdate }) {
             minHeight: 32,
             padding: '0 14px',
             borderRadius: 10,
-            border: '1px solid #a78bfa',
+            border: '1px solid var(--eic-light-accent-border)',
             background: '#ffffff',
-            color: '#7c3aed',
+            color: 'var(--eic-light-accent)',
             fontSize: 11,
             fontWeight: 800,
             cursor: 'pointer',

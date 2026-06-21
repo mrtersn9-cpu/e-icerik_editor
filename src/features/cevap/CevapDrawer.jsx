@@ -1,8 +1,9 @@
+// Cevap kontrol merkezi drawer'ı. "Sahneye Uygula" kartı kaldırıldı; seçenekler
+// artık anlık reconcile ile sahneye yansır (bkz. cevapActions.reconcileSelectionObjects).
 import { useEffect } from 'react';
 
 import CevapPanelRouter from './CevapPanelRouter';
 import { getFooterMeta, getActivityTypeLabel } from './cevapSelectors';
-import { SahneyeUygulaCard } from './panels/OrtakCevapKartlari';
 
 export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSaved }) {
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100000,
+        zIndex: 'var(--eic-z-drawer)',
         background: 'rgba(15,23,42,.34)',
         display: 'flex',
         justifyContent: 'flex-end',
@@ -34,6 +35,17 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
     >
       <style>
         {`
+          .cevap-drawer-close {
+            transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+          .cevap-drawer-close:hover {
+            background: var(--eic-light-panel-alt);
+            border-color: var(--eic-light-border);
+          }
+          .cevap-drawer-close:focus-visible {
+            outline: none;
+            box-shadow: var(--eic-focus-ring-light);
+          }
           @media (max-width: 640px) {
             .cevap-drawer-panel {
               width: 100vw !important;
@@ -72,40 +84,41 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
       >
         <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ color: '#174ea6', fontSize: 13, fontWeight: 950 }}>
+            <div style={{ color: 'var(--eic-light-accent-dark)', fontSize: 14, fontWeight: 900 }}>
               ETKİNLİK KONTROL MERKEZİ
             </div>
-            <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>
+            <div style={{ color: 'var(--eic-light-muted)', fontSize: 11, marginTop: 2 }}>
               {getActivityTypeLabel(activity)} cevap ayarlarını düzenleyin.
             </div>
           </div>
           <button
             type="button"
+            className="cevap-drawer-close"
             onClick={onClose}
             aria-label="Etkinlik Kontrol Merkezi'ni kapat"
             style={{
               width: 34,
               height: 34,
-              border: '1px solid #dbe7f5',
+              border: '1px solid var(--eic-light-border-soft)',
               borderRadius: 999,
               background: '#ffffff',
-              color: '#0f172a',
+              color: 'var(--eic-light-text)',
               fontSize: 18,
+              lineHeight: 1,
               cursor: 'pointer',
             }}
           >
-            x
+            ✕
           </button>
         </header>
         <main style={{ minHeight: 0, overflow: 'auto', paddingRight: 6, background: '#ffffff' }}>
           <CevapPanelRouter activity={activity} onUpdate={onUpdate} />
-          <SahneyeUygulaCard activity={activity} onUpdate={onUpdate} number="Uygula" />
         </main>
         <footer
           className="cevap-drawer-footer"
           style={{
             minHeight: 40,
-            border: '1px solid #dbe4ef',
+            border: '1px solid var(--eic-light-border-soft)',
             borderRadius: 8,
             background: '#ffffff',
             display: 'grid',
@@ -113,8 +126,8 @@ export default function CevapDrawer({ open, activity, onUpdate, onClose, lastSav
             alignItems: 'center',
             gap: 12,
             padding: '0 12px',
-            color: '#334155',
-            fontSize: 11,
+            color: 'var(--eic-light-muted)',
+            fontSize: 12,
             fontWeight: 700,
           }}
         >

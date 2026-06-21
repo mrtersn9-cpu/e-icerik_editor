@@ -10,9 +10,16 @@ export function getActivityTypeLabel(activity = {}) {
 export function isTrueFalseActivity(activity = {}) {
   if (activity.answerControl?.activityKind === 'true-false') return true;
   if (activity.type !== 'selection') return false;
-  const options = activity.mcOptions || [];
-  if (options.length !== 2 || (activity.mcMode || 'single') !== 'single') return false;
-  const labels = options.map((option) => String(option.label || '').trim().toLocaleLowerCase('tr-TR'));
+  // Freeform: önce sahnedeki seçenek nesnelerine bak; yoksa eski mcOptions'a düş.
+  const objects = Array.isArray(activity.objects) ? activity.objects : [];
+  const choices = objects.filter(
+    (item) => item?.selectionQuestionId && (item.layerId || 'base') === 'base'
+  );
+  const source = choices.length
+    ? choices.map((item) => String(item.selectionChoice || item.label || ''))
+    : (activity.mcOptions || []).map((option) => String(option.label || ''));
+  if (source.length !== 2 || (activity.mcMode || 'single') !== 'single') return false;
+  const labels = source.map((label) => label.trim().toLocaleLowerCase('tr-TR'));
   return labels.some((label) => ['dogru', 'doğru', 'true', 'd'].includes(label)) &&
     labels.some((label) => ['yanlis', 'yanlış', 'false', 'y'].includes(label));
 }
@@ -31,6 +38,11 @@ export function getAnswerSummary(activity = {}) {
   const matches = activity.dragDropMatches || {};
   const options = activity.mcOptions || [];
   const correctOptions = options.filter((item) => item.isCorrect);
+  // Freeform seçenekler: selectionQuestionId taşıyan base-katman nesneleri.
+  const choices = objects
+    .filter((item) => item?.selectionQuestionId && (item.layerId || 'base') === 'base')
+    .sort(byVisualOrder);
+  const correctChoices = choices.filter((item) => item.selectionCorrect === true);
   const sequenceItems = activity.sequenceItems || [];
   const matchingPairs = activity.matchingPairs || [];
   const fillBlankAnswers = activity.fillBlankAnswers || [];
@@ -41,6 +53,8 @@ export function getAnswerSummary(activity = {}) {
     matches,
     options,
     correctOptions,
+    choices,
+    correctChoices,
     sequenceItems,
     matchingPairs,
     fillBlankAnswers,

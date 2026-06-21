@@ -1,15 +1,10 @@
 import { uid } from '../../utils/editorHelpers';
 
+import { editorCardStyle, editorTitleStyle } from './editorStyles';
+
 export default function SurveyEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const questions = activity.surveyQuestions || [];
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   const addQ = (type) =>
     patch({
       surveyQuestions: [
@@ -25,19 +20,8 @@ export default function SurveyEditor({ activity, onUpdate }) {
   const removeQ = (id) => patch({ surveyQuestions: questions.filter((q) => q.id !== id) });
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#7c3aed',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Anket Soruları
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Anket Soruları</div>
         <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.7, marginBottom: 10 }}>
           Anket puansızdır. Geri bildirim ve memnuniyet ölçümü için kullanın.
         </div>
@@ -56,7 +40,7 @@ export default function SurveyEditor({ activity, onUpdate }) {
             type="checkbox"
             checked={activity.surveyAnonymous !== false}
             onChange={(e) => patch({ surveyAnonymous: e.target.checked })}
-            style={{ accentColor: '#7c3aed' }}
+            style={{ accentColor: 'var(--eic-light-accent)' }}
           />{' '}
           Anonim
         </label>
@@ -94,7 +78,7 @@ export default function SurveyEditor({ activity, onUpdate }) {
                 style={{
                   border: 'none',
                   background: 'transparent',
-                  color: '#ef4444',
+                  color: 'var(--eic-tone-red-base)',
                   cursor: 'pointer',
                   fontSize: 14,
                 }}
@@ -136,9 +120,9 @@ export default function SurveyEditor({ activity, onUpdate }) {
               minHeight: 28,
               padding: '0 10px',
               borderRadius: 8,
-              border: '1px solid #c4b5fd',
+              border: '1px solid var(--eic-light-accent-border)',
               background: '#ffffff',
-              color: '#7c3aed',
+              color: 'var(--eic-light-accent)',
               fontSize: 11,
               fontWeight: 800,
               cursor: 'pointer',
@@ -152,9 +136,9 @@ export default function SurveyEditor({ activity, onUpdate }) {
               minHeight: 28,
               padding: '0 10px',
               borderRadius: 8,
-              border: '1px solid #c4b5fd',
+              border: '1px solid var(--eic-light-accent-border)',
               background: '#ffffff',
-              color: '#7c3aed',
+              color: 'var(--eic-light-accent)',
               fontSize: 11,
               fontWeight: 800,
               cursor: 'pointer',
@@ -168,9 +152,9 @@ export default function SurveyEditor({ activity, onUpdate }) {
               minHeight: 28,
               padding: '0 10px',
               borderRadius: 8,
-              border: '1px solid #c4b5fd',
+              border: '1px solid var(--eic-light-accent-border)',
               background: '#ffffff',
-              color: '#7c3aed',
+              color: 'var(--eic-light-accent)',
               fontSize: 11,
               fontWeight: 800,
               cursor: 'pointer',

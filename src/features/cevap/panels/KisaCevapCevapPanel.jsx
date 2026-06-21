@@ -53,7 +53,18 @@ export default function KisaCevapCevapPanel({ activity, onUpdate }) {
       </CevapCard>
       <CevapCard number="4" title="Değerlendirme Yöntemi">
         <Field label="Yöntem"><SelectInput value={activity.answerControl?.textEvaluation || 'keyword'} onChange={(value) => patch({ answerControl: { ...(activity.answerControl || {}), textEvaluation: value } })} options={[{ value: 'keyword', label: 'Anahtar kelime tabanlı' }, { value: 'manual', label: 'Manuel değerlendirme' }]} /></Field>
+        <Field label="Eşleşme modu" hint="'İçerir' modunda öğrenci metni anahtar ifadeyi içeriyorsa doğru sayılır.">
+          <SelectInput
+            value={activity.textEntryMatchMode === 'contains' ? 'contains' : 'exact'}
+            onChange={(value) => patch({ textEntryMatchMode: value })}
+            options={[
+              { value: 'exact', label: 'Tam eşleşme' },
+              { value: 'contains', label: 'İçerir (kısmi)' },
+            ]}
+          />
+        </Field>
         <ToggleRow label="Büyük/küçük harf duyarlı" checked={activity.textEntryCaseSensitive} onChange={(checked) => patch({ textEntryCaseSensitive: checked })} />
+        <ToggleRow label="Türkçe karakter toleransı (ğ=g, ş=s…)" checked={!!activity.textEntryTurkishTolerance} onChange={(checked) => patch({ textEntryTurkishTolerance: checked })} />
         <Field label="Benzer ifade toleransı">
           <SelectInput
             value={activity.answerControl?.textTolerance || '20'}

@@ -1,7 +1,8 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import { fileToDataUrl } from '../../../api/apiClient';
-import { generateAnswerObjectsForActivity } from '../../../logic/activityObjectGenerators';
+import FeedbackAnimation from '../../../components/preview/FeedbackAnimation';
+import { playFeedbackSound } from '../../../logic/answerFeedbackRuntime';
 import { changeActivityAnswerType, getAnswerTypeKey, patchActivity } from '../cevapActions';
 import {
   getAnswerAccessibility,
@@ -34,14 +35,22 @@ const ANSWER_TYPE_OPTIONS = [
   { value: 'true-false', label: 'Doğru / Yanlış' },
   { value: 'drag-drop', label: 'Sürükle-Bırak' },
   { value: 'matching', label: 'Eşleştirme' },
+  { value: 'line-match', label: 'Çizgi Eşleştirme' },
+  { value: 'dropdown-match', label: 'Açılır Eşleştirme' },
   { value: 'sequence', label: 'Siralama' },
   { value: 'text-entry', label: 'Kısa Cevap' },
   { value: 'numeric', label: 'Sayısal Giriş' },
+  { value: 'slider', label: 'Kaydırıcı / Kadran' },
+  { value: 'shortcut-key', label: 'Kısayol Tuşu' },
   { value: 'fill-blank', label: 'Boşluk Doldurma' },
+  { value: 'word-bank', label: 'Kelime Bankası' },
   { value: 'survey', label: 'Anket' },
   { value: 'mixed', label: 'Karma' },
   { value: 'hotspot', label: 'Hotspot' },
   { value: 'puzzle', label: 'Bulmaca' },
+  { value: 'flashcard', label: 'Bilgi Kartı' },
+  { value: 'labeled-image', label: 'Etiketli Görsel' },
+  { value: 'content-tabs', label: 'Sekme / Süreç' },
 ];
 
 export function EtkinlikTuruCard({
@@ -110,46 +119,6 @@ export function DogrulamaKurallariCard({ number, activity, onUpdate, children = 
   );
 }
 
-export function SahneyeUygulaCard({ activity, onUpdate, number = '99' }) {
-  const handleApply = () => {
-    if (!activity || !onUpdate) return;
-    const newObjects = generateAnswerObjectsForActivity(activity);
-    onUpdate({ ...activity, objects: newObjects });
-  };
-
-  return (
-    <CevapCard number={number} title="Sahneye Uygula" wide>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 150px', alignItems: 'center', gap: 10 }}>
-        <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>
-          Mevcut cevap ayarlarını sahne üzerindeki nesnelere dönüştürür.
-          Önceki otomatik nesneler temizlenir.
-        </div>
-        <button
-          onClick={handleApply}
-          style={{
-            minHeight: 30,
-            padding: '0 12px',
-            borderRadius: 7,
-            border: 'none',
-            background: '#1d4ed8',
-            color: '#ffffff',
-            fontSize: 11,
-            fontWeight: 800,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-          }}
-        >
-          <span style={{ fontSize: 16 }}>▶</span>
-          Sahneye Uygula
-        </button>
-      </div>
-    </CevapCard>
-  );
-}
-
 export function DenemeVeKisitlarCard({ number = '10', activity, onUpdate }) {
   const patch = (nextPatch) => patchActivity(activity, onUpdate, nextPatch);
   const settings = activity.settings || {};
@@ -161,7 +130,13 @@ export function DenemeVeKisitlarCard({ number = '10', activity, onUpdate }) {
             type="number"
             min="0"
             value={settings.maxAttempts || 0}
-            onChange={(value) => patch({ settings: { ...settings, maxAttempts: Math.max(0, Number(value) || 0) } })}
+            onChange={(value) =>
+              patchActivity(
+                activity,
+                onUpdate,
+                withAnswerControl(activity, { maxAttempts: Math.max(0, Number(value) || 0) })
+              )
+            }
           />
         </Field>
         <ToggleRow
@@ -395,10 +370,91 @@ export function YanitKontrolCard({ number, activity, onUpdate, extraAction = nul
   );
 }
 
+function FeedbackSoundField({ label, mode, soundName, feedback, status, patch, dataKey, nameKey, modeKey }) {
+  const inputRef = useRef(null);
+  const handleUpload = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    fileToDataUrl(file)
+      .then((dataUrl) => patch({ [dataKey]: dataUrl, [nameKey]: file.name, [modeKey]: 'custom' }))
+      .catch(() => {});
+  };
+  const smallBtn = (bg, color, border) => ({
+    minHeight: 26,
+    padding: '0 10px',
+    borderRadius: 6,
+    border: border || 'none',
+    background: bg,
+    color,
+    fontSize: 11,
+    fontWeight: 800,
+    cursor: 'pointer',
+  });
+  return (
+    <Field label={label}>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <SelectInput
+          value={mode || 'builtin'}
+          onChange={(value) => patch({ [modeKey]: value })}
+          options={[
+            { value: 'builtin', label: 'Yerleşik ton' },
+            { value: 'custom', label: 'Ses yükle' },
+            { value: 'none', label: 'Ses yok' },
+          ]}
+        />
+        {mode === 'custom' && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => inputRef.current?.click()} style={smallBtn('#1d4ed8', '#fff')}>
+              {soundName ? 'Değiştir' : 'Dosya seç'}
+            </button>
+            {soundName && (
+              <>
+                <span style={{ fontSize: 11, color: '#475569', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {soundName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => patch({ [dataKey]: '', [nameKey]: '' })}
+                  style={smallBtn('#fef2f2', '#b91c1c', '1px solid #fecaca')}
+                >
+                  Kaldır
+                </button>
+              </>
+            )}
+            <input ref={inputRef} type="file" accept="audio/*" onChange={handleUpload} style={{ display: 'none' }} />
+          </div>
+        )}
+        {mode !== 'none' && (
+          <button
+            type="button"
+            onClick={() => playFeedbackSound(feedback, status, { muted: false })}
+            style={smallBtn('#f0fdf4', '#166534', '1px solid #bbf7d0')}
+          >
+            ▶ Dinle
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 export function GeriBildirimCard({ number, activity, onUpdate }) {
   const feedback = getAnswerFeedback(activity);
   const patch = (nextPatch) =>
     patchActivity(activity, onUpdate, withAnswerFeedback(activity, nextPatch));
+  const [previewBurst, setPreviewBurst] = useState(null);
+  const runPreview = (status) => {
+    playFeedbackSound(feedback, status, { muted: false });
+    setPreviewBurst({
+      kind: status === 'success' ? 'success' : 'failure',
+      animation:
+        status === 'success'
+          ? feedback.animation || 'Confetti'
+          : feedback.incorrectAnimation || 'Sallanma',
+      ts: Date.now(),
+    });
+  };
   return (
     <CevapCard number={number} title="Geri Bildirim">
       <div style={{ display: 'grid', gap: 10 }}>
@@ -414,41 +470,41 @@ export function GeriBildirimCard({ number, activity, onUpdate }) {
             onChange={(value) => patch({ incorrectMessage: value })}
           />
         </Field>
-        <Field label="Eksik yanıt">
+        <Field label="Eksik yanıt (kısmi doğru)">
           <TextArea
             value={feedback.partialMessage}
             onChange={(value) => patch({ partialMessage: value })}
           />
         </Field>
-        <Field label="Doğru ses">
-          <SelectInput
-            value={feedback.correctSound}
-            onChange={(value) => patch({ correctSound: value })}
-            options={[
-              { value: 'success.mp3', label: 'success.mp3' },
-              { value: 'dogru.mp3', label: 'dogru.mp3' },
-              { value: 'none', label: 'Ses yok' },
-            ]}
-          />
-        </Field>
-        <Field label="Yanlış ses">
-          <SelectInput
-            value={feedback.incorrectSound}
-            onChange={(value) => patch({ incorrectSound: value })}
-            options={[
-              { value: 'error.mp3', label: 'error.mp3' },
-              { value: 'hata.mp3', label: 'hata.mp3' },
-              { value: 'none', label: 'Ses yok' },
-            ]}
-          />
-        </Field>
+        <FeedbackSoundField
+          label="Doğru ses"
+          status="success"
+          feedback={feedback}
+          patch={patch}
+          mode={feedback.correctSoundMode}
+          soundName={feedback.correctSoundName}
+          dataKey="correctSoundData"
+          nameKey="correctSoundName"
+          modeKey="correctSoundMode"
+        />
+        <FeedbackSoundField
+          label="Yanlış ses"
+          status="incorrect"
+          feedback={feedback}
+          patch={patch}
+          mode={feedback.incorrectSoundMode}
+          soundName={feedback.incorrectSoundName}
+          dataKey="incorrectSoundData"
+          nameKey="incorrectSoundName"
+          modeKey="incorrectSoundMode"
+        />
         <Field label="Başarı animasyonu">
           <SelectInput
             value={feedback.animation}
             onChange={(value) => patch({ animation: value })}
             options={[
-              { value: 'Confetti', label: 'Confetti' },
-              { value: 'Yesil Onay', label: 'Yesil Onay' },
+              { value: 'Confetti', label: 'Konfeti' },
+              { value: 'Yesil Onay', label: 'Yeşil Onay' },
               { value: 'Sallanma', label: 'Sallanma' },
               { value: 'Yok', label: 'Yok' },
             ]}
@@ -460,20 +516,21 @@ export function GeriBildirimCard({ number, activity, onUpdate }) {
             onChange={(value) => patch({ incorrectAnimation: value })}
             options={[
               { value: 'Sallanma', label: 'Sallanma' },
-              { value: 'Kirmizi Carpi', label: 'Kirmizi Carpi' },
-              { value: 'Hafif Titresim', label: 'Hafif Titresim' },
+              { value: 'Kirmizi Carpi', label: 'Kırmızı Çarpı' },
+              { value: 'Hafif Titresim', label: 'Hafif Titreşim' },
               { value: 'Yok', label: 'Yok' },
             ]}
           />
         </Field>
         <Field label="Hedef katman">
           <SelectInput
-            value={feedback.targetLayer || 'feedback'}
-            onChange={(value) => patch({ targetLayer: value })}
+            value={feedback.targetLayer || 'auto'}
+            onChange={(value) => patch({ targetLayer: value === 'auto' ? '' : value })}
             options={[
-              { value: 'feedback', label: 'Geri Bildirim Katmani' },
-              { value: 'success', label: 'Basari Katmani' },
-              { value: 'failure', label: 'Hata Katmani' },
+              { value: 'auto', label: 'Otomatik (Doğru/Yanlış)' },
+              { value: 'success', label: 'Başarı (Correct)' },
+              { value: 'failure', label: 'Hata (Incorrect)' },
+              { value: 'feedback', label: 'Geri Bildirim (cevap)' },
             ]}
           />
         </Field>
@@ -486,6 +543,53 @@ export function GeriBildirimCard({ number, activity, onUpdate }) {
             onChange={(value) => patch({ feedbackDelay: Number(value) || 0 })}
           />
         </Field>
+        <div style={{ display: 'grid', gap: 6, paddingTop: 4, borderTop: '1px solid #eef2f7' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Geri bildirimi önizle</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => runPreview('success')}
+              style={{ flex: 1, minHeight: 30, borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 11, fontWeight: 900, cursor: 'pointer' }}
+            >
+              ▶ Doğru
+            </button>
+            <button
+              type="button"
+              onClick={() => runPreview('incorrect')}
+              style={{ flex: 1, minHeight: 30, borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: 11, fontWeight: 900, cursor: 'pointer' }}
+            >
+              ▶ Yanlış
+            </button>
+          </div>
+          {previewBurst && (
+            <div
+              style={{
+                position: 'relative',
+                overflow: 'hidden',
+                minHeight: 128,
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <FeedbackAnimation burst={previewBurst} />
+              <div
+                style={{
+                  position: 'relative',
+                  textAlign: 'center',
+                  padding: '0 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: previewBurst.kind === 'success' ? '#166534' : '#991b1b',
+                }}
+              >
+                {previewBurst.kind === 'success' ? feedback.correctMessage : feedback.incorrectMessage}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </CevapCard>
   );

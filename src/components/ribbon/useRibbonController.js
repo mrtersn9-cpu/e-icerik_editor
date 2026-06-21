@@ -18,6 +18,7 @@ import {
   TIMELINE_EASING_OPTIONS,
   TIMELINE_EFFECT_OPTIONS,
 } from '../../constants';
+import { getSelectionQuestionId, SELECTION_OPTION_STYLE } from '../../features/cevap/cevapActions';
 import { createObjectFromActivity } from '../../logic/activityFactory';
 import {
   commitMaterializedActivity,
@@ -304,6 +305,40 @@ export default function useRibbonController({
       commitRibbonObject(object);
     },
     [activity, commitRibbonObject]
+  );
+
+  // Freeform "Seçenek" ekle: tıklanabilir bir seçenek nesnesi (selectionQuestionId) ekler
+  // ve mcOptions'ı boşaltır (nesneler tek doğru kaynak — runtime selectionCorrect'e bakar).
+  const insertChoice = useCallback(
+    (isCorrect = false) => {
+      if (!activity) return;
+      const objects = Array.isArray(activity.objects) ? activity.objects : [];
+      const base = createObjectFromActivity(activity, 'shape');
+      const choice = {
+        ...base,
+        shapeKind: 'roundedRect',
+        label: 'Seçenek',
+        selectionQuestionId: getSelectionQuestionId(activity),
+        selectionOptionId: base.id,
+        selectionChoice: 'Seçenek',
+        selectionCorrect: !!isCorrect,
+        generatedBy: 'selection-option',
+        style: { ...(base.style || {}), ...SELECTION_OPTION_STYLE },
+        zIndex: objects.length + 1,
+        layerId: activity.activeLayerId || 'base',
+      };
+      const nextObjects = [...objects, choice];
+      updateActivity({
+        ...activity,
+        objects: nextObjects,
+        mcOptions: [],
+        selectedObjectId: choice.id,
+        timeline: syncTimelineWithObjects({ ...activity, objects: nextObjects }),
+      });
+      setSelectedIds(new Set([choice.id]));
+      setActiveEditorTab('nesneler');
+    },
+    [activity, setActiveEditorTab, setSelectedIds, updateActivity]
   );
 
   const insertText = useCallback(
@@ -1230,6 +1265,7 @@ export default function useRibbonController({
       insertImage,
       insertLabel: () => insertObject('text', { label: 'Etiket', text: 'Etiket', fontSize: 18, fontWeight: 800, background: '#eff6ff', borderColor: '#93c5fd', borderRadius: 999 }),
       insertObject,
+      insertChoice,
       insertShape,
       insertText,
       insertVideo,

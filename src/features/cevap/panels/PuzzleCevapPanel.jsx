@@ -174,12 +174,16 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
           )}
           {puzzleType === 'wordsearch' && (
             <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ fontSize: 10.5, color: '#64748b', lineHeight: 1.4 }}>
+                Kelime + isteğe bağlı ipucu. İpucu yazarsan, oyuncuya kelime yerine ipucu gösterilir
+                (ipucundan kelimeyi bulur).
+              </div>
               {questions.map((q, index) => (
                 <div
                   key={q.id}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '28px minmax(0,1fr) 34px',
+                    gridTemplateColumns: '28px minmax(0,1fr) minmax(0,1.1fr) 34px',
                     gap: 8,
                     alignItems: 'center',
                   }}
@@ -189,6 +193,11 @@ export default function PuzzleCevapPanel({ activity, onUpdate }) {
                     value={q.answer}
                     placeholder="Kelime"
                     onChange={(value) => patchQuestion(q.id, { answer: value })}
+                  />
+                  <TextInput
+                    value={q.clue || q.question || ''}
+                    placeholder="İpucu / tanım (isteğe bağlı)"
+                    onChange={(value) => patchQuestion(q.id, { clue: value })}
                   />
                   <SmallButton variant="danger" onClick={() => removeQuestion(q.id)}>
                     Sil

@@ -175,6 +175,130 @@ describe('SCORM typed activity player', () => {
     expect(document.querySelector('.typed-counter')?.textContent).toContain('1 / 1');
   });
 
+  test('slider: dışa aktarılan SCORM oynatıcıda kaydırıcı değeri tolerans dahilinde doğru sayılır', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'sl-1',
+      activities: [
+        {
+          id: 'sl-1',
+          name: 'Kaydırıcı',
+          type: 'slider',
+          sliderMode: 'slider',
+          sliderMin: 0,
+          sliderMax: 100,
+          sliderStep: 1,
+          sliderCorrectValue: 50,
+          sliderTolerance: 0,
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    const range = document.querySelector('input[type="range"]');
+    expect(range).toBeTruthy();
+    range.value = '50';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+  });
+
+  test('dropdown-match: doğru açılır menü seçimleri SCORM oynatıcıda doğru sayılır', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'dm-1',
+      activities: [
+        {
+          id: 'dm-1',
+          name: 'Açılır Eşleştirme',
+          type: 'dropdown-match',
+          matchingShuffle: false,
+          matchingPairs: [
+            { id: 'p1', left: 'A', right: '1' },
+            { id: 'p2', left: 'B', right: '2' },
+          ],
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    let selects = document.querySelectorAll('select');
+    expect(selects.length).toBe(2);
+    selects[0].value = '1';
+    selects[0].dispatchEvent(new Event('change', { bubbles: true }));
+    // change render() tetikler; DOM yeniden kurulur, tekrar sorgula
+    selects = document.querySelectorAll('select');
+    selects[1].value = '2';
+    selects[1].dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+  });
+
+  test('content-tabs: "tümünü görüntüle" gerektiren içerik tüm sekmeler açılınca tamamlanır', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'ct-1',
+      activities: [
+        {
+          id: 'ct-1',
+          name: 'Sekmeler',
+          type: 'content-tabs',
+          contentLayout: 'tabs',
+          contentRequireAll: true,
+          contentItems: [
+            { id: 'i1', title: 'A', body: 'x' },
+            { id: 'i2', title: 'B', body: 'y' },
+          ],
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    // İlk render yalnız ilk sekmeyi görüntülenmiş sayar → 2'den 1'i → henüz başarısız
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')).toBeFalsy();
+
+    // İkinci sekmeyi aç (tab bar butonları: [tab0, tab1])
+    const tabButtons = Array.from(document.querySelectorAll('button')).filter((b) => !b.classList.contains('typed-btn') && b.id !== 'closeComplete');
+    tabButtons[1].click();
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+  });
+
+  test('shortcut-key: doğru klavye kısayolu SCORM oynatıcıda doğru sayılır', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'sc-1',
+      activities: [
+        {
+          id: 'sc-1',
+          name: 'Kısayol',
+          type: 'shortcut-key',
+          shortcutAnswers: [{ combo: 'Ctrl+S' }],
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    const captureBox = Array.from(document.querySelectorAll('button')).find((b) => !b.classList.contains('typed-btn') && b.id !== 'closeComplete');
+    expect(captureBox).toBeTruthy();
+    captureBox.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
+    document.querySelector('.typed-actions .typed-btn').click();
+    expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+  });
+
   test('carries ready button typography into typed SCORM player controls', () => {
     const html = buildStorylinePlayerHtml({
       selActId: 'fill-typography',

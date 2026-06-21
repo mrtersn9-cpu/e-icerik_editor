@@ -1,13 +1,15 @@
 import { Inp, Btn } from '../../components/ui';
 import { uid } from '../../utils/editorHelpers';
 
+import { editorTitleStyle, EDITOR_ACCENT } from './editorStyles';
+
 export default function SelectionEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const patchOption = (id, p) =>
     patch({ mcOptions: activity.mcOptions.map((o) => (o.id === id ? { ...o, ...p } : o)) });
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#00BCD4' }}>SORU AYARLARI</div>
+      <div style={editorTitleStyle}>Soru Ayarları</div>
       <Inp
         label="Soru Metni"
         value={activity.mcQuestion || ''}
@@ -42,7 +44,7 @@ export default function SelectionEditor({ activity, onUpdate }) {
               ],
             })
           }
-          color="#4CAF50"
+          color="var(--eic-tone-green-base)"
           small
         >
           + Seçenek
@@ -52,21 +54,22 @@ export default function SelectionEditor({ activity, onUpdate }) {
         <div
           key={o.id}
           style={{
-            background: '#111125',
-            border: '1px solid #252540',
+            background: 'var(--eic-light-panel)',
+            border: '1px solid var(--eic-light-border-soft)',
             borderRadius: 8,
             padding: 10,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: '#555' }}>Seçenek {i + 1}</span>
+            <span style={{ fontSize: 11, color: 'var(--eic-light-muted)' }}>Seçenek {i + 1}</span>
             <label
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
                 fontSize: 11,
-                color: o.isCorrect ? '#4CAF50' : '#555',
+                fontWeight: 700,
+                color: o.isCorrect ? 'var(--eic-tone-green-text)' : 'var(--eic-light-muted)',
                 marginLeft: 'auto',
                 cursor: 'pointer',
               }}
@@ -75,7 +78,7 @@ export default function SelectionEditor({ activity, onUpdate }) {
                 type="checkbox"
                 checked={o.isCorrect}
                 onChange={(e) => patchOption(o.id, { isCorrect: e.target.checked })}
-                style={{ accentColor: '#4CAF50' }}
+                style={{ accentColor: EDITOR_ACCENT }}
               />
               Doğru
             </label>
@@ -84,7 +87,7 @@ export default function SelectionEditor({ activity, onUpdate }) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#f44336',
+                color: 'var(--eic-tone-red-base)',
                 cursor: 'pointer',
                 fontSize: 12,
               }}

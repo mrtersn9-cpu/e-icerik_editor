@@ -95,7 +95,7 @@ function typedFold(value) {
   return String(value == null ? "" : value).toUpperCase().replace(/İ/g, "I");
 }
 function typedActivitySupported(slide) {
-  return !!(slide && ["fill-blank", "mixed", "puzzle", "hotspot", "sequence"].includes(slide.type));
+  return !!(slide && ["fill-blank", "mixed", "puzzle", "hotspot", "sequence", "line-match", "flashcard", "word-bank", "labeled-image", "dropdown-match", "slider", "content-tabs", "shortcut-key"].includes(slide.type));
 }
 function typedEl(tag, className, text) {
   const node = document.createElement(tag);
@@ -284,12 +284,68 @@ function checkCourseCompletion() {
     }
   }
 }
+function typedNormShortcut(combo) {
+  var parts = String(combo || "").toLowerCase().split("+").map(function (s) { return s.trim(); }).filter(Boolean);
+  var mods = {};
+  var key = "";
+  parts.forEach(function (p) {
+    if (p === "ctrl" || p === "control") mods.ctrl = 1;
+    else if (p === "alt" || p === "option" || p === "opt") mods.alt = 1;
+    else if (p === "shift") mods.shift = 1;
+    else if (p === "meta" || p === "cmd" || p === "command" || p === "win") mods.meta = 1;
+    else if (p === "esc") key = "escape";
+    else if (p === "return") key = "enter";
+    else if (p === "space" || p === "spacebar" || p === " ") key = "space";
+    else key = p;
+  });
+  var order = ["ctrl", "alt", "shift", "meta"].filter(function (m) { return mods[m]; });
+  return order.concat(key ? [key] : []).join("+");
+}
+function typedComboFromEvent(e) {
+  var mods = [];
+  if (e.ctrlKey) mods.push("ctrl");
+  if (e.altKey) mods.push("alt");
+  if (e.shiftKey) mods.push("shift");
+  if (e.metaKey) mods.push("meta");
+  var key = String(e.key || "").toLowerCase();
+  if (key === " " || key === "spacebar") key = "space";
+  if (["control", "alt", "shift", "meta", "os"].indexOf(key) >= 0) key = "";
+  return mods.concat(key ? [key] : []).join("+");
+}
 function typedEvaluate(current) {
-  if (current.type === "fill-blank") return evaluateStorylineRuntimeFillBlank({ slide: current, state: state });
+  if (current.type === "fill-blank" || current.type === "word-bank") return evaluateStorylineRuntimeFillBlank({ slide: current, state: state });
   if (current.type === "mixed") return evaluateStorylineRuntimeMixed({ slide: current, state: state });
   if (current.type === "puzzle") return evaluateStorylineRuntimePuzzle({ activity: current, state: state });
   if (current.type === "hotspot") return evaluateStorylineRuntimeHotspot({ slide: current, objects: current.objects || [], state: state });
   if (current.type === "sequence") return evaluateStorylineRuntimeSequence({ slide: current, state: state });
+  if (current.type === "line-match" || current.type === "dropdown-match") return evaluateStorylineRuntimeMatching({ slide: current, state: state });
+  if (current.type === "slider") {
+    if (current.sliderGraded === false) return { type: "slider", success: true, completed: true };
+    var sliderVal = Number(state.sliderValue);
+    if (!isFinite(sliderVal)) return { type: "slider", success: false };
+    var sliderMax = current.sliderMax != null ? Number(current.sliderMax) : 100;
+    var sliderTarget = Number(current.sliderCorrectValue != null ? current.sliderCorrectValue : sliderMax);
+    var sliderTol = Number(current.sliderTolerance || 0);
+    var sliderOk = sliderTol === 0 ? sliderVal === sliderTarget : Math.abs(sliderVal - sliderTarget) <= sliderTol;
+    return { type: "slider", success: sliderOk, completed: true };
+  }
+  if (current.type === "flashcard") return { type: "flashcard", success: true, completed: true, score: 100 };
+  if (current.type === "labeled-image") return { type: "labeled-image", success: true, completed: true, score: 100 };
+  if (current.type === "shortcut-key") {
+    var shortcutAccepted = (current.shortcutAnswers || []).map(function (a) { return typedNormShortcut(a && a.combo != null ? a.combo : a); }).filter(Boolean);
+    var shortcutPressed = typedNormShortcut(state.shortcutPressed || "");
+    if (!shortcutPressed) return { type: "shortcut", success: false };
+    return { type: "shortcut", success: shortcutAccepted.indexOf(shortcutPressed) >= 0 };
+  }
+  if (current.type === "content-tabs") {
+    if (current.contentRequireAll) {
+      var contentTotal = (current.contentItems || []).length;
+      var contentSeen = Object.keys(state.contentViewed || {}).filter(function (k) { return state.contentViewed[k]; }).length;
+      var contentDone = contentTotal > 0 && contentSeen >= contentTotal;
+      return { type: "content-tabs", success: contentDone, completed: contentDone };
+    }
+    return { type: "content-tabs", success: true, completed: true };
+  }
   return { success: false };
 }
 function typedCheck(current) {
@@ -326,6 +382,14 @@ function typedClear(current) {
   state.puzzleMemoryFlipped = [];
   state.puzzleMazePosition = null;
   state.puzzleMazeReachedEnd = false;
+  state.matchingSelections = {};
+  state.sliderValue = undefined;
+  state.dropdownMatchRights = null;
+  state.sequenceOrder = null;
+  state.contentActive = 0;
+  state.contentViewed = {};
+  state.contentOpen = {};
+  state.shortcutPressed = "";
   state.typedActivityResult = null;
 
   // puzzleQuestionStatus: terminal correct/revealed durumları silme!
@@ -943,6 +1007,17 @@ function typedRenderWordsearch(root, current) {
   }));
   root.appendChild(grid);
   root.appendChild(typedEl("p", "typed-counter", typedText("foundLabel", "Bulunan") + ": " + found.length + " / " + (current.puzzlePlaced || []).length));
+  // Bulunacak kelimeler / ipuçları (editör önizlemesiyle parite).
+  var wsList = typedEl("div", "");
+  wsList.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px";
+  (current.puzzlePlaced || []).forEach(function (item) {
+    var isFound = found.includes(item.id);
+    var text = String(item.clue || item.question || "").trim() || item.answer;
+    var chip = typedEl("span", "", (isFound ? "\\u2713 " : "\\u2022 ") + text);
+    chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid " + (isFound ? "#86efac" : "#cbd5e1") + ";background:" + (isFound ? "#f0fdf4" : "#fff") + ";color:" + (isFound ? "#166534" : "#334155") + (isFound ? ";text-decoration:line-through" : "");
+    wsList.appendChild(chip);
+  });
+  root.appendChild(wsList);
   typedActions(root, current);
 }
 function typedWordLine(start, end) {
@@ -989,6 +1064,23 @@ function typedRenderMaze(root, current) {
     }, false));
   });
   root.appendChild(controls);
+  // Klavye ok tuşlarıyla hareket (butonlara ek). Her render'da önceki dinleyici kaldırılır.
+  if (state.__mazeKeyHandler) document.removeEventListener("keydown", state.__mazeKeyHandler);
+  state.__mazeKeyHandler = function (e) {
+    if (!document.querySelector(".typed-maze-grid")) return;
+    var d = e.key === "ArrowUp" ? [-1, 0] : e.key === "ArrowDown" ? [1, 0] : e.key === "ArrowLeft" ? [0, -1] : e.key === "ArrowRight" ? [0, 1] : null;
+    if (!d) return;
+    e.preventDefault();
+    var pos = state.puzzleMazePosition || { row: 1, column: 1 };
+    var row = pos.row + d[0], col = pos.column + d[1];
+    if (cells[row] && cells[row][col] && !cells[row][col].isBlock) {
+      state.puzzleMazePosition = { row: row, column: col };
+      if (cells[row][col].isEnd) state.puzzleMazeReachedEnd = true;
+      state.typedActivityResult = null;
+      render();
+    }
+  };
+  document.addEventListener("keydown", state.__mazeKeyHandler);
   typedActions(root, current);
 }
 function typedRenderMemory(root, current) {
@@ -1004,6 +1096,7 @@ function typedRenderMemory(root, current) {
       state.typedActivityResult = null;
       render();
       if (flipped.length === 2) {
+        state.puzzleMemoryMoves = (state.puzzleMemoryMoves || 0) + 1;
         const first = cards[flipped[0]];
         const second = cards[flipped[1]];
         window.setTimeout(() => {
@@ -1018,6 +1111,7 @@ function typedRenderMemory(root, current) {
   });
   root.appendChild(grid);
   root.appendChild(typedEl("p", "typed-counter", typedText("matchedLabel", "Eşleşen") + ": " + matched.length + " / " + Math.floor(cards.length / 2)));
+  root.appendChild(typedEl("p", "typed-counter", typedText("movesLabel", "Hamle") + ": " + (state.puzzleMemoryMoves || 0)));
   typedActions(root, current);
 }
 function typedRenderSudoku(root, current) {
@@ -1049,6 +1143,599 @@ function typedRenderSudoku(root, current) {
   root.appendChild(grid);
   typedActions(root, current);
 }
+function typedRenderShortcut(root, current) {
+  typedQuestion(root, current.shortcutPrompt || typedText("shortcutHint", "Doğru klavye kısayolunu basın:"));
+  var box = typedEl("button", "");
+  box.type = "button";
+  box.style.cssText = "width:100%;padding:28px 16px;border-radius:12px;border:2px dashed #1d4ed8;background:#eff6ff;cursor:pointer;text-align:center;outline:none";
+  var hint = typedEl("div", "", "Buraya tıklayıp kısayolu basın");
+  hint.style.cssText = "font-size:13px;color:#64748b;margin-bottom:8px";
+  var out = typedEl("div", "", state.shortcutPressed ? typedNormShortcut(state.shortcutPressed).toUpperCase() : "\\u2014");
+  out.style.cssText = "font-size:26px;font-weight:900;color:#1d4ed8;min-height:32px";
+  box.appendChild(hint);
+  box.appendChild(out);
+  box.addEventListener("keydown", function (e) {
+    e.preventDefault();
+    var combo = typedComboFromEvent(e);
+    if (!combo) return;
+    state.shortcutPressed = combo;
+    state.typedActivityResult = null;
+    out.textContent = typedNormShortcut(combo).toUpperCase();
+  });
+  root.appendChild(box);
+  typedActions(root, current);
+}
+function typedRenderContentTabs(root, current) {
+  var items = current.contentItems || [];
+  if (!items.length) {
+    root.appendChild(typedEl("p", "typed-counter", typedText("contentEmpty", "İçerik öğesi eklenmedi.")));
+    return;
+  }
+  var layout = current.contentLayout || "tabs";
+  state.contentViewed = state.contentViewed || {};
+  state.contentOpen = state.contentOpen || {};
+  if (state.contentActive == null) state.contentActive = 0;
+  var active = Math.min(state.contentActive, items.length - 1);
+  state.contentViewed[active] = true;
+  if (layout === "accordion" && Object.keys(state.contentOpen).length === 0) state.contentOpen[0] = true;
+
+  function bodyBlock(container, it) {
+    if (it.image) {
+      var im = typedEl("img", "");
+      im.src = it.image; im.alt = "";
+      im.style.cssText = "max-width:100%;border-radius:8px;margin-bottom:10px;display:block";
+      container.appendChild(im);
+    }
+    if (it.body) {
+      var b = typedEl("div", "", it.body);
+      b.style.cssText = "font-size:14px;color:#334155;line-height:1.65;white-space:pre-wrap";
+      container.appendChild(b);
+    }
+  }
+
+  var host = typedEl("div", "");
+  host.style.cssText = "max-width:760px;margin:0 auto";
+
+  if (layout === "tabs") {
+    var bar = typedEl("div", "");
+    bar.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;border-bottom:2px solid #e2e8f0;margin-bottom:14px";
+    items.forEach(function (it, i) {
+      var btn = typedEl("button", "", (state.contentViewed[i] ? "\\u2713 " : "") + (it.title || ("Sekme " + (i + 1))));
+      btn.type = "button";
+      btn.style.cssText = "padding:9px 16px;border:none;cursor:pointer;font-weight:800;font-size:13px;background:transparent;margin-bottom:-2px;color:" + (i === active ? "#1d4ed8" : "#64748b") + ";border-bottom:2px solid " + (i === active ? "#1d4ed8" : "transparent");
+      btn.addEventListener("click", function () { state.contentActive = i; state.contentViewed[i] = true; render(); });
+      bar.appendChild(btn);
+    });
+    host.appendChild(bar);
+    var panel = typedEl("div", "");
+    bodyBlock(panel, items[active]);
+    host.appendChild(panel);
+  } else if (layout === "accordion") {
+    items.forEach(function (it, i) {
+      var open = !!state.contentOpen[i];
+      var card = typedEl("div", "");
+      card.style.cssText = "border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:8px";
+      var head = typedEl("button", "");
+      head.type = "button";
+      head.style.cssText = "width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border:none;cursor:pointer;font-weight:800;font-size:14px;color:#1e293b;text-align:left;background:" + (open ? "#eff6ff" : "#f8fafc");
+      var hl = typedEl("span", "", (state.contentViewed[i] ? "\\u2713 " : "") + (it.title || ("Bölüm " + (i + 1))));
+      var hr = typedEl("span", "", "\\u25be");
+      hr.style.cssText = "color:#1d4ed8";
+      head.appendChild(hl); head.appendChild(hr);
+      head.addEventListener("click", function () { state.contentOpen[i] = !state.contentOpen[i]; state.contentViewed[i] = true; render(); });
+      card.appendChild(head);
+      if (open) {
+        var body = typedEl("div", "");
+        body.style.cssText = "padding:12px 14px;border-top:1px solid #e2e8f0";
+        bodyBlock(body, it);
+        card.appendChild(body);
+      }
+      host.appendChild(card);
+    });
+  } else if (layout === "process") {
+    var nav = typedEl("div", "");
+    nav.style.cssText = "display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:16px;flex-wrap:wrap";
+    items.forEach(function (it, i) {
+      var dot = typedEl("button", "", String(i + 1));
+      dot.type = "button";
+      dot.style.cssText = "width:32px;height:32px;border-radius:999px;border:none;cursor:pointer;font-weight:900;font-size:13px;color:#fff;background:" + (i === active ? "#1d4ed8" : (state.contentViewed[i] ? "#16a34a" : "#cbd5e1"));
+      dot.addEventListener("click", function () { state.contentActive = i; state.contentViewed[i] = true; render(); });
+      nav.appendChild(dot);
+      if (i < items.length - 1) { var line = typedEl("div", ""); line.style.cssText = "width:24px;height:2px;background:#cbd5e1"; nav.appendChild(line); }
+    });
+    host.appendChild(nav);
+    var box = typedEl("div", "");
+    box.style.cssText = "border:1px solid #e2e8f0;border-radius:12px;padding:18px;min-height:120px";
+    var bt = typedEl("div", "", (active + 1) + ". " + (items[active].title || ("Adım " + (active + 1))));
+    bt.style.cssText = "font-size:16px;font-weight:900;color:#1e293b;margin-bottom:8px";
+    box.appendChild(bt);
+    bodyBlock(box, items[active]);
+    host.appendChild(box);
+    var pager = typedEl("div", "");
+    pager.style.cssText = "display:flex;justify-content:space-between;margin-top:14px";
+    var prev = typedEl("button", "typed-btn secondary", "\\u2190 Önceki");
+    prev.type = "button"; prev.disabled = active === 0;
+    prev.addEventListener("click", function () { state.contentActive = Math.max(0, active - 1); state.contentViewed[state.contentActive] = true; render(); });
+    var nxt = typedEl("button", "typed-btn", "Sonraki \\u2192");
+    nxt.type = "button"; nxt.disabled = active === items.length - 1;
+    nxt.addEventListener("click", function () { state.contentActive = Math.min(items.length - 1, active + 1); state.contentViewed[state.contentActive] = true; render(); });
+    pager.appendChild(prev); pager.appendChild(nxt);
+    host.appendChild(pager);
+  } else {
+    var tl = typedEl("div", "");
+    tl.style.cssText = "position:relative;padding-left:28px";
+    var rail = typedEl("div", "");
+    rail.style.cssText = "position:absolute;left:9px;top:4px;bottom:4px;width:2px;background:#cbd5e1";
+    tl.appendChild(rail);
+    items.forEach(function (it, i) {
+      var row = typedEl("div", "");
+      row.style.cssText = "position:relative;margin-bottom:18px";
+      var dot = typedEl("div", "");
+      dot.style.cssText = "position:absolute;left:-27px;top:2px;width:18px;height:18px;border-radius:999px;background:#1d4ed8;border:3px solid #fff;box-shadow:0 0 0 1px #cbd5e1";
+      row.appendChild(dot);
+      var card = typedEl("div", "");
+      card.style.cssText = "border:1px solid #e2e8f0;border-radius:10px;padding:14px";
+      var ct = typedEl("div", "", it.title || ("Olay " + (i + 1)));
+      ct.style.cssText = "font-size:14px;font-weight:900;color:#1d4ed8;margin-bottom:6px";
+      card.appendChild(ct);
+      bodyBlock(card, it);
+      row.appendChild(card);
+      tl.appendChild(row);
+      state.contentViewed[i] = true;
+    });
+    host.appendChild(tl);
+  }
+
+  root.appendChild(host);
+
+  if (current.contentRequireAll) {
+    var seen = Object.keys(state.contentViewed).filter(function (k) { return state.contentViewed[k]; }).length;
+    var allSeen = seen >= items.length;
+    var note = typedEl("div", "", allSeen ? "\\u2713 Tüm bölümler görüntülendi." : ("Tüm bölümleri görüntüleyin (" + seen + " / " + items.length + ")"));
+    note.style.cssText = "margin-top:14px;font-size:12px;font-weight:700;color:" + (allSeen ? "#16a34a" : "#64748b");
+    root.appendChild(note);
+  }
+
+  typedActions(root, current);
+}
+function typedRenderSlider(root, current) {
+  var min = current.sliderMin != null ? Number(current.sliderMin) : 0;
+  var max = current.sliderMax != null ? Number(current.sliderMax) : 100;
+  if (!(max > min)) max = min + 1;
+  var step = current.sliderStep != null && Number(current.sliderStep) > 0 ? Number(current.sliderStep) : 1;
+  var unit = current.sliderUnit ? String(current.sliderUnit) : "";
+  var isDial = (current.sliderMode || "slider") === "dial";
+  if (state.sliderValue == null || !isFinite(Number(state.sliderValue))) state.sliderValue = min;
+
+  function clampSnap(raw) {
+    var v = Math.min(max, Math.max(min, raw));
+    var steps = Math.round((v - min) / step);
+    v = min + steps * step;
+    v = Math.min(max, Math.max(min, v));
+    return Math.round(v * 1e6) / 1e6;
+  }
+
+  typedQuestion(root, current.sliderPrompt || typedText("sliderHint", "Bir değer seçin:"));
+
+  var wrap = typedEl("div", "");
+  wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:16px;margin:8px 0 4px";
+  var readout = typedEl("div", "", String(state.sliderValue) + (unit ? " " + unit : ""));
+  readout.style.cssText = "font-size:28px;font-weight:900;color:#1d4ed8";
+  wrap.appendChild(readout);
+
+  function setVal(v) {
+    state.sliderValue = clampSnap(v);
+    state.typedActivityResult = null;
+    readout.textContent = String(state.sliderValue) + (unit ? " " + unit : "");
+    return state.sliderValue;
+  }
+
+  if (isDial) {
+    var W = 220, H = 220, cx = 110, cy = 110, r = 82;
+    var START = 135, SWEEP = 270;
+    var NS = "http://www.w3.org/2000/svg";
+    var svgEl = function (tag, attrs) {
+      var el = document.createElementNS(NS, tag);
+      for (var k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) el.setAttribute(k, attrs[k]); }
+      return el;
+    };
+    var polar = function (deg) { var a = deg * Math.PI / 180; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; };
+    var arcPath = function (s, e) {
+      var sp = polar(s), ep = polar(e);
+      var large = (e - s) <= 180 ? 0 : 1;
+      return "M " + sp.x + " " + sp.y + " A " + r + " " + r + " 0 " + large + " 1 " + ep.x + " " + ep.y;
+    };
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "slider", tabindex: "0" });
+    svg.style.cssText = "touch-action:none;cursor:pointer;outline:none;max-width:240px";
+    var track = svgEl("path", { d: arcPath(START, START + SWEEP), fill: "none", stroke: "#e2e8f0", "stroke-width": 14, "stroke-linecap": "round" });
+    var valArc = svgEl("path", { fill: "none", stroke: "#1d4ed8", "stroke-width": 14, "stroke-linecap": "round" });
+    var needle = svgEl("line", { x1: cx, y1: cy, stroke: "#1d4ed8", "stroke-width": 3 });
+    var hub = svgEl("circle", { cx: cx, cy: cy, r: 6, fill: "#1d4ed8" });
+    var handle = svgEl("circle", { r: 12, fill: "#fff", stroke: "#1d4ed8", "stroke-width": 3 });
+    svg.appendChild(track); svg.appendChild(valArc); svg.appendChild(needle); svg.appendChild(hub); svg.appendChild(handle);
+
+    var paint = function () {
+      var t = (Number(state.sliderValue) - min) / (max - min);
+      var ang = START + t * SWEEP;
+      var p = polar(ang);
+      valArc.setAttribute("d", arcPath(START, ang));
+      needle.setAttribute("x2", p.x); needle.setAttribute("y2", p.y);
+      handle.setAttribute("cx", p.x); handle.setAttribute("cy", p.y);
+    };
+    var fromPointer = function (clientX, clientY) {
+      var rect = svg.getBoundingClientRect();
+      var ccx = rect.left + rect.width / 2, ccy = rect.top + rect.height / 2;
+      var deg = Math.atan2(clientY - ccy, clientX - ccx) * 180 / Math.PI;
+      if (deg < START) deg += 360;
+      var t = (deg - START) / SWEEP;
+      if (deg > START + SWEEP) t = deg < START + SWEEP + 45 ? 1 : 0;
+      t = Math.min(1, Math.max(0, t));
+      setVal(min + t * (max - min));
+      paint();
+    };
+    var dragging = false;
+    svg.addEventListener("pointerdown", function (e) {
+      dragging = true; fromPointer(e.clientX, e.clientY);
+      var move = function (ev) { if (dragging) fromPointer(ev.clientX, ev.clientY); };
+      var up = function () { dragging = false; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    });
+    svg.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") { setVal(Number(state.sliderValue) + step); paint(); e.preventDefault(); }
+      else if (e.key === "ArrowLeft" || e.key === "ArrowDown") { setVal(Number(state.sliderValue) - step); paint(); e.preventDefault(); }
+      else if (e.key === "Home") { setVal(min); paint(); e.preventDefault(); }
+      else if (e.key === "End") { setVal(max); paint(); e.preventDefault(); }
+    });
+    paint();
+    wrap.appendChild(svg);
+  } else {
+    var sliderWrap = typedEl("div", "");
+    sliderWrap.style.cssText = "width:100%;max-width:480px";
+    var input = typedEl("input", "");
+    input.type = "range";
+    input.min = String(min); input.max = String(max); input.step = String(step);
+    input.value = String(state.sliderValue);
+    input.style.cssText = "width:100%;accent-color:#1d4ed8;height:28px";
+    input.addEventListener("input", function () { setVal(Number(input.value)); });
+    sliderWrap.appendChild(input);
+    var ends = typedEl("div", "");
+    ends.style.cssText = "display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-top:4px";
+    ends.appendChild(typedEl("span", "", String(min) + (unit ? " " + unit : "")));
+    ends.appendChild(typedEl("span", "", String(max) + (unit ? " " + unit : "")));
+    wrap.appendChild(sliderWrap);
+    wrap.appendChild(ends);
+  }
+  root.appendChild(wrap);
+  typedActions(root, current);
+}
+function typedRenderDropdownMatch(root, current) {
+  var pairs = current.matchingPairs || [];
+  state.matchingSelections = state.matchingSelections || {};
+  if (!state.dropdownMatchRights) {
+    var vals = pairs.map(function (p) { return p.right; });
+    if (current.matchingShuffle !== false) {
+      for (var k = vals.length - 1; k > 0; k--) { var j = Math.floor(Math.random() * (k + 1)); var t = vals[k]; vals[k] = vals[j]; vals[j] = t; }
+    }
+    state.dropdownMatchRights = vals;
+  }
+  var rights = state.dropdownMatchRights;
+  typedQuestion(root, typedText("dropdownMatchHint", "Her öğe için açılır menüden eşini seç."));
+  var wrap = typedEl("div", "");
+  wrap.style.cssText = "display:grid;gap:10px;max-width:640px;margin:0 auto";
+  pairs.forEach(function (pair) {
+    var selected = state.matchingSelections[pair.id];
+    var row = typedEl("div", "");
+    row.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center;padding:10px 12px;border-radius:10px;border:1px solid " + (selected ? "#bbf7d0" : "#e2e8f0") + ";background:" + (selected ? "#f0fdf4" : "#fff");
+    var label = typedEl("span", "", pair.left);
+    label.style.fontWeight = "800";
+    row.appendChild(label);
+    var sel = typedEl("select", "");
+    sel.style.cssText = "height:38px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;padding:0 10px;background:#fff";
+    var optEmpty = typedEl("option", "", "— Seç —");
+    optEmpty.value = "";
+    sel.appendChild(optEmpty);
+    rights.forEach(function (rv) {
+      var o = typedEl("option", "", rv);
+      o.value = rv;
+      if (selected === rv) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () {
+      state.matchingSelections[pair.id] = sel.value;
+      state.typedActivityResult = null;
+      render();
+    });
+    row.appendChild(sel);
+    wrap.appendChild(row);
+  });
+  root.appendChild(wrap);
+  typedActions(root, current);
+}
+function typedRenderLabeledImage(root, current) {
+  if (!current.labeledImage) {
+    root.appendChild(typedEl("p", "typed-counter", typedText("labeledImageEmpty", "Görsel eklenmedi.")));
+    return;
+  }
+  var markers = current.labeledMarkers || [];
+  state.labeledViewed = state.labeledViewed || {};
+  typedQuestion(root, typedText("labeledImageHint", "İşaretçilere tıklayarak bilgileri görüntüle."));
+  var wrap = typedEl("div", "");
+  wrap.style.cssText = "position:relative;display:inline-block;max-width:100%";
+  var img = typedEl("img", "");
+  img.src = current.labeledImage;
+  img.alt = "";
+  img.style.cssText = "max-width:100%;border-radius:10px;border:1px solid #e2e8f0;display:block";
+  wrap.appendChild(img);
+  var popup = null;
+  function closePopup() { if (popup && popup.parentNode) popup.parentNode.removeChild(popup); popup = null; }
+  markers.forEach(function (m, i) {
+    var viewed = !!state.labeledViewed[m.id];
+    var pin = typedEl("button", "", String(i + 1));
+    pin.type = "button";
+    pin.style.cssText = "position:absolute;left:" + (m.x || 0) + "%;top:" + (m.y || 0) + "%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:999px;background:" + (viewed ? "#16a34a" : "#2563eb") + ";color:#fff;font-size:13px;font-weight:900;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer";
+    pin.addEventListener("click", function () {
+      state.labeledViewed[m.id] = true;
+      closePopup();
+      popup = typedEl("div", "");
+      popup.style.cssText = "position:absolute;left:" + (m.x || 0) + "%;top:" + (m.y || 0) + "%;transform:translate(-50%,calc(-100% - 18px));min-width:180px;max-width:280px;background:#0f172a;color:#fff;border-radius:10px;padding:10px 12px;box-shadow:0 12px 30px rgba(0,0,0,.4);z-index:5";
+      var head = typedEl("div", "");
+      head.style.cssText = "display:flex;justify-content:space-between;gap:8px;align-items:flex-start";
+      var title = typedEl("div", "", m.title || "—");
+      title.style.cssText = "font-weight:900;font-size:14px";
+      var closeBtn = typedEl("button", "", "\\u00d7");
+      closeBtn.type = "button";
+      closeBtn.style.cssText = "border:none;background:transparent;color:#94a3b8;font-size:16px;cursor:pointer;line-height:1";
+      closeBtn.addEventListener("click", function (e) { e.stopPropagation(); closePopup(); });
+      head.appendChild(title);
+      head.appendChild(closeBtn);
+      popup.appendChild(head);
+      if (m.body) {
+        var body = typedEl("div", "", m.body);
+        body.style.cssText = "font-size:13px;color:#cbd5e1;margin-top:4px;line-height:1.5";
+        popup.appendChild(body);
+      }
+      wrap.appendChild(popup);
+      pin.style.background = "#16a34a";
+    });
+    wrap.appendChild(pin);
+  });
+  root.appendChild(wrap);
+  typedActions(root, current);
+}
+function typedRenderWordBank(root, current) {
+  var answers = current.fillBlankAnswers || [];
+  var sentence = current.fillBlankSentence || "";
+  if (!state.wordBankChips) {
+    var corrects = answers.map(function (a) { return (a.acceptedValues || [])[0] || ""; });
+    var distractors = String(current.wordBankExtra || "").split(",").map(function (w) { return w.trim(); }).filter(Boolean);
+    var list = corrects.concat(distractors).filter(Boolean).map(function (word, i) { return { id: "wbc-" + i, word: word }; });
+    for (var k = list.length - 1; k > 0; k--) { var j = Math.floor(Math.random() * (k + 1)); var tmp = list[k]; list[k] = list[j]; list[j] = tmp; }
+    state.wordBankChips = list;
+  }
+  var chips = state.wordBankChips;
+  state.wordBankPlaced = state.wordBankPlaced || {};
+  var placed = state.wordBankPlaced;
+  var byId = function (id) { return chips.filter(function (x) { return x.id === id; })[0]; };
+  state.fillBlankValues = {};
+  answers.forEach(function (a) { var cid = placed[a.id]; if (cid) { var c = byId(cid); if (c) state.fillBlankValues[a.id] = c.word; } });
+  var usedIds = {};
+  Object.keys(placed).forEach(function (b) { usedIds[placed[b]] = true; });
+  typedQuestion(root, typedText("wordBankHint", "Kelimeleri boşluklara sürükle."));
+  var sentWrap = typedEl("div", "");
+  sentWrap.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:16px;line-height:2.4;max-width:720px;margin:0 auto";
+  var parts = sentence.split(/(___|{.+?})/g).filter(Boolean);
+  var blankIdx = 0;
+  parts.forEach(function (part) {
+    var isBlank = part === "___" || (part.charAt(0) === "{" && part.charAt(part.length - 1) === "}");
+    if (!isBlank) { sentWrap.appendChild(typedEl("span", "", part)); return; }
+    var answer = answers[blankIdx];
+    blankIdx += 1;
+    if (!answer) { sentWrap.appendChild(typedEl("span", "", "___")); return; }
+    var cid = placed[answer.id];
+    var chip = cid ? byId(cid) : null;
+    var slot = typedEl("span", "", chip ? chip.word : "");
+    slot.style.cssText = "display:inline-flex;align-items:center;justify-content:center;min-width:92px;min-height:34px;padding:2px 10px;margin:0 2px;border-radius:8px;border:2px " + (chip ? "solid #86efac" : "dashed #cbd5e1") + ";background:" + (chip ? "#f0fdf4" : "#f8fafc") + ";color:#166534;font-weight:800;font-size:15px;vertical-align:middle;cursor:" + (chip ? "pointer" : "default");
+    slot.addEventListener("dragover", function (e) { e.preventDefault(); });
+    slot.addEventListener("drop", function (e) {
+      e.preventDefault();
+      var id = e.dataTransfer.getData("text/plain");
+      if (!id) return;
+      var np = {};
+      Object.keys(placed).forEach(function (b) { if (b !== answer.id && placed[b] !== id) np[b] = placed[b]; });
+      np[answer.id] = id;
+      state.wordBankPlaced = np;
+      state.typedActivityResult = null;
+      render();
+    });
+    if (chip) slot.addEventListener("click", function () {
+      var np = {};
+      Object.keys(placed).forEach(function (b) { if (b !== answer.id) np[b] = placed[b]; });
+      state.wordBankPlaced = np;
+      state.typedActivityResult = null;
+      render();
+    });
+    sentWrap.appendChild(slot);
+  });
+  root.appendChild(sentWrap);
+  var bank = typedEl("div", "");
+  bank.style.cssText = "margin-top:18px;padding:12px;border-radius:12px;background:#f1f5f9;border:1px solid #e2e8f0";
+  var bankTitle = typedEl("div", "", typedText("wordBankLabel", "KELİME BANKASI"));
+  bankTitle.style.cssText = "font-size:11px;font-weight:800;color:#64748b;margin-bottom:8px";
+  bank.appendChild(bankTitle);
+  var bankChips = typedEl("div", "");
+  bankChips.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
+  chips.forEach(function (c) {
+    if (usedIds[c.id]) return;
+    var chipEl = typedEl("span", "", c.word);
+    chipEl.draggable = true;
+    chipEl.style.cssText = "padding:6px 14px;border-radius:999px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-weight:800;font-size:14px;cursor:grab";
+    chipEl.addEventListener("dragstart", function (e) { e.dataTransfer.setData("text/plain", c.id); e.dataTransfer.effectAllowed = "move"; });
+    bankChips.appendChild(chipEl);
+  });
+  bank.appendChild(bankChips);
+  root.appendChild(bank);
+  typedActions(root, current);
+}
+function typedRenderFlashcard(root, current) {
+  var all = (current.flashcards || []).filter(function (c) { return c && (c.front || c.back); });
+  if (current.settings && current.settings.flashcardShuffle && !state.flashcardOrder) {
+    var order = all.map(function (_, i) { return i; });
+    order.sort(function () { return Math.random() - 0.5; });
+    state.flashcardOrder = order;
+  }
+  var cards = state.flashcardOrder ? state.flashcardOrder.map(function (i) { return all[i]; }).filter(Boolean) : all;
+  if (!cards.length) {
+    root.appendChild(typedEl("p", "typed-counter", typedText("flashcardEmpty", "Henüz kart yok.")));
+    return;
+  }
+  var index = Math.max(0, Math.min(cards.length - 1, state.flashcardIndex || 0));
+  state.flashcardIndex = index;
+  var card = cards[index];
+  root.appendChild(typedEl("p", "typed-counter", (index + 1) + " / " + cards.length));
+  var scene = typedEl("div", "");
+  scene.style.cssText = "perspective:1000px;max-width:520px;margin:8px auto;cursor:pointer";
+  var inner = typedEl("div", "");
+  inner.style.cssText = "position:relative;width:100%;min-height:200px;transition:transform .5s;transform-style:preserve-3d";
+  var flipped = false;
+  var faceBase = "position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;border-radius:16px;font-size:20px;font-weight:800;box-shadow:0 8px 24px rgba(15,23,42,.1)";
+  var front = typedEl("div", "");
+  front.style.cssText = faceBase + ";border:1px solid #bfdbfe;background:#eff6ff;color:#1e293b";
+  front.textContent = card.front || "(boş)";
+  var back = typedEl("div", "");
+  back.style.cssText = faceBase + ";transform:rotateY(180deg);border:1px solid #86efac;background:#f0fdf4;color:#166534";
+  back.textContent = card.back || "(boş)";
+  inner.appendChild(front);
+  inner.appendChild(back);
+  scene.appendChild(inner);
+  function toggleFlip() { flipped = !flipped; inner.style.transform = flipped ? "rotateY(180deg)" : "none"; }
+  scene.addEventListener("click", toggleFlip);
+  root.appendChild(scene);
+  var nav = typedEl("div", "");
+  nav.style.cssText = "display:flex;gap:10px;justify-content:center;margin-top:16px";
+  var prev = typedButton(typedText("prevLabel", "Önceki"), function () { state.flashcardIndex = Math.max(0, index - 1); render(); }, false);
+  if (index === 0) { prev.disabled = true; prev.style.opacity = "0.5"; }
+  var flipBtn = typedButton(typedText("flipLabel", "Çevir"), toggleFlip, true);
+  var next = typedButton(typedText("nextLabel", "Sonraki"), function () { state.flashcardIndex = Math.min(cards.length - 1, index + 1); render(); }, false);
+  if (index === cards.length - 1) { next.disabled = true; next.style.opacity = "0.5"; }
+  nav.appendChild(prev);
+  nav.appendChild(flipBtn);
+  nav.appendChild(next);
+  root.appendChild(nav);
+  if (!current.settings || current.settings.flashcardProgress !== false) {
+    var bar = typedEl("div", "");
+    bar.style.cssText = "margin-top:14px;height:6px;border-radius:999px;background:#e2e8f0;overflow:hidden;max-width:520px;margin-left:auto;margin-right:auto";
+    var fill = typedEl("div", "");
+    fill.style.cssText = "width:" + (((index + 1) / cards.length) * 100) + "%;height:100%;background:#1d4ed8";
+    bar.appendChild(fill);
+    root.appendChild(bar);
+  }
+  typedActions(root, current);
+}
+function typedRenderLineMatch(root, current) {
+  typedQuestion(root, current.matchingQuestion || typedText("lineMatchHint", "Soldaki öğeleri çekip karşısındaki doğru öğeye bağla."));
+  var pairs = current.matchingPairs || [];
+  if (!state.lineMatchRights) {
+    var vals = pairs.map(function (p) { return p.right; });
+    if (current.matchingShuffle !== false) vals = vals.slice().sort(function () { return Math.random() - 0.5; });
+    state.lineMatchRights = vals;
+  }
+  var rights = state.lineMatchRights;
+  state.matchingSelections = state.matchingSelections || {};
+  var conns = state.matchingSelections;
+  var shape = current.lineMatchShape || "box";
+  var rope = current.matchingRope !== false;
+  var color = current.matchingLineColor || "#1d4ed8";
+  var lw = Math.max(1, Number(current.matchingLineWidth) || 3);
+  var dash = current.matchingLineStyle === "dashed" ? "9 6" : (current.matchingLineStyle === "dotted" ? "2 7" : "");
+  var W = 600, NODE_W = 224, NODE_H = 50, GAP = 18, TOP = 12;
+  var leftX = 14, rightX = W - 14 - NODE_W;
+  var rowY = function (i) { return TOP + i * (NODE_H + GAP); };
+  var H = Math.max(120, TOP * 2 + pairs.length * (NODE_H + GAP));
+  var leftAnchor = function (i) { return { x: leftX + NODE_W, y: rowY(i) + NODE_H / 2 }; };
+  var rightAnchor = function (i) { return { x: rightX, y: rowY(i) + NODE_H / 2 }; };
+  var NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(NS, tag);
+    for (var k in attrs) { if (Object.prototype.hasOwnProperty.call(attrs, k)) el.setAttribute(k, attrs[k]); }
+    return el;
+  }
+  function ropePath(a, b) {
+    if (!rope) return "M " + a.x + " " + a.y + " L " + b.x + " " + b.y;
+    var midX = (a.x + b.x) / 2;
+    var sag = Math.min(70, Math.abs(b.x - a.x) * 0.16) + 12;
+    return "M " + a.x + " " + a.y + " Q " + midX + " " + ((a.y + b.y) / 2 + sag) + " " + b.x + " " + b.y;
+  }
+  var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H });
+  svg.style.cssText = "width:100%;max-width:720px;height:auto;display:block;margin:8px auto 0;touch-action:none;user-select:none";
+  pairs.forEach(function (pair, i) {
+    if (conns[pair.id] == null) return;
+    var ri = rights.indexOf(conns[pair.id]);
+    if (ri < 0) return;
+    svg.appendChild(svgEl("path", { d: ropePath(leftAnchor(i), rightAnchor(ri)), fill: "none", stroke: color, "stroke-width": lw, "stroke-linecap": "round", "stroke-dasharray": dash }));
+  });
+  var tempPath = svgEl("path", { fill: "none", stroke: color, "stroke-width": lw, "stroke-linecap": "round", opacity: "0.8" });
+  svg.appendChild(tempPath);
+  function addNode(x, i, label, anchorAtLeft, fillBg, strokeC, anchorFill, onDown) {
+    var g = svgEl("g", {});
+    if (onDown) g.style.cursor = "grab";
+    g.appendChild(svgEl("rect", { x: x, y: rowY(i), width: NODE_W, height: NODE_H, rx: shape === "circle" ? NODE_H / 2 : 10, fill: fillBg, stroke: strokeC, "stroke-width": "2" }));
+    var t = svgEl("text", { x: x + 18, y: rowY(i) + NODE_H / 2, "dominant-baseline": "middle", "font-size": "15", "font-weight": "700", fill: "#1e293b" });
+    t.textContent = label;
+    g.appendChild(t);
+    var ax = anchorAtLeft ? x : x + NODE_W;
+    g.appendChild(svgEl("circle", { cx: ax, cy: rowY(i) + NODE_H / 2, r: "7", fill: anchorFill, stroke: "#fff", "stroke-width": "2" }));
+    if (onDown) g.addEventListener("pointerdown", onDown);
+    svg.appendChild(g);
+  }
+  var dragging = null;
+  function toSvg(e) {
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    var p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
+  pairs.forEach(function (pair, i) {
+    var connected = conns[pair.id] != null;
+    addNode(leftX, i, pair.left, false, "#eff6ff", connected ? color : "#bfdbfe", connected ? color : "#60a5fa", function (e) {
+      e.preventDefault();
+      var a = leftAnchor(i);
+      dragging = { pairId: pair.id, sx: a.x, sy: a.y };
+      try { svg.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+  });
+  rights.forEach(function (value, i) {
+    var connected = false;
+    for (var k in conns) { if (Object.prototype.hasOwnProperty.call(conns, k) && conns[k] === value) { connected = true; break; } }
+    addNode(rightX, i, value, true, "#f0fdf4", connected ? color : "#86efac", connected ? color : "#34d399", null);
+  });
+  svg.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    var p = toSvg(e);
+    tempPath.setAttribute("d", ropePath({ x: dragging.sx, y: dragging.sy }, { x: p.x, y: p.y }));
+  });
+  svg.addEventListener("pointerup", function (e) {
+    if (!dragging) return;
+    var p = toSvg(e);
+    var best = null, bestD = Infinity;
+    rights.forEach(function (value, i) {
+      var a = rightAnchor(i);
+      var d = Math.hypot(a.x - p.x, a.y - p.y);
+      if (d < bestD) { bestD = d; best = value; }
+    });
+    var pairId = dragging.pairId;
+    dragging = null;
+    tempPath.setAttribute("d", "");
+    if (best != null && bestD < 80) {
+      state.matchingSelections[pairId] = best;
+      state.typedActivityResult = null;
+      render();
+    }
+  });
+  svg.addEventListener("pointerleave", function () { dragging = null; tempPath.setAttribute("d", ""); });
+  root.appendChild(svg);
+  typedActions(root, current);
+}
 function typedRenderSequence(root, current) {
   typedQuestion(root, current.sequenceQuestion || typedText("sequenceHint", "Öğeleri doğru sıraya diziniz."));
   const items = current.sequenceItems || [];
@@ -1070,8 +1757,49 @@ function typedRenderSequence(root, current) {
   
   orderedItems.forEach((item, index) => {
     const row = typedEl("div", "");
-    row.style.cssText = "display:grid;grid-template-columns:34px 1fr auto auto;gap:12px;align-items:center;padding:12px 16px;border-radius:10px;border:1px solid #cbd5e1;background:#fff";
-    
+    row.style.cssText = "display:grid;grid-template-columns:24px 32px 1fr auto auto;gap:10px;align-items:center;padding:12px 16px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;cursor:grab";
+    // Sürükleyerek yeniden dizme (yukarı/aşağı butonlarına ek).
+    row.draggable = true;
+    row.addEventListener("dragstart", function (e) {
+      state.__seqDragFrom = index;
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", String(index)); } catch (err) {}
+      row.style.opacity = "0.55";
+    });
+    row.addEventListener("dragend", function () {
+      row.style.opacity = "1";
+      row.style.boxShadow = "none";
+      row.style.borderColor = "#cbd5e1";
+      state.__seqDragFrom = null;
+    });
+    row.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      row.style.boxShadow = "0 0 0 2px #bfdbfe";
+      row.style.borderColor = "#1d4ed8";
+    });
+    row.addEventListener("dragleave", function () {
+      row.style.boxShadow = "none";
+      row.style.borderColor = "#cbd5e1";
+    });
+    row.addEventListener("drop", function (e) {
+      e.preventDefault();
+      var from = state.__seqDragFrom;
+      row.style.boxShadow = "none";
+      row.style.borderColor = "#cbd5e1";
+      if (from == null || from === index) return;
+      var next = [...state.sequenceOrder];
+      var moved = next.splice(from, 1)[0];
+      next.splice(index, 0, moved);
+      state.sequenceOrder = next;
+      state.typedActivityResult = null;
+      render();
+    });
+    var dragHandle = typedEl("span", "", "\\u22ee\\u22ee");
+    dragHandle.style.cssText = "color:#94a3b8;font-size:16px;user-select:none;cursor:grab";
+    dragHandle.title = typedText("dragLabel", "Sürükle");
+    row.appendChild(dragHandle);
+
     const num = typedEl("span", "", current.sequenceAutoNumber !== false ? (index + 1) : "•");
     num.style.fontWeight = "900";
     num.style.color = "#64748b";
@@ -1175,6 +1903,14 @@ function renderTypedActivity(current) {
   else if (current.type === "puzzle") typedRenderPuzzle(root, current);
   else if (current.type === "hotspot") typedRenderHotspot(root, current);
   else if (current.type === "sequence") typedRenderSequence(root, current);
+  else if (current.type === "line-match") typedRenderLineMatch(root, current);
+  else if (current.type === "flashcard") typedRenderFlashcard(root, current);
+  else if (current.type === "word-bank") typedRenderWordBank(root, current);
+  else if (current.type === "labeled-image") typedRenderLabeledImage(root, current);
+  else if (current.type === "dropdown-match") typedRenderDropdownMatch(root, current);
+  else if (current.type === "slider") typedRenderSlider(root, current);
+  else if (current.type === "content-tabs") typedRenderContentTabs(root, current);
+  else if (current.type === "shortcut-key") typedRenderShortcut(root, current);
   stage.appendChild(root);
 }
 `;

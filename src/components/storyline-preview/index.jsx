@@ -10,6 +10,8 @@ import {
   DEFAULT_SELECTION_UI,
   ACCESSIBILITY_DEFAULTS,
 } from '../../constants';
+import { reconcileSelectionObjects } from '../../features/cevap/cevapActions';
+import { getAnswerControl, getAnswerFeedback, getAnswerScoring } from '../../features/cevap/cevapSchema';
 import {
   getActivitySlides,
   getActivityLayers,
@@ -17,6 +19,7 @@ import {
   getCorrectDragMatches,
   materializeActivitySlide,
 } from '../../logic/activityHelpers';
+import { playFeedbackSound } from '../../logic/answerFeedbackRuntime';
 import {
   isButtonIntroPlayPauseDemoButton,
 } from '../../logic/buttonStyling';
@@ -71,13 +74,21 @@ import { buildTableHtml } from '../../utils/tableHtml';
 import WidgetHost from '../../widgets/WidgetHost';
 import { buildWidgetIframeSrc } from '../../widgets/WidgetRegistry';
 import RuntimeVideoElement from '../editor/RuntimeVideoElement';
+import FeedbackAnimation from '../preview/FeedbackAnimation';
 import {
-  PreviewMatchingFlow,
+  PreviewContentTabsFlow,
+  PreviewDropdownMatchFlow,
+  PreviewFlashcardFlow,
+  PreviewLabeledImageFlow,
+  PreviewLineMatchFlow,
   PreviewSequenceFlow,
+  PreviewWordBankFlow,
   PreviewTextEntryFlow,
   PreviewFillBlankFlow,
   PreviewPuzzleOverlay,
   PreviewNumericFlow,
+  PreviewSliderFlow,
+  PreviewShortcutFlow,
   PreviewSurveyFlow,
   PreviewHotspotFlow,
   PreviewMixedFlow,
@@ -2466,13 +2477,33 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
   const slides = useMemo(() => getActivitySlides(selectedActivity || {}), [selectedActivity]);
   const [selectedSlideId, setSelectedSlideId] = useState(() => slides[0]?.id || '');
   const currentSlide = slides.find((slide) => slide.id === selectedSlideId) || slides[0] || null;
-  const previewActivity = useMemo(
-    () =>
-      selectedActivity
-        ? materializeActivitySlide(selectedActivity, currentSlide?.id || selectedSlideId)
-        : null,
-    [currentSlide?.id, selectedActivity, selectedSlideId]
-  );
+  const poolPickRef = useRef({});
+  const previewActivity = useMemo(() => {
+    if (!selectedActivity) return null;
+    const materialized = materializeActivitySlide(
+      selectedActivity,
+      currentSlide?.id || selectedSlideId
+    );
+    // Havuzdan rastgele soru: açıksa oturum başına bir saved question seç ve
+    // seçim nesnelerini onun seçenekleriyle yeniden üret (reconcile geometriyi korur).
+    const pool = Array.isArray(selectedActivity.savedQuestions) ? selectedActivity.savedQuestions : [];
+    const drawOn =
+      !!selectedActivity.settings?.poolDrawRandom && selectedActivity.type === 'selection' && pool.length > 0;
+    if (!drawOn) return materialized;
+    const scopeKey = `${selectedActivity.id || 'act'}::${currentSlide?.id || selectedSlideId || 'slide'}`;
+    let picked = pool.find((question) => question.id === poolPickRef.current[scopeKey]);
+    if (!picked) {
+      picked = pool[Math.floor(Math.random() * pool.length)];
+      poolPickRef.current = { ...poolPickRef.current, [scopeKey]: picked.id };
+    }
+    const mcOptions = (picked.options || []).map((option) => ({ ...option }));
+    return {
+      ...materialized,
+      mcQuestion: picked.question,
+      mcOptions,
+      objects: reconcileSelectionObjects(materialized, mcOptions),
+    };
+  }, [currentSlide?.id, selectedActivity, selectedSlideId]);
   const layers = useMemo(() => getActivityLayers(previewActivity || {}), [previewActivity]);
   const [selectedLayerId, setSelectedLayerId] = useState('base');
   const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
@@ -2486,10 +2517,16 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
   );
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [runtimeMuted, setRuntimeMuted] = useState(false);
+  // Kontrol Et sonrası geri bildirim animasyonu (konfeti/sallanma) için tetik.
+  const [feedbackBurst, setFeedbackBurst] = useState(null);
+  // Seçeneğe özel geri bildirim notu (seçilen şıkka göre).
+  const [feedbackNote, setFeedbackNote] = useState(null);
   const previewOpenedRef = useRef(false);
   const previewRuntimeResetRef = useRef(false);
   const dragRuntimeDebugStateRef = useRef({ signature: '', positionCount: 0, assignmentCount: 0 });
   const persistentDragPositionsRef = useRef({});
+  // Kontrol Et deneme sayacı — sahne kapsamına (aktivite::slayt) göre tutulur.
+  const attemptsRef = useRef({});
   const persistentDropAssignmentsRef = useRef({});
   const activeLayerId = layers.some((layer) => layer.id === selectedLayerId)
     ? selectedLayerId
@@ -3029,6 +3066,8 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       persistentDragPositionsRef.current = {};
       persistentDropAssignmentsRef.current = {};
       dragRuntimeDebugStateRef.current = { signature: '', positionCount: 0, assignmentCount: 0 };
+      attemptsRef.current = {};
+      poolPickRef.current = {};
       setSelectedLayerId('base');
       setHiddenObjectIds(new Set());
       setObjectStates({});
@@ -3036,6 +3075,8 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       setActiveDragId('');
       setDropAssignments({});
       setRuntimeMuted(false);
+      setFeedbackBurst(null);
+      setFeedbackNote(null);
       setRuntimeVariables(buildRuntimeVariableMap(variables));
       setDragDebug((current) => {
         const resetLog = {
@@ -3374,11 +3415,132 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     }
     const hasAnswerAttempt =
       result.type === 'selection' ? result.selected.length > 0 : result.placements.length > 0;
-    const targetLayer = !hasAnswerAttempt
-      ? findLayerByName('normal')
-      : findLayerByName(result.success ? 'Correct' : 'Incorrect');
-    if (targetLayer) setSelectedLayerId(targetLayer.id);
-  }, [effectiveDropAssignments, handleDragDebug, layers, objectStates, previewActivity]);
+
+    // Cevap denemesi yoksa: uyarı (normal) katmanına gider; deneme sayma/ses/animasyon yok.
+    if (!hasAnswerAttempt) {
+      const warnLayer = findLayerByName('normal');
+      if (warnLayer) setSelectedLayerId(warnLayer.id);
+      return;
+    }
+
+    const sourceActivity = selectedActivity || previewActivity || {};
+    const control = getAnswerControl(sourceActivity);
+    const feedback = getAnswerFeedback(sourceActivity);
+    const partialScoreOn = getAnswerScoring(sourceActivity).partialScore !== false;
+    const isPartial = !!result.partial && partialScoreOn && !result.success;
+    const status = result.success ? 'success' : isPartial ? 'partial' : 'incorrect';
+
+    // Deneme sayacı (aktivite::slayt kapsamına göre).
+    const previousAttempts = attemptsRef.current[previewScopeKey] || 0;
+    const attemptNo = previousAttempts + 1;
+    attemptsRef.current = { ...attemptsRef.current, [previewScopeKey]: attemptNo };
+    const maxAttempts = Number(control.maxAttempts) || 0; // 0 = sınırsız
+    const attemptsExhausted = maxAttempts > 0 && attemptNo >= maxAttempts;
+
+    // Hedef katman: feedback.targetLayer override; boşsa otomatik Doğru/Yanlış.
+    const resolveResultLayer = () => {
+      if (feedback.targetLayer === 'success') return findLayerByName('Correct');
+      if (feedback.targetLayer === 'failure') return findLayerByName('Incorrect');
+      if (feedback.targetLayer === 'feedback') return findLayerByName('cevap');
+      return findLayerByName(result.success ? 'Correct' : 'Incorrect');
+    };
+
+    // Kilit: lockAfterCheck açıksa (editDuringCheck='editable' iptal eder) veya
+    // deneme bitiminde 'lock' aksiyonu seçiliyse cevap nesnelerini devre dışı bırak.
+    const shouldLock =
+      (control.lockAfterCheck && control.editDuringCheck !== 'editable') ||
+      (attemptsExhausted && !result.success && control.onAttemptsExhausted === 'lock');
+    const applyAnswerLock = () => {
+      setObjectStates((current) => {
+        const next = { ...current };
+        getCanvasObjects(previewActivity, 'base').forEach((object) => {
+          if (object.selectionQuestionId || object.type === 'draggable') {
+            next[object.id] = { ...(next[object.id] || {}), disabled: true };
+          }
+        });
+        return next;
+      });
+    };
+
+    const showFeedback = () => {
+      playFeedbackSound(feedback, status, { muted: runtimeMuted });
+      setFeedbackBurst({
+        kind: result.success ? 'success' : 'failure',
+        animation: result.success
+          ? feedback.animation || 'Confetti'
+          : feedback.incorrectAnimation || 'Sallanma',
+        ts: Date.now(),
+      });
+
+      // Seçeneğe özel geri bildirim: seçilen şıkların optionFeedback metinleri.
+      const optionNotes = getCanvasObjects(previewActivity, 'base')
+        .filter(
+          (object) =>
+            object?.selectionQuestionId && objectStates[object.id]?.selected && object.optionFeedback
+        )
+        .map((object) => object.optionFeedback);
+      setFeedbackNote(
+        optionNotes.length
+          ? { text: optionNotes.join('  •  '), kind: result.success ? 'success' : 'failure', ts: Date.now() }
+          : null
+      );
+
+      let layer = resolveResultLayer();
+      if (!result.success && attemptsExhausted && control.onAttemptsExhausted === 'show-answer') {
+        layer = findLayerByName('cevap') || layer;
+      }
+      if (layer) setSelectedLayerId(layer.id);
+
+      if (shouldLock) applyAnswerLock();
+
+      // Doğru sonrası otomatik ilerleme
+      if (result.success && control.autoAdvanceOnCorrect) {
+        setTimeout(() => goRelative(1), 1500);
+      }
+      // Deneme bitti ve başarısız: 'restart' aksiyonu (lock/show-answer yukarıda işlendi)
+      if (!result.success && attemptsExhausted && control.onAttemptsExhausted === 'restart') {
+        setTimeout(() => restartPreviewFromStart('attempts-exhausted'), 1600);
+      }
+    };
+
+    // Geri bildirim gecikmesi (sn): ses + animasyon + katman geçişi geciktirilebilir.
+    const delayMs = Math.max(0, Number(feedback.feedbackDelay) || 0) * 1000;
+    if (delayMs > 0) {
+      setTimeout(showFeedback, delayMs);
+    } else {
+      showFeedback();
+    }
+  }, [
+    effectiveDropAssignments,
+    goRelative,
+    handleDragDebug,
+    layers,
+    objectStates,
+    previewActivity,
+    previewScopeKey,
+    restartPreviewFromStart,
+    runtimeMuted,
+    selectedActivity,
+  ]);
+
+  // Otomatik kontrol: gerekli tüm seçim yapıldığında Kontrol Et'i kendiliğinden tetikler.
+  // Yalnızca base katmandayken ve seçim aktivitelerinde çalışır (sürükle-bırakta belirsiz
+  // olduğu için devre dışı). Sonuç katmanına geçince guard tekrar tetiklenmeyi önler.
+  useEffect(() => {
+    const control = getAnswerControl(selectedActivity || {});
+    if (!control.autoCheck) return;
+    if (selectedLayerId !== 'base') return;
+    const selectionObjects = getCanvasObjects(previewActivity || {}, 'base').filter(
+      (object) => object?.selectionQuestionId
+    );
+    if (!selectionObjects.length) return;
+    const expectedCount = selectionObjects.filter((object) => object.selectionCorrect === true).length;
+    if (!expectedCount) return;
+    const selectedCount = selectionObjects.filter((object) => objectStates[object.id]?.selected).length;
+    const mcMode = selectedActivity?.mcMode || 'single';
+    const enough = mcMode === 'multi' ? selectedCount >= expectedCount : selectedCount >= 1;
+    if (enough) handleCheckAnswer();
+  }, [objectStates, selectedLayerId, previewActivity, selectedActivity, handleCheckAnswer]);
 
   const applyPreviewRuntimeCommands = useCallback(
     (commands = []) => {
@@ -3857,6 +4019,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
               style={{
                 flex: 1,
                 minHeight: 0,
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -3864,6 +4027,40 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
                 overflow: 'hidden',
               }}
             >
+              <FeedbackAnimation burst={feedbackBurst} />
+              {feedbackNote && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 14,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    zIndex: 61,
+                    padding: '0 16px',
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '82%',
+                      padding: '9px 16px',
+                      borderRadius: 11,
+                      background:
+                        feedbackNote.kind === 'success' ? 'rgba(22,101,52,.95)' : 'rgba(153,27,27,.95)',
+                      color: '#ffffff',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      lineHeight: 1.4,
+                      textAlign: 'center',
+                      boxShadow: '0 10px 28px rgba(0,0,0,.28)',
+                    }}
+                  >
+                    {feedbackNote.text}
+                  </div>
+                </div>
+              )}
               {useSharedRuntimeDom ? (
                 <StorylinePreviewSharedRuntimeStage
                   activity={sharedRuntimeActivity}
@@ -3967,14 +4164,21 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
                     onWidgetEvent={handleWidgetEvent}
                     widgetRefs={widgetRefs}
                   />
-                  {['matching', 'sequence', 'text-entry', 'fill-blank', 'puzzle', 'numeric', 'survey', 'hotspot', 'mixed'].includes(selectedActivity?.type) && (
+                  {['flashcard', 'labeled-image', 'content-tabs', 'word-bank', 'line-match', 'dropdown-match', 'sequence', 'text-entry', 'fill-blank', 'puzzle', 'numeric', 'slider', 'shortcut-key', 'survey', 'hotspot', 'mixed'].includes(selectedActivity?.type) && (
                     <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#f8fafc', overflow: 'auto', padding: 24 }}>
-                      {selectedActivity?.type === 'matching' && <PreviewMatchingFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'flashcard' && <PreviewFlashcardFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'dropdown-match' && <PreviewDropdownMatchFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'labeled-image' && <PreviewLabeledImageFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'content-tabs' && <PreviewContentTabsFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'word-bank' && <PreviewWordBankFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'line-match' && <PreviewLineMatchFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'sequence' && <PreviewSequenceFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'text-entry' && <PreviewTextEntryFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'fill-blank' && <PreviewFillBlankFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'puzzle' && <PreviewPuzzleOverlay activity={selectedActivity} />}
                       {selectedActivity?.type === 'numeric' && <PreviewNumericFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'slider' && <PreviewSliderFlow activity={selectedActivity} />}
+                      {selectedActivity?.type === 'shortcut-key' && <PreviewShortcutFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'survey' && <PreviewSurveyFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'hotspot' && <PreviewHotspotFlow activity={selectedActivity} />}
                       {selectedActivity?.type === 'mixed' && <PreviewMixedFlow activity={selectedActivity} />}

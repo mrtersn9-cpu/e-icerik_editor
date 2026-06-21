@@ -6,7 +6,6 @@ import {
   BUTTON_PACKAGE_MOTION_PRESETS,
   GRADE_GROUPS,
 } from '../../../../constants';
-import { generateAnswerObjectsForActivity } from '../../../../logic/activityObjectGenerators';
 import {
   ensureAnswerSceneLayerSet,
   ensureSceneTemplateSlide,
@@ -317,11 +316,6 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
 
   const applyReadyButtonTextColor = (color) => {
     applyReadyButtonTypography({ textColor: color || '' });
-  };
-
-  const generateAnswerObjects = () => {
-    if (!activity) return;
-    controller.onUpdateActivity?.({ ...activity, objects: generateAnswerObjectsForActivity(activity) });
   };
 
   const generateAnswerSceneSet = () => {
@@ -774,7 +768,6 @@ export default function DesignRightPanel({ controller, inspectorProps }) {
               )}
               <ButtonGrid
                 actions={[
-                  { label: 'Cevap Nesnelerini Üret', onClick: generateAnswerObjects },
                   { label: 'Cevap Sahne Seti Oluştur', onClick: generateAnswerSceneSet, tone: '#16a34a' },
                   { label: 'Cevap Merkezi', onClick: controller.onOpenAnswerCenter },
                 ]}

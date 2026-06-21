@@ -12,7 +12,7 @@ import {
 import { getAnswerPlacementFrames, safeClone } from '../../../logic/editorHelpers';
 import { createLayer, normalizeLayerNameKey } from '../../../logic/factories';
 import { uid } from '../../../utils/editorHelpers';
-import { patchActivity } from '../cevapActions';
+import { applyMatchingMigration, patchActivity } from '../cevapActions';
 import { getAnswerSummary } from '../cevapSelectors';
 import {
   CevapCard,
@@ -156,11 +156,22 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
       ),
     });
   const setMode = (nextMode) => patch({ dragDropMode: nextMode, dragDropMatches: {} });
-  const matchCount = Object.keys(summary.matches || {}).length;
+  // Eşleşmelerin imzası: yalnızca sayı değil, hedef değişimleri de yakalanır.
+  // Üretim artık YIKICI DEĞİL (reconcile) — elle taşınan/boyutlandırılan yerleşimler
+  // korunur; bu yüzden imza her değiştiğinde güvenle yeniden çalışabilir.
+  const matchesSignature = JSON.stringify(summary.matches || {});
   useEffect(() => {
-    if (matchCount === 0) return;
     generateLayerRef.current();
-  }, [matchCount]);
+  }, [matchesSignature]);
+  // Eşleştirme: eski form verisini (matchingPairs) bir kez sürüklenebilir/bırakma
+  // nesnelerine göçür (sonra panel normal sürükle-bırak gibi davranır).
+  const matchingPairsLength = (activity.matchingPairs || []).length;
+  useEffect(() => {
+    if (activity.type === 'matching' && matchingPairsLength > 0) {
+      applyMatchingMigration(activity, onUpdate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchingPairsLength]);
   const getResolvedExplicitMatches = () => {
     let nextMatches = {};
     const usedIds = new Set();
@@ -189,14 +200,26 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
     return nextMatches;
   };
   const clearMatches = () => patch({ dragDropMatches: {} });
+
+  const isPlacementObject = (item, answerLayerId) =>
+    (item.layerId || 'base') === answerLayerId &&
+    (item.generatedBy === 'answer-key' || item.generatedBy === 'answer-placement');
+
   const generateAnswerLayerObjects = () => {
     const layers = getActivityLayers(activity);
     const existingAnswerLayer = layers.find(isAnswerLayer);
     const answerLayer = existingAnswerLayer || createLayer('cevap', layers.length, { autoName: false });
+    const answerLayerId = answerLayer.id;
+    const allObjects = activity.objects || [];
     const resolvedMatches = getResolvedExplicitMatches();
     const pairs = getDragDropPairsFromMatches(resolvedMatches);
+
+    // Eşleşme yoksa: yalnızca üretilmiş yerleşim nesnelerini kaldır; elle eklenenleri koru.
     if (!pairs.length) {
-      console.warn('SurukleBirakCevapPanel: Eşleşme olmadığı için cevap layerı oluşturulamadı.');
+      const cleaned = allObjects.filter((item) => !isPlacementObject(item, answerLayerId));
+      if (cleaned.length !== allObjects.length || JSON.stringify(activity.dragDropMatches || {}) !== JSON.stringify(resolvedMatches)) {
+        patch({ dragDropMatches: resolvedMatches, objects: cleaned });
+      }
       return;
     }
 
@@ -209,24 +232,40 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
     );
     const activityWithExplicitMatches = { ...activity, dragDropMatches: resolvedMatches };
     const frames = getAnswerPlacementFrames(activityWithExplicitMatches);
-    const answerLayerId = answerLayer.id;
-    const remainingObjects = (activity.objects || []).filter(
-      (item) =>
-        !(
-          (item.layerId || 'base') === answerLayerId &&
-          (item.generatedBy === 'answer-key' || item.generatedBy === 'answer-placement')
-        )
-    );
-    const maxZIndex = remainingObjects.reduce(
-      (max, item) => Math.max(max, Number(item.zIndex) || 0),
-      0
-    );
-    const generatedObjects = pairs
-      .map((pair, index) => {
+
+    // Mevcut yerleşim nesnelerini pairKey'e göre eşle (geometrilerini KORU).
+    const existingByPairKey = new Map();
+    allObjects.forEach((item) => {
+      if (!isPlacementObject(item, answerLayerId)) return;
+      const key =
+        item.answerPairKey ||
+        getDragDropPairKey(item.sourceDragId || '', item.targetDropId || '');
+      if (key && !existingByPairKey.has(key)) existingByPairKey.set(key, item);
+    });
+
+    const maxZIndex = allObjects.reduce((max, item) => Math.max(max, Number(item.zIndex) || 0), 0);
+    let zCursor = maxZIndex;
+
+    // RECONCILE: var olan yerleşim KORUNUR (elle taşınmış olabilir, answerPlacementManual);
+    // eksik çift için YENİ üretilir; artık geçerli olmayan çiftler düşer.
+    const reconciledPlacements = pairs
+      .map((pair) => {
+        const pairKey = getDragDropPairKey(pair.dragId, pair.dropId);
         const drag = dragById[pair.dragId];
         const drop = dropById[pair.dropId];
-        const frame = frames[getDragDropPairKey(pair.dragId, pair.dropId)];
         if (!drag || !drop) return null;
+        const existing = existingByPairKey.get(pairKey);
+        if (existing) {
+          // Var olanı koru; yalnızca eşleşme kimliklerini tazele.
+          return {
+            ...existing,
+            sourceDragId: pair.dragId,
+            targetDropId: pair.dropId,
+            answerPairKey: pairKey,
+          };
+        }
+        const frame = frames[pairKey];
+        zCursor += 1;
         return {
           ...safeClone(drag, {}),
           id: uid(),
@@ -237,25 +276,26 @@ export default function SurukleBirakCevapPanel({ activity, onUpdate }) {
           groupId: '',
           sourceDragId: pair.dragId,
           targetDropId: pair.dropId,
-          answerPairKey: getDragDropPairKey(pair.dragId, pair.dropId),
+          answerPairKey: pairKey,
           x: frame?.x ?? drop.x ?? drag.x,
           y: frame?.y ?? drop.y ?? drag.y,
           width: frame?.width ?? drag.width,
           height: frame?.height ?? drag.height,
           locked: false,
-          zIndex: maxZIndex + index + 1,
+          zIndex: zCursor,
         };
       })
       .filter(Boolean);
 
-    // Aktif katmana DOKUNMA: eşleştirme seçimi her değiştiğinde bu üretim
-    // otomatik tetikleniyor; eskiden activeLayerId'yi cevap katmanına zorlayınca
-    // sahneye aniden koyu yerleşim kopyaları + katman karartması geliyordu
-    // ("siyah alan" şikâyeti). Cevap katmanı katman listesinden açılabilir.
+    // Yerleşim olmayan tüm nesneler korunur; eski yerleşimler reconciledPlacements ile değişir.
+    const remainingObjects = allObjects.filter((item) => !isPlacementObject(item, answerLayerId));
+
+    // Aktif katmana DOKUNMA: cevap katmanı katman listesinden açılabilir
+    // (eski "siyah alan" şikâyetini önlemek için activeLayerId zorlanmaz).
     patch({
       layers: existingAnswerLayer ? layers : [...layers, answerLayer],
       dragDropMatches: resolvedMatches,
-      objects: [...remainingObjects, ...generatedObjects],
+      objects: [...remainingObjects, ...reconciledPlacements],
     });
   };
 

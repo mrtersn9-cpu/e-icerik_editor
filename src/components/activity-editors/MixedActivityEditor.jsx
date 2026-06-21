@@ -103,13 +103,13 @@ export default function MixedActivityEditor({
           style={{
             fontSize: 11,
             fontWeight: 800,
-            color: '#00BCD4',
+            color: 'var(--eic-light-accent)',
             textTransform: 'uppercase',
             letterSpacing: 0.4,
             marginBottom: 10,
           }}
         >
-          1. Soru ve Secenekler
+          1. Soru ve Seçenekler
         </div>
         <SelectionEditor activity={activity} onUpdate={onUpdate} />
       </div>

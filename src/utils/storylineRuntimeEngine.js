@@ -289,14 +289,20 @@ export function evaluateStorylineRuntimeSelection({ slide = {}, objects = null, 
   const missing = expected.filter((key) => !selectedSet.has(key));
   const extra = selected.filter((key) => !expectedSet.has(key));
   const hasSelectionTask = selectionObjects.length > 0 && expected.length > 0;
+  const correctSelectedCount = selected.filter((key) => expectedSet.has(key)).length;
+  const success = hasSelectionTask && missing.length === 0 && extra.length === 0;
   return {
     type: 'selection',
-    success: hasSelectionTask && missing.length === 0 && extra.length === 0,
+    success,
     expected,
     selected,
     missing,
     extra,
     expectedCount: expected.length,
+    // Kısmi sonuç: en az bir doğru seçili ama eksik/fazla var (kısmi puanlama + partialMessage için).
+    correctCount: correctSelectedCount,
+    totalExpected: expected.length,
+    partial: hasSelectionTask && !success && correctSelectedCount > 0,
   };
 }
 
@@ -1127,7 +1133,14 @@ export function evaluateStorylineRuntimeTextEntry({ slide = {}, state = {} } = {
     return result;
   };
   const normalizedUser = normalize(userText);
-  const matched = acceptedAnswers.some((answer) => normalize(answer) === normalizedUser);
+  // 'contains' modunda öğrenci metni kabul edilen ifadeyi içeriyorsa doğru sayılır.
+  const containsMode = slide.textEntryMatchMode === 'contains';
+  const matchAnswer = (answer) => {
+    const normalizedAnswer = normalize(answer);
+    if (!normalizedAnswer) return false;
+    return containsMode ? normalizedUser.includes(normalizedAnswer) : normalizedAnswer === normalizedUser;
+  };
+  const matched = acceptedAnswers.some(matchAnswer);
   return {
     type: 'text-entry',
     success: matched && acceptedAnswers.length > 0,
@@ -1396,6 +1409,93 @@ export function evaluateStorylineRuntimeNumeric({ slide = {}, state = {} } = {})
     userValue,
     correctValue,
     tolerance,
+    feedback: success ? 'correct' : 'incorrect',
+  };
+}
+
+export function evaluateStorylineRuntimeSlider({ slide = {}, state = {} } = {}) {
+  const min = slide.sliderMin != null ? Number(slide.sliderMin) : 0;
+  const max = slide.sliderMax != null ? Number(slide.sliderMax) : 100;
+  const userValue = Number(state.sliderValue);
+
+  // Notlandırılmayan (bilgilendirme amaçlı) kaydırıcı her zaman başarılıdır.
+  if (slide.sliderGraded === false) {
+    return {
+      type: 'slider',
+      success: true,
+      score: 0,
+      userValue: Number.isFinite(userValue) ? userValue : min,
+      feedback: 'info',
+    };
+  }
+
+  const correctValue = Number(slide.sliderCorrectValue ?? max);
+  const tolerance = Number(slide.sliderTolerance ?? 0);
+
+  if (!Number.isFinite(userValue)) {
+    return { type: 'slider', success: false, score: 0, feedback: 'empty' };
+  }
+
+  const withinTolerance = tolerance === 0
+    ? userValue === correctValue
+    : Math.abs(userValue - correctValue) <= tolerance;
+
+  return {
+    type: 'slider',
+    success: withinTolerance,
+    score: withinTolerance ? 1 : 0,
+    userValue,
+    correctValue,
+    tolerance,
+    feedback: withinTolerance ? 'correct' : 'incorrect',
+  };
+}
+
+// Kısayol tuşu kombinasyonunu kanonik biçime getirir: "ctrl+alt+shift+meta+tuş".
+export function normalizeShortcutCombo(combo = '') {
+  const parts = String(combo || '').toLowerCase().split('+').map((s) => s.trim()).filter(Boolean);
+  const mods = new Set();
+  let key = '';
+  parts.forEach((p) => {
+    if (p === 'ctrl' || p === 'control') mods.add('ctrl');
+    else if (p === 'alt' || p === 'option' || p === 'opt') mods.add('alt');
+    else if (p === 'shift') mods.add('shift');
+    else if (p === 'meta' || p === 'cmd' || p === 'command' || p === 'win') mods.add('meta');
+    else if (p === 'esc') key = 'escape';
+    else if (p === 'return') key = 'enter';
+    else if (p === 'space' || p === 'spacebar' || p === ' ') key = 'space';
+    else key = p;
+  });
+  const order = ['ctrl', 'alt', 'shift', 'meta'].filter((m) => mods.has(m));
+  return [...order, key].filter(Boolean).join('+');
+}
+
+export function shortcutComboFromEvent(event = {}) {
+  const mods = [];
+  if (event.ctrlKey) mods.push('ctrl');
+  if (event.altKey) mods.push('alt');
+  if (event.shiftKey) mods.push('shift');
+  if (event.metaKey) mods.push('meta');
+  let key = String(event.key || '').toLowerCase();
+  if (key === ' ' || key === 'spacebar') key = 'space';
+  if (['control', 'alt', 'shift', 'meta', 'os'].includes(key)) key = '';
+  return [...mods, key].filter(Boolean).join('+');
+}
+
+export function evaluateStorylineRuntimeShortcut({ slide = {}, state = {} } = {}) {
+  const accepted = (slide.shortcutAnswers || [])
+    .map((a) => normalizeShortcutCombo(a && a.combo != null ? a.combo : a))
+    .filter(Boolean);
+  const pressed = normalizeShortcutCombo(state.shortcutPressed || '');
+  if (!pressed) {
+    return { type: 'shortcut', success: false, score: 0, feedback: 'empty' };
+  }
+  const success = accepted.includes(pressed);
+  return {
+    type: 'shortcut',
+    success,
+    score: success ? 1 : 0,
+    pressed,
     feedback: success ? 'correct' : 'incorrect',
   };
 }

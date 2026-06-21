@@ -5,6 +5,18 @@ import {
   createCanvasShapeObject,
 } from './factories';
 
+// NOT (mimari): Bu dosyadaki üreticiler artık CANLI yoldan ÇAĞRILMIYOR.
+// Eski "Sahneye Uygula" / "Cevap Nesnelerini Üret" düğmeleri kaldırıldı; bunlar
+// tıklanamaz, doğru cevabı baştan vurgulayan (interaktif olmayan) şekiller üretiyordu.
+// Güncel canlı yol:
+//   - Çoktan seçmeli / doğru-yanlış seçenek nesneleri:
+//     reconcileSelectionObjects (src/features/cevap/cevapActions.js) — interaktif,
+//     selectionQuestionId taşıyan, elle taşıma/boyutu KORUYAN nesneler üretir.
+//   - Katman iskelesi (Kontrol Et/Correct/Incorrect/menu/normal/cevap + tetikleyiciler):
+//     generateLegacyAnswerSceneSet (src/logic/answerSceneSetGenerator.js).
+// Aşağıdaki fonksiyonlar yalnızca içerik-dili (runtimeText) regresyon testleri için
+// korunmuştur (src/__tests__/contentLanguageRuntime.test.js); yeni kod bunları çağırmamalı.
+
 const ANSWER_LAYER_STYLE = {
   card: {
     background: '#ffffff',

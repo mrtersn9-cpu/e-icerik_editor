@@ -641,7 +641,7 @@ function CrosswordGrid({ activity, onAnswer }) {
             )}
 
             {/* Harf Kutuları */}
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', my: 8 }}>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', margin: '8px 0' }}>
               {modalInput.map((char, index) => {
                 const isActive = modalActiveCharIndex === index;
                 return (
@@ -924,6 +924,34 @@ function WordSearchGrid({ activity, onAnswer }) {
       <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
         Bulunan: {foundWords.length} / {placed.length}
       </div>
+      {placed.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {placed.map((p) => {
+            const isFound = foundWords.includes(p.id);
+            const text = String(p.clue || p.question || '').trim() || p.answer;
+            return (
+              <span
+                key={p.id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${isFound ? '#86efac' : '#cbd5e1'}`,
+                  background: isFound ? '#f0fdf4' : '#ffffff',
+                  color: isFound ? '#166534' : '#334155',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textDecoration: isFound ? 'line-through' : 'none',
+                }}
+              >
+                {isFound ? '✓' : '•'} {text}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {foundWords.length === placed.length && placed.length > 0 && (
         <div style={{ color: '#22c55e', fontWeight: 700, marginTop: 4 }}>Tüm kelimeleri buldunuz!</div>
       )}

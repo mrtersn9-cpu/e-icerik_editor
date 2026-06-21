@@ -101,7 +101,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
           style={{
             fontSize: 11,
             fontWeight: 700,
-            color: '#FF9800',
+            color: 'var(--eic-light-accent)',
             marginBottom: 8,
             letterSpacing: 1,
           }}
@@ -117,8 +117,8 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 padding: '8px 10px',
                 borderRadius: 8,
                 cursor: 'pointer',
-                border: `1px solid ${mode === m.id ? '#FF9800' : '#252540'}`,
-                background: mode === m.id ? '#FF980022' : '#111125',
+                border: `1px solid ${mode === m.id ? 'var(--eic-light-accent)' : '#252540'}`,
+                background: mode === m.id ? 'var(--eic-light-accent-soft)' : '#111125',
                 transition: 'all .15s',
               }}
             >
@@ -126,7 +126,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  color: mode === m.id ? '#FF9800' : '#B0BEC5',
+                  color: mode === m.id ? 'var(--eic-light-accent)' : '#B0BEC5',
                   marginBottom: 2,
                 }}
               >
@@ -164,18 +164,18 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
               gap: 6,
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid #252540',
-              background: '#111125',
+              border: '1px solid var(--eic-light-border-soft)',
+              background: 'var(--eic-light-panel-alt)',
               cursor: 'pointer',
               fontSize: 11,
-              color: '#B0BEC5',
+              color: 'var(--eic-light-muted)',
             }}
           >
             <input
               type="checkbox"
               checked={dragDropSettings.isolateScopes !== false}
               onChange={(e) => patchSettings({ isolateScopes: e.target.checked })}
-              style={{ accentColor: '#38bdf8' }}
+              style={{ accentColor: 'var(--eic-light-accent)' }}
             />
             Soru grubu izolasyonu
           </label>
@@ -186,18 +186,18 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
               gap: 6,
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid #252540',
-              background: '#111125',
+              border: '1px solid var(--eic-light-border-soft)',
+              background: 'var(--eic-light-panel-alt)',
               cursor: 'pointer',
               fontSize: 11,
-              color: '#B0BEC5',
+              color: 'var(--eic-light-muted)',
             }}
           >
             <input
               type="checkbox"
               checked={!!dragDropSettings.allowCrossScope}
               onChange={(e) => patchSettings({ allowCrossScope: e.target.checked })}
-              style={{ accentColor: '#f59e0b' }}
+              style={{ accentColor: 'var(--eic-light-accent)' }}
             />
             Grup disina izin ver
           </label>
@@ -208,18 +208,18 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
               gap: 6,
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid #252540',
-              background: '#111125',
+              border: '1px solid var(--eic-light-border-soft)',
+              background: 'var(--eic-light-panel-alt)',
               cursor: 'pointer',
               fontSize: 11,
-              color: '#B0BEC5',
+              color: 'var(--eic-light-muted)',
             }}
           >
             <input
               type="checkbox"
               checked={!!dragDropSettings.allowMultipleItemsPerDrop}
               onChange={(e) => patchSettings({ allowMultipleItemsPerDrop: e.target.checked })}
-              style={{ accentColor: '#22c55e' }}
+              style={{ accentColor: 'var(--eic-light-accent)' }}
             />
             Bir alan çoklu öge alsın
           </label>
@@ -230,18 +230,18 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
               gap: 6,
               padding: '8px 10px',
               borderRadius: 8,
-              border: '1px solid #252540',
-              background: '#111125',
+              border: '1px solid var(--eic-light-border-soft)',
+              background: 'var(--eic-light-panel-alt)',
               cursor: 'pointer',
               fontSize: 11,
-              color: '#B0BEC5',
+              color: 'var(--eic-light-muted)',
             }}
           >
             <input
               type="checkbox"
               checked={!!dragDropSettings.allowMultipleTargetsPerDrag}
               onChange={(e) => patchSettings({ allowMultipleTargetsPerDrag: e.target.checked })}
-              style={{ accentColor: '#a855f7' }}
+              style={{ accentColor: 'var(--eic-light-accent)' }}
             />
             Aynı öge çoklu hedefe gitsin
           </label>
@@ -273,7 +273,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                   background: '#0d0d1a',
                   borderRadius: 6,
                   padding: '6px 8px',
-                  border: '1px solid #252540',
+                  border: '1px solid var(--eic-light-border-soft)',
                 }}
               >
                 <div
@@ -288,7 +288,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 <span
                   style={{
                     fontSize: 11,
-                    color: '#B0BEC5',
+                    color: 'var(--eic-light-muted)',
                     flex: 1,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -324,7 +324,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                   background: '#0d0d1a',
                   borderRadius: 6,
                   padding: '6px 8px',
-                  border: '1px solid #252540',
+                  border: '1px solid var(--eic-light-border-soft)',
                 }}
               >
                 <div
@@ -332,14 +332,14 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                     width: 8,
                     height: 8,
                     borderRadius: 2,
-                    background: '#FF9800',
+                    background: 'var(--eic-light-accent)',
                     flexShrink: 0,
                   }}
                 />
                 <span
                   style={{
                     fontSize: 11,
-                    color: '#B0BEC5',
+                    color: 'var(--eic-light-muted)',
                     flex: 1,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -356,9 +356,9 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                     width: 70,
                     padding: '3px 6px',
                     borderRadius: 4,
-                    border: '1px solid #FF9800',
+                    border: '1px solid var(--eic-light-accent)',
                     background: '#1a1a30',
-                    color: '#FF9800',
+                    color: 'var(--eic-light-accent)',
                     fontSize: 11,
                     outline: 'none',
                   }}
@@ -451,14 +451,14 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                   background: '#0d0d1a',
                   borderRadius: 8,
                   padding: '8px 10px',
-                  border: '1px solid #252540',
+                  border: '1px solid var(--eic-light-border-soft)',
                 }}
               >
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#B0BEC5',
+                      color: 'var(--eic-light-muted)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -487,7 +487,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                       onChange={(e) =>
                         patchObj(drag.id, { allowMultipleTargets: e.target.checked })
                       }
-                      style={{ accentColor: '#a855f7' }}
+                      style={{ accentColor: 'var(--eic-light-accent)' }}
                     />
                     Coklu hedef
                   </label>
@@ -535,14 +535,14 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                   background: '#0d0d1a',
                   borderRadius: 8,
                   padding: '8px 10px',
-                  border: '1px solid #252540',
+                  border: '1px solid var(--eic-light-border-soft)',
                 }}
               >
                 <div
                   style={{
                     minWidth: 0,
                     fontSize: 11,
-                    color: '#B0BEC5',
+                    color: 'var(--eic-light-muted)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -623,7 +623,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
           <div
             style={{
               background: '#0d0d1a',
-              border: '1px solid #252540',
+              border: '1px solid var(--eic-light-border-soft)',
               borderRadius: 8,
               overflow: 'hidden',
             }}
@@ -633,7 +633,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                 display: 'grid',
                 gridTemplateColumns: '1fr 20px 1fr',
                 padding: '6px 10px',
-                background: '#111125',
+                background: 'var(--eic-light-panel-alt)',
                 borderBottom: '1px solid #252540',
               }}
             >
@@ -677,7 +677,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                             alignItems: 'center',
                             gap: 6,
                             fontSize: 11,
-                            color: '#B0BEC5',
+                            color: 'var(--eic-light-muted)',
                             cursor: 'pointer',
                           }}
                         >
@@ -685,7 +685,7 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                             type="checkbox"
                             checked={normalizeDragDropMatchValue(matches[d.id]).includes(dz.id)}
                             onChange={(e) => setMultiMatch(d.id, dz.id, e.target.checked)}
-                            style={{ accentColor: '#a855f7' }}
+                            style={{ accentColor: 'var(--eic-light-accent)' }}
                           />
                           <span>{dz.label || dz.id.slice(-4)}</span>
                         </label>
@@ -698,9 +698,9 @@ export default function DragDropConfigPanel({ activity, onUpdate, showMatchEdito
                     style={{
                       padding: '4px 6px',
                       borderRadius: 5,
-                      border: `1px solid ${normalizeDragDropMatchValue(matches[d.id]).length ? '#FF9800' : '#333'}`,
+                      border: `1px solid ${normalizeDragDropMatchValue(matches[d.id]).length ? 'var(--eic-light-accent)' : '#333'}`,
                       background: '#1a1a30',
-                      color: normalizeDragDropMatchValue(matches[d.id]).length ? '#FF9800' : '#666',
+                      color: normalizeDragDropMatchValue(matches[d.id]).length ? 'var(--eic-light-accent)' : '#666',
                       fontSize: 11,
                       outline: 'none',
                       width: '100%',

@@ -149,6 +149,7 @@ function pickSlideState(source = {}) {
     'mcQuestion',
     'savedQuestions',
     'answerControl',
+    'answerFeedback',
     'readyButtonTextColor',
     'readyButtonFontFamily',
     'readyButtonFontSize',
@@ -166,6 +167,7 @@ function pickSlideState(source = {}) {
     'fillBlankQuestion',
     'fillBlankSentence',
     'fillBlankAnswers',
+    'wordBankExtra',
     'fillBlankTurkishTolerance',
     'fillBlankTrim',
     'fillBlankAcceptSynonyms',
@@ -179,6 +181,8 @@ function pickSlideState(source = {}) {
     'matchingLineStyle',
     'matchingLineWidth',
     'matchingLineColor',
+    'lineMatchShape',
+    'matchingRope',
     'sequenceItems',
     'sequenceShuffle',
     'sequenceDragDrop',
@@ -189,6 +193,8 @@ function pickSlideState(source = {}) {
     'textEntryAcceptedAnswers',
     'textEntryAnswerWeights',
     'textEntryCaseSensitive',
+    'textEntryTurkishTolerance',
+    'textEntryMatchMode',
     'textEntryMaxLength',
     'numericPrompt',
     'numericCorrectValue',
@@ -196,7 +202,24 @@ function pickSlideState(source = {}) {
     'numericMin',
     'numericMax',
     'numericRejectOutOfRange',
+    'sliderMode',
+    'sliderMin',
+    'sliderMax',
+    'sliderStep',
+    'sliderCorrectValue',
+    'sliderTolerance',
+    'sliderGraded',
+    'sliderUnit',
+    'sliderPrompt',
+    'contentLayout',
+    'contentItems',
+    'contentRequireAll',
+    'shortcutPrompt',
+    'shortcutAnswers',
     'surveyQuestions',
+    'flashcards',
+    'labeledImage',
+    'labeledMarkers',
   ];
   const picked = {};
   keys.forEach((key) => {
@@ -289,21 +312,50 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     puzzleSettings: { ...(activity.puzzleSettings || {}), ...(merged.puzzleSettings || {}) },
     fillBlankSentence: merged.fillBlankSentence || '',
     fillBlankAnswers: Array.isArray(merged.fillBlankAnswers) ? merged.fillBlankAnswers : [],
+    wordBankExtra: merged.wordBankExtra || '',
     fillBlankTurkishTolerance: !!merged.fillBlankTurkishTolerance,
     fillBlankTrim: merged.fillBlankTrim !== false,
     hotspotQuestion: merged.hotspotQuestion || '',
     hotspotImage: merged.hotspotImage || '',
     hotspotImageAlt: merged.hotspotImageAlt || '',
     matchingPairs: Array.isArray(merged.matchingPairs) ? merged.matchingPairs : [],
+    matchingShuffle: merged.matchingShuffle !== false,
+    matchingLineStyle: merged.matchingLineStyle || 'solid',
+    matchingLineWidth: Number(merged.matchingLineWidth) || 3,
+    matchingLineColor: merged.matchingLineColor || '#1d4ed8',
+    lineMatchShape: merged.lineMatchShape || 'box',
+    matchingRope: merged.matchingRope !== false,
     sequenceItems: Array.isArray(merged.sequenceItems) ? merged.sequenceItems : [],
+    textEntryPrompt: merged.textEntryPrompt || '',
     textEntryAcceptedAnswers: Array.isArray(merged.textEntryAcceptedAnswers)
       ? merged.textEntryAcceptedAnswers
       : [],
+    textEntryCaseSensitive: !!merged.textEntryCaseSensitive,
+    textEntryTurkishTolerance: !!merged.textEntryTurkishTolerance,
+    textEntryMatchMode: merged.textEntryMatchMode === 'contains' ? 'contains' : 'exact',
+    textEntryMaxLength: merged.textEntryMaxLength ?? null,
     numericCorrectValue: merged.numericCorrectValue ?? null,
     numericTolerance: merged.numericTolerance ?? 0,
     numericMin: merged.numericMin ?? null,
     numericMax: merged.numericMax ?? null,
+    sliderMode: merged.sliderMode || 'slider',
+    sliderMin: merged.sliderMin ?? 0,
+    sliderMax: merged.sliderMax ?? 100,
+    sliderStep: merged.sliderStep ?? 1,
+    sliderCorrectValue: merged.sliderCorrectValue ?? null,
+    sliderTolerance: merged.sliderTolerance ?? 0,
+    sliderGraded: merged.sliderGraded !== false,
+    sliderUnit: merged.sliderUnit || '',
+    sliderPrompt: merged.sliderPrompt || '',
+    contentLayout: merged.contentLayout || 'tabs',
+    contentItems: Array.isArray(merged.contentItems) ? merged.contentItems : [],
+    contentRequireAll: merged.contentRequireAll === true,
+    shortcutPrompt: merged.shortcutPrompt || '',
+    shortcutAnswers: Array.isArray(merged.shortcutAnswers) ? merged.shortcutAnswers : [],
     surveyQuestions: Array.isArray(merged.surveyQuestions) ? merged.surveyQuestions : [],
+    flashcards: Array.isArray(merged.flashcards) ? merged.flashcards : [],
+    labeledImage: merged.labeledImage || '',
+    labeledMarkers: Array.isArray(merged.labeledMarkers) ? merged.labeledMarkers : [],
     // Yalnızca can/hak ayarları runtime'a taşınır (cevap anahtarı alanları taşınmaz).
     answerControl: (() => {
       const ac = merged.answerControl || activity.answerControl || {};
@@ -317,6 +369,32 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
         livesBehaviorOnZero: ac.livesBehaviorOnZero,
       };
     })(),
+    // Geri bildirim: mesaj/ses/animasyon runtime'a taşınır (cevap anahtarı içermez).
+    // Mesajlar zaten sonuç banner nesnelerine gömülü; bu alan SCORM'da ses + animasyon
+    // (Kontrol Et anında) için kullanılır. Offline kuralı: yalnızca gömülü/yerleşik ses.
+    answerFeedback: (() => {
+      const fb = merged.answerFeedback || activity.answerFeedback || {};
+      return {
+        correctMessage: fb.correctMessage || '',
+        incorrectMessage: fb.incorrectMessage || '',
+        partialMessage: fb.partialMessage || '',
+        correctSoundMode: fb.correctSoundMode || 'builtin',
+        incorrectSoundMode: fb.incorrectSoundMode || 'builtin',
+        correctSoundData: fb.correctSoundData || '',
+        incorrectSoundData: fb.incorrectSoundData || '',
+        animation: fb.animation || 'Confetti',
+        incorrectAnimation: fb.incorrectAnimation || 'Sallanma',
+        feedbackDelay: Number(fb.feedbackDelay) || 0,
+      };
+    })(),
+    // Soru havuzu rastgele çekme: yalnızca özellik AÇIKKEN havuz + bayrak taşınır.
+    // Kapalıyken savedQuestions (ve içindeki cevap anahtarları) istemciye gitmez.
+    poolDrawRandom: !!activity.settings?.poolDrawRandom,
+    savedQuestions: activity.settings?.poolDrawRandom
+      ? Array.isArray(merged.savedQuestions)
+        ? merged.savedQuestions
+        : activity.savedQuestions || []
+      : [],
     slideAdvance: merged.slideAdvance || activity.slideAdvance || 'user',
     slideRevisit: merged.slideRevisit || activity.slideRevisit || 'resume',
     slideAutoAdvanceDelay: Number(merged.slideAutoAdvanceDelay ?? activity.slideAutoAdvanceDelay ?? 5) || 5,

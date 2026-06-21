@@ -11,9 +11,19 @@ export const DEFAULT_ANSWER_FEEDBACK = {
   correctMessage: 'Harika! Doğru cevap.',
   incorrectMessage: 'Tekrar dene. Cevabını kontrol et.',
   partialMessage: 'Bazı cevaplar eksik veya hatalı.',
-  correctSound: 'success.mp3',
-  incorrectSound: 'error.mp3',
+  // Ses: 'builtin' (Web Audio ile üretilen yerleşik ton, dosya gerektirmez) |
+  // 'custom' (kullanıcının yüklediği gömülü data URL) | 'none' (sessiz).
+  // Eski sürümlerdeki sahte 'success.mp3'/'error.mp3' dosya adları kaldırıldı.
+  correctSoundMode: 'builtin',
+  incorrectSoundMode: 'builtin',
+  correctSoundData: '',
+  incorrectSoundData: '',
+  correctSoundName: '',
+  incorrectSoundName: '',
   animation: 'Confetti',
+  incorrectAnimation: 'Sallanma',
+  targetLayer: '',
+  feedbackDelay: 0,
 };
 
 export const DEFAULT_ANSWER_SCORING = {

@@ -1,6 +1,11 @@
 import { getRuntimeButtonAction } from '../utils/storylineRuntime';
 import {
   evaluateStorylineRuntimeDragDrop,
+  evaluateStorylineRuntimeSlider,
+  evaluateStorylineRuntimeShortcut,
+  evaluateStorylineRuntimeTextEntry,
+  normalizeShortcutCombo,
+  shortcutComboFromEvent,
   findStorylineRuntimeDropTarget,
   getStorylineRuntimeCommandsForObject,
   getStorylineRuntimeCommandsForDrop,
@@ -727,5 +732,75 @@ describe('storyline runtime engine', () => {
         state: { dropAssignments: { drag1: 'drop2' } },
       })
     ).toEqual([]);
+  });
+});
+
+describe('storyline runtime kaydırıcı (slider) değerlendirmesi', () => {
+  const slide = { type: 'slider', sliderMin: 0, sliderMax: 100, sliderCorrectValue: 50, sliderTolerance: 5 };
+
+  test('tolerans dahilindeki değer doğru sayılır', () => {
+    expect(evaluateStorylineRuntimeSlider({ slide, state: { sliderValue: 53 } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeSlider({ slide, state: { sliderValue: 45 } }).success).toBe(true);
+  });
+
+  test('tolerans dışındaki değer yanlış sayılır', () => {
+    expect(evaluateStorylineRuntimeSlider({ slide, state: { sliderValue: 60 } }).success).toBe(false);
+  });
+
+  test('tolerans 0 ise tam değer gerekir', () => {
+    const exact = { type: 'slider', sliderMin: 0, sliderMax: 10, sliderCorrectValue: 7, sliderTolerance: 0 };
+    expect(evaluateStorylineRuntimeSlider({ slide: exact, state: { sliderValue: 7 } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeSlider({ slide: exact, state: { sliderValue: 6 } }).success).toBe(false);
+  });
+
+  test('boş/geçersiz değer başarısızdır', () => {
+    expect(evaluateStorylineRuntimeSlider({ slide, state: {} }).success).toBe(false);
+  });
+
+  test('notlandırılmayan kaydırıcı her zaman başarılıdır', () => {
+    const ungraded = { type: 'slider', sliderGraded: false, sliderMin: 0, sliderMax: 100 };
+    expect(evaluateStorylineRuntimeSlider({ slide: ungraded, state: { sliderValue: 0 } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeSlider({ slide: ungraded, state: {} }).success).toBe(true);
+  });
+});
+
+describe('storyline runtime kısayol tuşu değerlendirmesi', () => {
+  test('combo değiştirici sırasından bağımsız kanonikleşir', () => {
+    expect(normalizeShortcutCombo('Shift+Ctrl+S')).toBe('ctrl+shift+s');
+    expect(normalizeShortcutCombo('CMD+Z')).toBe('meta+z');
+    expect(normalizeShortcutCombo('Return')).toBe('enter');
+    expect(normalizeShortcutCombo('Ctrl+Space')).toBe('ctrl+space');
+  });
+
+  test('event\'ten combo üretir, saf değiştirici basışını yok sayar', () => {
+    expect(shortcutComboFromEvent({ ctrlKey: true, key: 's' })).toBe('ctrl+s');
+    expect(shortcutComboFromEvent({ ctrlKey: true, key: 'Control' })).toBe('ctrl');
+    expect(shortcutComboFromEvent({ ctrlKey: true, altKey: true, key: 'Delete' })).toBe('ctrl+alt+delete');
+  });
+
+  test('kabul edilen kombinasyonlardan biri eşleşince doğru sayılır', () => {
+    const slide = { type: 'shortcut-key', shortcutAnswers: [{ combo: 'Ctrl+S' }, { combo: 'Cmd+S' }] };
+    expect(evaluateStorylineRuntimeShortcut({ slide, state: { shortcutPressed: 'meta+s' } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeShortcut({ slide, state: { shortcutPressed: 'ctrl+s' } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeShortcut({ slide, state: { shortcutPressed: 'ctrl+x' } }).success).toBe(false);
+  });
+
+  test('boş basış başarısızdır', () => {
+    const slide = { type: 'shortcut-key', shortcutAnswers: [{ combo: 'Ctrl+S' }] };
+    expect(evaluateStorylineRuntimeShortcut({ slide, state: {} }).success).toBe(false);
+  });
+});
+
+describe('storyline runtime kısa cevap eşleşme modu', () => {
+  test('tam eşleşme modunda yalnız birebir kabul edilir', () => {
+    const slide = { type: 'text-entry', textEntryAcceptedAnswers: ['başkent'] };
+    expect(evaluateStorylineRuntimeTextEntry({ slide, state: { textEntryValue: 'başkent' } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeTextEntry({ slide, state: { textEntryValue: 'ülkenin başkenti' } }).success).toBe(false);
+  });
+
+  test('içerir modunda anahtar ifade metnin içinde geçiyorsa kabul edilir', () => {
+    const slide = { type: 'text-entry', textEntryMatchMode: 'contains', textEntryAcceptedAnswers: ['başkent'] };
+    expect(evaluateStorylineRuntimeTextEntry({ slide, state: { textEntryValue: 'ankara ülkenin başkentidir' } }).success).toBe(true);
+    expect(evaluateStorylineRuntimeTextEntry({ slide, state: { textEntryValue: 'istanbul' } }).success).toBe(false);
   });
 });

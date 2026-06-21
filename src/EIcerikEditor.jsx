@@ -1666,14 +1666,20 @@ export default function EIcerikEditor() {
   }, [setActiveTab, setDbStatus, setTimelineCurrentTime, setTimelinePlaying, writeBrowserRoute]);
 
   useLayoutEffect(() => {
-    if (!keepBootVisibleForWorkspace) return undefined;
-    window.__EIC_BOOT_UPDATE__?.({
-      badge: 'Editör Başlatılıyor',
-      title: 'Arayüz hazırlanıyor...',
-      body: 'SQL bağlantısı doğrulanıyor. Çalışma alanı hazır olunca editör açılacak.',
-      showSpinner: true,
-    });
-    return () => window.__EIC_BOOT_DONE__?.();
+    if (keepBootVisibleForWorkspace) {
+      // Girişli kullanıcı sayfayı yenileyince çalışma alanı yüklenene kadar editör
+      // null döner; bu sırada açılış ekranını GÖSTERİYORUZ (aksi halde birkaç saniye
+      // beyaz ekran kalırdı). Açılış ekranının kapatılması artık tamamen burada yönetilir.
+      window.__EIC_BOOT_UPDATE__?.({
+        badge: 'Editör Başlatılıyor',
+        title: 'Arayüz hazırlanıyor...',
+        body: 'SQL bağlantısı doğrulanıyor. Çalışma alanı hazır olunca editör açılacak.',
+        showSpinner: true,
+      });
+    } else {
+      // Çalışma alanı hazır ya da giriş ekranı gösterilecek: açılış ekranını kapat.
+      window.__EIC_BOOT_DONE__?.();
+    }
   }, [keepBootVisibleForWorkspace]);
 
   const finalizeLogin = useCallback(

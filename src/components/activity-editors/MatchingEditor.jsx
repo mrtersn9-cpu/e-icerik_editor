@@ -1,5 +1,7 @@
 import { uid } from '../../utils/editorHelpers';
 
+import { editorCardStyle, editorTitleStyle } from './editorStyles';
+
 export default function MatchingEditor({ activity, onUpdate }) {
   const pairs = activity.matchingPairs || [];
   const patch = (p) => onUpdate({ ...activity, ...p });
@@ -11,28 +13,10 @@ export default function MatchingEditor({ activity, onUpdate }) {
       ],
     });
   const remove = (id) => patch({ matchingPairs: pairs.filter((p) => p.id !== id) });
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#0891b2',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Eşleştirme Çiftleri
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Eşleştirme Çiftleri</div>
         <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.7, marginBottom: 10 }}>
           Sol taraftaki öğeleri sağ taraftakilerle eşleştirin. Sağ taraf öğrenciye karıştırılmış
           gösterilecek.
@@ -52,7 +36,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
             type="checkbox"
             checked={activity.matchingShuffle !== false}
             onChange={(e) => patch({ matchingShuffle: e.target.checked })}
-            style={{ accentColor: '#0891b2' }}
+            style={{ accentColor: 'var(--eic-light-accent)' }}
           />{' '}
           Sağ tarafı karıştır
         </label>
@@ -82,7 +66,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
               }
               style={{
                 height: 28,
-                border: `1px solid ${String(pair.left || '').trim() ? '#e2e8f0' : '#fca5a5'}`,
+                border: `1px solid ${String(pair.left || '').trim() ? '#e2e8f0' : 'var(--eic-tone-red-border)'}`,
                 borderRadius: 8,
                 fontSize: 12,
                 padding: '0 8px',
@@ -101,7 +85,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
               }
               style={{
                 height: 28,
-                border: `1px solid ${String(pair.right || '').trim() ? '#e2e8f0' : '#fca5a5'}`,
+                border: `1px solid ${String(pair.right || '').trim() ? '#e2e8f0' : 'var(--eic-tone-red-border)'}`,
                 borderRadius: 8,
                 fontSize: 12,
                 padding: '0 8px',
@@ -114,7 +98,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
                 border: 'none',
                 background: 'transparent',
                 cursor: 'pointer',
-                color: '#ef4444',
+                color: 'var(--eic-tone-red-base)',
                 fontSize: 14,
               }}
             >
@@ -123,7 +107,7 @@ export default function MatchingEditor({ activity, onUpdate }) {
           </div>
         ))}
         {pairs.some((p) => !String(p.left || '').trim() || !String(p.right || '').trim()) && (
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginTop: 2, marginBottom: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--eic-tone-red-base)', marginTop: 2, marginBottom: 6 }}>
             Boş sol/sağ öğe içeren çiftler öğrenciye gösterilmez; lütfen doldurun veya silin.
           </div>
         )}
@@ -133,9 +117,9 @@ export default function MatchingEditor({ activity, onUpdate }) {
             minHeight: 32,
             padding: '0 14px',
             borderRadius: 10,
-            border: '1px solid #22d3ee',
+            border: '1px solid var(--eic-light-accent-border)',
             background: '#ffffff',
-            color: '#0891b2',
+            color: 'var(--eic-light-accent)',
             fontSize: 11,
             fontWeight: 800,
             cursor: 'pointer',

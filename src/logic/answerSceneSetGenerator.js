@@ -878,12 +878,23 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
 
   pushPracticeControls();
 
+  // Sonuç banner gövdesi: kullanıcının Geri Bildirim kartındaki mesajı kullanılır
+  // (yoksa resultScreens, o da yoksa dil sözlüğü). Böylece "Doğru yanıt"/"Yanlış yanıt"
+  // metinleri seçim & sürükle-bırak sonucunda gerçekten görünür.
+  const answerFeedbackMessages = activity.answerFeedback || {};
+  const correctBody =
+    answerFeedbackMessages.correctMessage || activity.resultScreens?.successBody || tx.correctBody;
+  const incorrectBody =
+    answerFeedbackMessages.incorrectMessage ||
+    activity.resultScreens?.failureBody ||
+    tx.incorrectBody;
+
   if (correctLayerId) {
     pushResultHeaderTemplate({
       layerId: correctLayerId,
       status: 'success',
       title: tx.correctTitle,
-      body: tx.correctBody,
+      body: correctBody,
       buttons: [
         {
           label: tx.complete,
@@ -910,7 +921,7 @@ function buildAnswerSceneObjects(activity = {}, workingLayers = [], workingLayer
       layerId: incorrectLayerId,
       status: 'failure',
       title: tx.incorrectTitle,
-      body: tx.incorrectBody,
+      body: incorrectBody,
       buttons: [
         {
           label: tx.solution,

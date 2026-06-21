@@ -1,18 +1,12 @@
 import { Inp } from '../../components/ui';
 import { uid } from '../../utils/editorHelpers';
 
+import { editorCardStyle, editorTitleStyle, EDITOR_ACCENT } from './editorStyles';
+
 export default function HotspotEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const allObjects = activity.objects || [];
   const hotspots = allObjects.filter((obj) => obj.type === 'hotspot');
-
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
 
   const updateHotspot = (id, field, value) => {
     patch({
@@ -59,19 +53,8 @@ export default function HotspotEditor({ activity, onUpdate }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#dc2626',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Etkin Alan Ayarları
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Etkin Alan Ayarları</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Inp
             label="Soru Metni"
@@ -82,19 +65,8 @@ export default function HotspotEditor({ activity, onUpdate }) {
         </div>
       </div>
 
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#dc2626',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Hotspot Alanları ({hotspots.length})
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Hotspot Alanları ({hotspots.length})</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {hotspots.length === 0 && (
             <div
@@ -143,7 +115,7 @@ export default function HotspotEditor({ activity, onUpdate }) {
                     type="checkbox"
                     checked={h.hotspotCorrect !== false}
                     onChange={(e) => updateHotspot(h.id, 'hotspotCorrect', e.target.checked)}
-                    style={{ accentColor: '#dc2626' }}
+                    style={{ accentColor: EDITOR_ACCENT }}
                   />
                   Doğru alan
                 </label>
@@ -182,9 +154,9 @@ export default function HotspotEditor({ activity, onUpdate }) {
               minHeight: 32,
               padding: '0 12px',
               borderRadius: 8,
-              border: '1px solid #fca5a5',
+              border: '1px solid var(--eic-light-accent-border)',
               background: '#ffffff',
-              color: '#dc2626',
+              color: 'var(--eic-light-accent)',
               fontSize: 11,
               fontWeight: 800,
               cursor: 'pointer',

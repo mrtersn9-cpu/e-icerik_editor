@@ -239,6 +239,13 @@ export default function EkleRibbon({ controller }) {
               ))}
             </RibbonMenuGrid>
           </RibbonPopoverButton>
+          <RibbonPopoverButton label="Seçenek" icon="score" width={70} variant="large" tone="slate">
+            <RibbonStack>
+              <CompactRibbonButton label="Boş Seçenek" icon="○" onClick={() => commands.insertChoice(false)} width={126} />
+              <CompactRibbonButton label="Doğru Seçenek" icon="✓" onClick={() => commands.insertChoice(true)} width={126} />
+              <CompactRibbonButton label="Cevap Merkezi" icon="score" onClick={commands.openAnswerCenter} width={126} />
+            </RibbonStack>
+          </RibbonPopoverButton>
           <RibbonPopoverButton label="Sürükle-Bırak" icon="dragdrop" width={86} variant="large" tone="slate">
             <RibbonStack>
               <CompactRibbonButton label="Sürüklenebilir" icon="dragdrop" onClick={() => commands.insertObject('draggable')} width={126} />

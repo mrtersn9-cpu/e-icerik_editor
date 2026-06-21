@@ -1,31 +1,15 @@
 import { Inp } from '../../components/ui';
 import { uid } from '../../utils/editorHelpers';
 
+import { editorCardStyle, editorTitleStyle } from './editorStyles';
+
 export default function FillBlankEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const blanks = activity.fillBlankAnswers || [];
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#be185d',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Boşluk Doldurma
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Boşluk Doldurma</div>
         <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.7, marginBottom: 10 }}>
           Cümlede boşluk yerine <code>___</code> (üç alt çizgi) kullanın.
         </div>
@@ -95,7 +79,7 @@ export default function FillBlankEditor({ activity, onUpdate }) {
                     next[idx] = { ...blank, caseSensitive: e.target.checked };
                     patch({ fillBlankAnswers: next });
                   }}
-                  style={{ accentColor: '#be185d' }}
+                  style={{ accentColor: 'var(--eic-light-accent)' }}
                 />{' '}
                 Harf duyarlı
               </label>
@@ -119,9 +103,9 @@ export default function FillBlankEditor({ activity, onUpdate }) {
               minHeight: 28,
               padding: '0 10px',
               borderRadius: 8,
-              border: '1px solid #f9a8d4',
+              border: '1px solid var(--eic-light-accent-border)',
               background: '#ffffff',
-              color: '#be185d',
+              color: 'var(--eic-light-accent)',
               fontSize: 11,
               fontWeight: 800,
               cursor: 'pointer',

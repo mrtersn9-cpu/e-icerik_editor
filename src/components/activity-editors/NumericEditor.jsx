@@ -1,29 +1,13 @@
 import { Inp } from '../../components/ui';
 
+import { editorCardStyle, editorTitleStyle } from './editorStyles';
+
 export default function NumericEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#d97706',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Sayısal Giriş Ayarları
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Sayısal Giriş Ayarları</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Inp
             label="Soru Metni"
@@ -68,7 +52,7 @@ export default function NumericEditor({ activity, onUpdate }) {
           {Number.isFinite(activity.numericMin) &&
             Number.isFinite(activity.numericMax) &&
             activity.numericMin > activity.numericMax && (
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--eic-tone-red-base)' }}>
                 Min değeri Max değerinden büyük olamaz.
               </div>
             )}

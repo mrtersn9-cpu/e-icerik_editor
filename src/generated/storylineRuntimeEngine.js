@@ -1116,7 +1116,13 @@ function evaluateStorylineRuntimeTextEntry({ slide = {}, state = {} } = {}) {
     return result;
   };
   const normalizedUser = normalize(userText);
-  const matched = acceptedAnswers.some((answer) => normalize(answer) === normalizedUser);
+  const containsMode = slide.textEntryMatchMode === 'contains';
+  const matchAnswer = (answer) => {
+    const normalizedAnswer = normalize(answer);
+    if (!normalizedAnswer) return false;
+    return containsMode ? normalizedUser.includes(normalizedAnswer) : normalizedAnswer === normalizedUser;
+  };
+  const matched = acceptedAnswers.some(matchAnswer);
   return {
     type: 'text-entry',
     success: matched && acceptedAnswers.length > 0,

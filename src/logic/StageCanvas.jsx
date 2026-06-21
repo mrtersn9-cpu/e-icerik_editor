@@ -75,6 +75,11 @@ import { MOBILE_CANVAS } from '../mobile/mobileCanvasConfig';
 import { fontFamilyCss, ensureGoogleFontsLoaded } from '../constants/fonts';
 import ObjectContextMenu from './ObjectContextMenu';
 import {
+  tagObjectsAsChoices,
+  untagObjectAsChoice,
+  setChoiceCorrect,
+} from '../features/cevap/cevapActions';
+import {
   alignActivitySelection,
   distributeActivitySelection,
   getSelectionGroupState,
@@ -1039,10 +1044,21 @@ const StageCanvas = forwardRef(function StageCanvas(
   const startRubber = (e) => {
     // Mobil: marquee yok — tek parmak arka plan pan/tap jest katmanından gelir.
     if (touchMode) return;
+    if (e.button !== 0 || canvasTool !== 'select') return;
+    // Ögeler ve tutamaklar pointerdown'da stopPropagation yaptığı için BURAYA yalnızca
+    // BOŞ alan tıklamaları ulaşır (tuval zemini, SVG/PDF zemin, gri pasteboard, sarmalayıcı).
+    // Bu yüzden korunan kontroller (zoom çubuğu vb.) dışında, boş bir yere tıklayınca
+    // her zaman seçimi temizle — "nereye tıklarsak seçim kalksın".
+    const onKeep = !!e.target.closest?.('[data-eic-keep-selection]');
+    const isShift = e.shiftKey;
+    if (!onKeep && !isShift) {
+      onSelectionChange(new Set());
+      patchAct({ selectedObjectId: null });
+    }
+    // Marquee (kauçuk bant) geometrisi yalnızca doğrudan tuval/pasteboard üstünde başlasın.
     const isViewportStart = e.target === viewportRef.current;
     const isStageStart = e.target === stageRef.current;
-    if (!isViewportStart && !isStageStart) return;
-    if (e.button !== 0 || canvasTool !== 'select') return;
+    if (onKeep || (!isViewportStart && !isStageStart)) return;
     e.preventDefault();
     e.stopPropagation();
     blurOffStageFocus();
@@ -1050,15 +1066,9 @@ const StageCanvas = forwardRef(function StageCanvas(
     const r = stageRef.current.getBoundingClientRect();
     const x0 = e.clientX - r.left,
       y0 = e.clientY - r.top;
-    const isShift = e.shiftKey;
     // Snapshot pre-existing selection for shift+rubber-band additive mode
     const prevIds = new Set(latestSelectedIdsRef.current);
     rubberStartRef.current = { x0, y0, r };
-
-    if (!isShift) {
-      onSelectionChange(new Set());
-      patchAct({ selectedObjectId: null });
-    }
 
     const onMove = (me) => {
       if (!rubberStartRef.current) return;
@@ -1307,7 +1317,17 @@ const StageCanvas = forwardRef(function StageCanvas(
         ...(touchMode ? { touchAction: 'pan-x pan-y' } : null),
       }}
     >
-      <div style={{ position: 'relative' }}>
+      <div
+        style={{ position: 'relative' }}
+        onPointerDown={(e) => {
+          // Slayt çevresindeki boş sarmalayıcı/pasteboard alanına tıklayınca seçimi temizle.
+          // (Ögeler pointerdown'da stopPropagation yapar; yalnızca gerçekten boş alan buraya ulaşır.)
+          if (e.target === e.currentTarget && canvasTool === 'select' && !touchMode) {
+            onSelectionChange(new Set());
+            patchAct({ selectedObjectId: null });
+          }
+        }}
+      >
         {showChrome && (
           <>
             <div
@@ -1322,6 +1342,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               }}
             >
               <div
+                data-eic-keep-selection="true"
                 style={{
                   pointerEvents: 'auto',
                   display: 'flex',
@@ -2777,6 +2798,53 @@ const StageCanvas = forwardRef(function StageCanvas(
                       height: canvasActivity.stageHeight || 1080,
                     }),
                 });
+              }
+              // ── Cevap (Articulate freeform): herhangi bir öğeyi seçenek yap ──
+              const isChoiceObj = !!target.selectionQuestionId;
+              const isHotspotObj = target.type === 'hotspot';
+              const canBeChoice =
+                !isHotspotObj && target.type !== 'draggable' && target.type !== 'dropzone';
+              const showAnswerActions = isHotspotObj || canBeChoice;
+              if (showAnswerActions && items.length) items.push({ separator: true });
+              if (isHotspotObj) {
+                const hotspotCorrect = target.hotspotCorrect !== false;
+                items.push({
+                  label: hotspotCorrect ? '✗ Yanlış etkin alan yap' : '✓ Doğru etkin alan yap',
+                  disabled: isLockedTarget,
+                  onClick: () => patchObj(target.id, { hotspotCorrect: !hotspotCorrect }),
+                });
+              } else if (canBeChoice) {
+                if (isChoiceObj) {
+                  items.push({
+                    label: target.selectionCorrect ? '✓ Doğru (geri al)' : 'Doğru işaretle',
+                    disabled: isLockedTarget,
+                    onClick: () =>
+                      setChoiceCorrect(
+                        latestRef.current,
+                        onUpdate,
+                        target.id,
+                        !target.selectionCorrect
+                      ),
+                  });
+                  items.push({
+                    label: 'Seçenekten çıkar',
+                    disabled: isLockedTarget,
+                    onClick: () => untagObjectAsChoice(latestRef.current, onUpdate, target.id),
+                  });
+                } else {
+                  items.push({
+                    label: 'Seçenek yap',
+                    disabled: isLockedTarget,
+                    onClick: () => tagObjectsAsChoices(latestRef.current, onUpdate, [target.id]),
+                  });
+                }
+                if (multiSel) {
+                  items.push({
+                    label: 'Seçilenleri seçenek yap',
+                    disabled: isLockedTarget,
+                    onClick: () => tagObjectsAsChoices(latestRef.current, onUpdate, [...selForMenu]),
+                  });
+                }
               }
               if (items.length) items.push({ separator: true });
               // Pano işlemleri

@@ -10,11 +10,11 @@ export default function PuzzleEditor({ activity, onUpdate }) {
   const puzzleType = activity.puzzleType || 'crossword';
 
   const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
+    background: 'var(--eic-light-panel)',
+    border: '1px solid var(--eic-light-border-soft)',
     borderRadius: 14,
     padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
+    boxShadow: '0 10px 22px rgba(15, 23, 42, 0.05)',
   };
 
   const addQuestion = () => {
@@ -100,7 +100,7 @@ export default function PuzzleEditor({ activity, onUpdate }) {
           gap: 6
         }}>
           <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>⚠️ Bulmaca Yerleşim Uyarısı</span>
+            <span>Bulmaca Yerleşim Uyarısı</span>
           </div>
           {activity.puzzleBudgetExceeded && (
             <div>Bulmaca oluşturma zaman sınırı (1000ms) aşıldı! Bazı kelimeler yerleştirilemedi.</div>

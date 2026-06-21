@@ -1,13 +1,13 @@
 export const fieldInputStyle = {
   width: '100%',
   minWidth: 0,
-  height: 28,
-  border: '1px solid #dbe7f5',
-  borderRadius: 7,
+  height: 33,
+  border: '1px solid var(--eic-light-border-soft)',
+  borderRadius: 8,
   background: '#ffffff',
-  color: '#0f172a',
-  fontSize: 10.5,
-  padding: '0 8px',
+  color: 'var(--eic-light-text)',
+  fontSize: 12.5,
+  padding: '0 10px',
   outline: 'none',
 };
 
@@ -18,23 +18,54 @@ export function CevapCard({ number, title, children, wide = false, order }) {
         order: order ?? (Number(number) || undefined),
         gridColumn: wide ? '1 / -1' : 'span 1',
         minWidth: 0,
-        border: '1px solid #dbe4ef',
-        borderRadius: 8,
+        border: '1px solid var(--eic-light-border-soft)',
+        borderRadius: 11,
         background: '#ffffff',
-        padding: 8,
-        boxShadow: 'none',
+        padding: 12,
+        boxShadow: '0 1px 2px rgba(15,23,42,.05)',
       }}
     >
       <div
         style={{
-          color: '#1d4ed8',
-          fontSize: 10.5,
-          fontWeight: 900,
-          textTransform: 'uppercase',
-          marginBottom: 6,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          marginBottom: 9,
+          paddingBottom: 8,
+          borderBottom: '1px solid #eef2f7',
         }}
       >
-        {number}. {title}
+        {number != null && number !== '' && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 19,
+              height: 19,
+              padding: '0 5px',
+              borderRadius: 6,
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontSize: 10,
+              fontWeight: 900,
+              flexShrink: 0,
+            }}
+          >
+            {number}
+          </span>
+        )}
+        <span
+          style={{
+            color: '#1d4ed8',
+            fontSize: 11,
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: 0.3,
+          }}
+        >
+          {title}
+        </span>
       </div>
       {children}
     </section>
@@ -43,19 +74,19 @@ export function CevapCard({ number, title, children, wide = false, order }) {
 
 export function ReadOnlyValue({ label, value, hint }) {
   return (
-    <div style={{ display: 'grid', gap: 4, color: '#334155', fontSize: 10.5, fontWeight: 700 }}>
+    <div style={{ display: 'grid', gap: 5, color: '#334155', fontSize: 11, fontWeight: 700 }}>
       {label && <span>{label}</span>}
       <div
         style={{
-          minHeight: 28,
+          minHeight: 31,
           border: '1px solid #dbe7f5',
-          borderRadius: 7,
+          borderRadius: 8,
           background: '#f8fafc',
           color: '#0f172a',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 8px',
-          fontSize: 10.5,
+          padding: '0 10px',
+          fontSize: 11.5,
           fontWeight: 800,
         }}
       >
@@ -68,7 +99,7 @@ export function ReadOnlyValue({ label, value, hint }) {
 
 export function Field({ label, children, hint }) {
   return (
-    <label style={{ display: 'grid', gap: 4, color: '#334155', fontSize: 10.5, fontWeight: 700 }}>
+    <label style={{ display: 'grid', gap: 5, color: '#334155', fontSize: 11, fontWeight: 700 }}>
       <span>{label}</span>
       {children}
       {hint && <span style={{ color: '#64748b', fontSize: 10, fontWeight: 500 }}>{hint}</span>}
@@ -130,8 +161,9 @@ export function ToggleRow({ label, checked, onChange, hint }) {
         gap: 8,
         alignItems: 'center',
         color: '#334155',
-        fontSize: 10.5,
+        fontSize: 11,
         fontWeight: 700,
+        minHeight: 26,
       }}
     >
       <span>
@@ -146,7 +178,7 @@ export function ToggleRow({ label, checked, onChange, hint }) {
         type="checkbox"
         checked={!!checked}
         onChange={(event) => onChange(event.target.checked)}
-        style={{ width: 16, height: 16, accentColor: '#2563eb' }}
+        style={{ width: 16, height: 16, accentColor: 'var(--eic-light-accent)' }}
       />
     </label>
   );
@@ -161,12 +193,12 @@ export function ActionButton({ children, onClick, variant = 'primary', disabled 
       disabled={disabled}
       style={{
         width: '100%',
-        minHeight: 28,
-        borderRadius: 7,
+        minHeight: 31,
+        borderRadius: 8,
         border: primary ? '1px solid #1d4ed8' : '1px solid #dbe7f5',
         background: primary ? '#1769e8' : '#ffffff',
         color: primary ? '#ffffff' : '#1e293b',
-        fontSize: 10.5,
+        fontSize: 11,
         fontWeight: 900,
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.48 : 1,
@@ -187,13 +219,13 @@ export function SmallButton({ children, onClick, variant = 'secondary', disabled
       onClick={onClick}
       disabled={disabled}
       style={{
-        minHeight: 28,
-        borderRadius: 7,
+        minHeight: 30,
+        borderRadius: 8,
         border: danger ? '1px solid #fecaca' : primary ? '1px solid #1d4ed8' : '1px solid #dbe7f5',
         background: primary ? '#1769e8' : '#ffffff',
         color: danger ? '#dc2626' : primary ? '#ffffff' : '#1d4ed8',
-        padding: '0 9px',
-        fontSize: 10.5,
+        padding: '0 10px',
+        fontSize: 11,
         fontWeight: 900,
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.5 : 1,
@@ -246,13 +278,13 @@ export function ChoiceButton({ children, selected = false, onClick, tone = 'blue
       disabled={disabled}
       onClick={onClick}
       style={{
-        minHeight: 28,
-        borderRadius: 7,
+        minHeight: 30,
+        borderRadius: 8,
         border: `1px solid ${selected ? color : border}`,
         background: selected ? bg : '#ffffff',
         color: selected ? color : '#334155',
-        padding: '5px 7px',
-        fontSize: 10.5,
+        padding: '6px 9px',
+        fontSize: 11,
         fontWeight: 900,
         textAlign: 'left',
         cursor: disabled ? 'default' : 'pointer',
@@ -346,8 +378,8 @@ export function PanelGrid({ children }) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))',
-        gap: 7,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(212px, 1fr))',
+        gap: 10,
         alignItems: 'start',
       }}
     >

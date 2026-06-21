@@ -6,6 +6,7 @@ import { CanCard, DenemeVeKisitlarCard, DogrulamaKurallariCard, ErisilebilirlikC
 
 export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
   const answers = activity.fillBlankAnswers || [];
+  const isWordBank = activity.type === 'word-bank';
   const patch = (p) => patchActivity(activity, onUpdate, p);
   const patchBlank = (id, p) => patch({ fillBlankAnswers: answers.map((answer) => (answer.id === id ? { ...answer, ...p } : answer)) });
   return (
@@ -13,10 +14,21 @@ export default function BoslukDoldurmaCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="Ogrenciler metindeki bosluklari uygun yanitlarla doldurur."
+        description={isWordBank
+          ? 'Kelime bankası: cümlede ___ ile boşluk bırak; öğrenci hazır kelime çiplerini boşluklara sürükler.'
+          : 'Ogrenciler metindeki bosluklari uygun yanitlarla doldurur.'}
       />
       <CevapCard number="2" title={`Bosluk Listesi (${answers.length})`}>
-        <Field label="Cumle"><TextArea value={activity.fillBlankSentence || ''} onChange={(value) => patch({ fillBlankSentence: value })} /></Field>
+        <Field label={isWordBank ? 'Cümle (boşluk için ___ kullan)' : 'Cumle'}><TextArea value={activity.fillBlankSentence || ''} onChange={(value) => patch({ fillBlankSentence: value })} /></Field>
+        {isWordBank && (
+          <Field label="Çeldirici kelimeler (virgülle, isteğe bağlı)">
+            <TextInput
+              value={activity.wordBankExtra || ''}
+              placeholder="örn: kalem, defter, silgi"
+              onChange={(value) => patch({ wordBankExtra: value })}
+            />
+          </Field>
+        )}
         <div style={{ marginTop: 10 }}>
           <SmallButton
             variant="primary"

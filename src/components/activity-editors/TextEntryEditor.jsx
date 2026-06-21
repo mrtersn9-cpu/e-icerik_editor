@@ -1,30 +1,14 @@
 import { Inp } from '../../components/ui';
 
+import { editorCardStyle, editorTitleStyle, EDITOR_ACCENT } from './editorStyles';
+
 export default function TextEntryEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const answers = activity.textEntryAcceptedAnswers || [''];
-  const card = {
-    background: '#ffffff',
-    border: '1px solid #dbe7f5',
-    borderRadius: 14,
-    padding: 14,
-    boxShadow: '0 10px 22px rgba(15,23,42,.05)',
-  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: '#059669',
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-            marginBottom: 8,
-          }}
-        >
-          Metin Girişi Ayarları
-        </div>
+      <div style={editorCardStyle}>
+        <div style={editorTitleStyle}>Metin Girişi Ayarları</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Inp
             label="Soru Metni"
@@ -52,7 +36,7 @@ export default function TextEntryEditor({ activity, onUpdate }) {
               type="checkbox"
               checked={!!activity.textEntryCaseSensitive}
               onChange={(e) => patch({ textEntryCaseSensitive: e.target.checked })}
-              style={{ accentColor: '#059669' }}
+              style={{ accentColor: EDITOR_ACCENT }}
             />
             Büyük/küçük harf duyarlı
           </label>

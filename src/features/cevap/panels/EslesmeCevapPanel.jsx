@@ -23,7 +23,7 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
       <EtkinlikTuruCard
         activity={activity}
         onUpdate={onUpdate}
-        description="İki liste arasındaki öğeleri doğru eşleştirme etkinliği."
+        description="Çizgi eşleştirme: bir öğeden çekip karşısındaki doğru öğeye animasyonlu halat çizgiyle bağla."
       />
       <CevapCard number="2" title={`Cevap Formu - Eşleşme Çiftleri (${pairs.length})`} wide>
         <div style={{ display: 'grid', gap: 8 }}>
@@ -64,6 +64,21 @@ export default function EslesmeCevapPanel({ activity, onUpdate }) {
         <Field label="Bağlantı rengi">
           <TextInput value={activity.matchingLineColor || '#1d4ed8'} onChange={(value) => patch({ matchingLineColor: value })} />
         </Field>
+        <Field label="Düğüm şekli">
+          <SelectInput
+            value={activity.lineMatchShape || 'box'}
+            onChange={(value) => patch({ lineMatchShape: value })}
+            options={[
+              { value: 'box', label: 'Kutu' },
+              { value: 'circle', label: 'Yuvarlak' },
+            ]}
+          />
+        </Field>
+        <ToggleRow
+          label="Halat sarkması (eğik çizgi)"
+          checked={activity.matchingRope !== false}
+          onChange={(checked) => patch({ matchingRope: checked })}
+        />
       </CevapCard>
       <CevapCard number="4" title="Eşleştirme Önizleme" wide>
         <div style={{ display: 'grid', gap: 8 }}>
