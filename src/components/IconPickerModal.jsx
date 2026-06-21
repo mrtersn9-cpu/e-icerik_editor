@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ICON_KEYWORDS_TR } from '../constants/iconKeywords.tr';
 import { iconNodeToSvgMarkup } from '../utils/iconSvg';
 import { foldSearchText } from '../utils/textSearch';
+import { Modal, Inp, Btn } from './ui';
 
 const PAGE_SIZE = 200;
 
@@ -77,175 +78,94 @@ export default function IconPickerModal({ open, onClose, onSelect, title = 'İko
     onSelect?.({ iconName: item.id, iconSvg: iconNodeToSvgMarkup(item.node) });
   };
 
+  const subtitle = catalog
+    ? `${filtered.length} / ${catalog.length} ikon · Türkçe veya İngilizce arayın`
+    : 'İkonlar yükleniyor…';
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 10000,
-        background: 'rgba(15,23,42,.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(860px, calc(100vw - 32px))',
-          maxHeight: '85vh',
-          background: '#ffffff',
-          borderRadius: 20,
-          boxShadow: '0 32px 80px rgba(0,0,0,.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 24px',
-            borderBottom: '1px solid #e2e8f0',
+    <Modal title={title} subtitle={subtitle} onClose={onClose} size="lg">
+      <div style={{ marginBottom: 12 }}>
+        <Inp
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setVisibleCount(PAGE_SIZE);
           }}
-        >
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>{title}</div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              {catalog
-                ? `${filtered.length} / ${catalog.length} ikon · Türkçe veya İngilizce arayın`
-                : 'İkonlar yükleniyor…'}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
+          placeholder="Ara: ev, kalp, ok, ayar, home, heart…"
+          autoFocus
+        />
+      </div>
+
+      {loadError ? (
+        <div style={{ textAlign: 'center', padding: 32, color: '#dc2626', fontSize: 13 }}>
+          İkon kataloğu yüklenemedi. `npm run icons:catalog` ile üretildiğinden emin olun.
+        </div>
+      ) : !catalog ? (
+        <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
+          Yükleniyor…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
+          “{search}” ile eşleşen ikon yok.
+        </div>
+      ) : (
+        <>
+          <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              background: '#fff',
-              fontSize: 18,
-              cursor: 'pointer',
-              color: '#64748b',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))',
+              gap: 8,
             }}
           >
-            ×
-          </button>
-        </div>
-
-        <div style={{ padding: '12px 24px 8px' }}>
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setVisibleCount(PAGE_SIZE);
-            }}
-            placeholder="Ara: ev, kalp, ok, ayar, home, heart…"
-            autoFocus
-            style={{
-              width: '100%',
-              height: 38,
-              borderRadius: 10,
-              border: '1px solid #d1d5db',
-              padding: '0 14px',
-              fontSize: 13,
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        <div style={{ flex: 1, overflow: 'auto', padding: '8px 24px 16px' }}>
-          {loadError ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#dc2626', fontSize: 13 }}>
-              İkon kataloğu yüklenemedi. `npm run icons:catalog` ile üretildiğinden emin olun.
-            </div>
-          ) : !catalog ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
-              Yükleniyor…
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
-              “{search}” ile eşleşen ikon yok.
-            </div>
-          ) : (
-            <>
-              <div
+            {visible.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                title={`${item.name} (${item.id})`}
+                onClick={() => handlePick(item)}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))',
-                  gap: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  aspectRatio: '1 / 1',
+                  padding: 6,
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  color: '#334155',
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#eff6ff';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                  e.currentTarget.style.color = '#1d4ed8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#fff';
+                  e.currentTarget.style.borderColor = '#e2e8f0';
+                  e.currentTarget.style.color = '#334155';
                 }}
               >
-                {visible.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    title={`${item.name} (${item.id})`}
-                    onClick={() => handlePick(item)}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 4,
-                      aspectRatio: '1 / 1',
-                      padding: 6,
-                      borderRadius: 10,
-                      border: '1px solid #e2e8f0',
-                      background: '#fff',
-                      color: '#334155',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#eff6ff';
-                      e.currentTarget.style.borderColor = '#93c5fd';
-                      e.currentTarget.style.color = '#1d4ed8';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fff';
-                      e.currentTarget.style.borderColor = '#e2e8f0';
-                      e.currentTarget.style.color = '#334155';
-                    }}
-                  >
-                    <span
-                      style={{ width: 26, height: 26, display: 'block' }}
-                      dangerouslySetInnerHTML={{
-                        __html: iconNodeToSvgMarkup(item.node, { size: '26px' }),
-                      }}
-                    />
-                  </button>
-                ))}
-              </div>
-              {filtered.length > visible.length && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 14 }}>
-                  <button
-                    type="button"
-                    onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                    style={{
-                      height: 34,
-                      padding: '0 18px',
-                      borderRadius: 8,
-                      border: '1px solid #93c5fd',
-                      background: '#eff6ff',
-                      color: '#1d4ed8',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Daha fazla göster ({filtered.length - visible.length})
-                  </button>
-                </div>
-              )}
-            </>
+                <span
+                  style={{ width: 26, height: 26, display: 'block' }}
+                  dangerouslySetInnerHTML={{
+                    __html: iconNodeToSvgMarkup(item.node, { size: '26px' }),
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+          {filtered.length > visible.length && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 14 }}>
+              <Btn variant="ghost" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                Daha fazla göster ({filtered.length - visible.length})
+              </Btn>
+            </div>
           )}
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    </Modal>
   );
 }

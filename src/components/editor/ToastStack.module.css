@@ -1,0 +1,96 @@
+/* Sağ üstte beliren bildirim (toast) yığını — açık tema, token tabanlı. */
+
+.container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: var(--eic-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(380px, calc(100vw - 32px));
+  width: 100%;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--eic-radius-lg);
+  border: 1px solid var(--eic-light-border-soft);
+  border-left-width: 4px;
+  background: var(--eic-light-panel);
+  color: var(--eic-light-text);
+  font-size: var(--eic-type-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: var(--eic-shadow-lg);
+  animation: toastIn 0.25s ease;
+}
+
+.success {
+  border-left-color: var(--eic-tone-green-base);
+}
+.warning {
+  border-left-color: var(--eic-tone-amber-base);
+}
+.error {
+  border-left-color: var(--eic-tone-red-base);
+}
+
+.icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.success .icon {
+  color: var(--eic-tone-green-base);
+}
+.warning .icon {
+  color: var(--eic-tone-amber-base);
+}
+.error .icon {
+  color: var(--eic-tone-red-base);
+}
+
+.body {
+  flex: 1;
+  word-break: break-word;
+}
+
+.close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--eic-light-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: var(--eic-radius-sm);
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.close:hover {
+  opacity: 1;
+  background: var(--eic-light-panel-alt);
+}
+.close:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--eic-focus-ring-light);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

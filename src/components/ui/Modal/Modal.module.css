@@ -1,47 +1,93 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  z-index: 1000;
+  z-index: var(--eic-z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  background: var(--eic-overlay);
+  backdrop-filter: blur(4px);
 }
 
 .dialog {
-  background: var(--eic-shell-panel-alt);
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: 90vh;
   border-radius: var(--eic-radius-xl);
-  padding: 24px;
-  width: 400px;
-  max-width: 92vw;
-  border: 1px solid var(--eic-shell-border);
-  max-height: 85vh;
-  overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(2, 8, 23, 0.3);
+  border: 1px solid var(--eic-light-border-soft);
+  background: var(--eic-light-panel);
+  color: var(--eic-light-text);
+  box-shadow: var(--eic-shadow-modal);
+  overflow: hidden;
 }
 
 .header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--eic-light-border-soft);
+}
+
+.titleWrap {
+  min-width: 0;
 }
 
 .title {
-  font-weight: 800;
+  font-weight: 900;
   font-size: var(--eic-type-md);
-  color: var(--eic-shell-text);
+  color: var(--eic-light-text);
+}
+
+.subtitle {
+  margin-top: 2px;
+  font-size: var(--eic-type-sm);
+  font-weight: 600;
+  color: var(--eic-light-muted);
 }
 
 .closeBtn {
-  background: none;
-  border: none;
-  color: var(--eic-shell-muted-soft);
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--eic-light-border-soft);
+  border-radius: var(--eic-radius-md);
+  background: var(--eic-light-panel);
+  color: var(--eic-light-muted);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .closeBtn:hover {
-  color: var(--eic-shell-text);
+  background: var(--eic-light-panel-alt);
+  color: var(--eic-light-text);
+  border-color: var(--eic-light-border);
+}
+
+.closeBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--eic-focus-ring-light);
+}
+
+.content {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--eic-light-border-soft);
 }

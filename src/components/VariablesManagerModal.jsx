@@ -93,7 +93,7 @@ export default function VariablesManagerModal({
             borderBottom: '1px solid #d7dee7',
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 500, color: '#425466' }}>Variables</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: '#425466' }}>Değişkenler</div>
           <button
             onClick={onClose}
             style={{
@@ -123,8 +123,8 @@ export default function VariablesManagerModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             {[
-              { id: 'project', label: 'Project' },
-              { id: 'builtin', label: 'Built-In' },
+              { id: 'project', label: 'Proje' },
+              { id: 'builtin', label: 'Yerleşik' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -149,7 +149,7 @@ export default function VariablesManagerModal({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search variables"
+              placeholder="Değişken ara"
               style={{
                 width: 240,
                 maxWidth: '56vw',
@@ -196,7 +196,7 @@ export default function VariablesManagerModal({
                   {
                     ...selectedProjectVariable,
                     id: uid(),
-                    name: `${selectedProjectVariable.name || 'Degisken'} Kopya`,
+                    name: `${selectedProjectVariable.name || 'Değişken'} Kopya`,
                   },
                   variables.length
                 );
@@ -279,10 +279,10 @@ export default function VariablesManagerModal({
               fontWeight: 500,
             }}
           >
-            <div style={{ padding: '9px 14px' }}>Name</div>
-            <div style={{ padding: '9px 14px' }}>Type</div>
-            <div style={{ padding: '9px 14px' }}>Default Value</div>
-            <div style={{ padding: '9px 14px' }}>Use Count</div>
+            <div style={{ padding: '9px 14px' }}>Ad</div>
+            <div style={{ padding: '9px 14px' }}>Tür</div>
+            <div style={{ padding: '9px 14px' }}>Varsayılan Değer</div>
+            <div style={{ padding: '9px 14px' }}>Kullanım</div>
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -393,8 +393,8 @@ export default function VariablesManagerModal({
                             outline: 'none',
                           }}
                         >
-                          <option value="false">False</option>
-                          <option value="true">True</option>
+                          <option value="false">Yanlış</option>
+                          <option value="true">Doğru</option>
                         </select>
                       ) : (
                         <input

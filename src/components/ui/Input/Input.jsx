@@ -2,7 +2,24 @@ import React from 'react';
 
 import styles from './Input.module.css';
 
-export function Inp({ label, value, onChange, type = 'text', placeholder = '', rows }) {
+/**
+ * Ortak metin girişi.
+ * - type='textarea' → çok satırlı alan.
+ * - style / className → sarmalayıcı yerine doğrudan input/textarea'ya uygulanır.
+ * - geri kalan props (name, min, max, step, onKeyDown, disabled, autoFocus…) geçer.
+ */
+export function Inp({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  placeholder = '',
+  rows,
+  style,
+  className = '',
+  ...rest
+}) {
+  const controlClass = type === 'textarea' ? styles.textarea : styles.input;
   return (
     <div className={styles.field}>
       {label && <label className={styles.label}>{label}</label>}
@@ -12,7 +29,9 @@ export function Inp({ label, value, onChange, type = 'text', placeholder = '', r
           onChange={onChange}
           rows={rows || 3}
           placeholder={placeholder}
-          className={styles.textarea}
+          className={`${controlClass} ${className}`.trim()}
+          style={style}
+          {...rest}
         />
       ) : (
         <input
@@ -20,7 +39,9 @@ export function Inp({ label, value, onChange, type = 'text', placeholder = '', r
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          className={styles.input}
+          className={`${controlClass} ${className}`.trim()}
+          style={style}
+          {...rest}
         />
       )}
     </div>

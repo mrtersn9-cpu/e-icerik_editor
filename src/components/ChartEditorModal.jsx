@@ -8,6 +8,8 @@ import {
   normalizeChartData,
 } from '../utils/chartSvg';
 
+import { Modal } from './ui';
+
 const toolButtonStyle = {
   height: 30,
   padding: '0 12px',
@@ -26,59 +28,8 @@ export default function ChartEditorModal({ open, onClose, chartType = 'bar', cha
   const points = normalizeChartData(chartData);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 10001,
-        background: 'rgba(15,23,42,.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(760px, calc(100vw - 32px))',
-          maxHeight: '85vh',
-          background: '#ffffff',
-          borderRadius: 20,
-          boxShadow: '0 32px 80px rgba(0,0,0,.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 24px',
-            borderBottom: '1px solid #e2e8f0',
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>{title}</div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              background: '#fff',
-              fontSize: 18,
-              cursor: 'pointer',
-              color: '#64748b',
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 20, padding: 24, overflow: 'auto' }}>
+    <Modal title={title} onClose={onClose} size="lg">
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
           <div style={{ flex: '0 0 260px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', gap: 6 }}>
               {CHART_TYPES.map((type) => {
@@ -145,7 +96,6 @@ export default function ChartEditorModal({ open, onClose, chartType = 'bar', cha
             dangerouslySetInnerHTML={{ __html: buildChartSvg({ chartType, chartData }) }}
           />
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

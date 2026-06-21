@@ -6,10 +6,10 @@
   align-items: center;
   gap: 9px;
   padding: 0 9px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  color: #dbeafe;
-  background: #10283b;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  border-bottom: 1px solid var(--eic-light-border-soft);
+  color: var(--eic-light-text);
+  background: var(--eic-light-panel);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .brand {
@@ -25,7 +25,7 @@
   width: 1px;
   height: 23px;
   flex-shrink: 0;
-  background: rgba(203, 213, 225, 0.22);
+  background: var(--eic-light-border-soft);
 }
 
 .project {
@@ -39,7 +39,7 @@
 
 .project span {
   overflow: hidden;
-  color: #e2e8f0;
+  color: var(--eic-light-text);
   font-size: 11px;
   font-weight: 800;
   text-overflow: ellipsis;
@@ -49,8 +49,8 @@
 .project small {
   padding: 2px 5px;
   border-radius: 999px;
-  color: #bae6fd;
-  background: rgba(14, 165, 233, 0.12);
+  color: var(--eic-light-accent-dark);
+  background: var(--eic-light-accent-soft);
   font-size: 9px;
   font-weight: 900;
 }
@@ -73,7 +73,7 @@
 .user,
 .quickAction {
   border: 1px solid transparent;
-  color: #cbd5e1;
+  color: var(--eic-light-muted);
   background: transparent;
   cursor: pointer;
 }
@@ -83,7 +83,7 @@
   height: 25px;
   padding: 0 6px;
   overflow: hidden;
-  border-color: rgba(148, 163, 184, 0.22);
+  border-color: var(--eic-light-border-soft);
   border-radius: 5px;
   font-size: 9px;
   font-weight: 800;
@@ -110,7 +110,7 @@
   flex-direction: column;
   gap: 3px;
   border-radius: 6px;
-  color: #dbeafe;
+  color: var(--eic-light-text);
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
@@ -125,8 +125,8 @@
 .textAction:hover:not(:disabled),
 .crumb:hover,
 .user:hover {
-  border-color: rgba(125, 211, 252, 0.28);
-  background: rgba(14, 165, 233, 0.1);
+  border-color: var(--eic-light-accent-border);
+  background: var(--eic-light-accent-soft);
 }
 
 .quickAction:disabled,
@@ -147,7 +147,7 @@
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  border-color: rgba(148, 163, 184, 0.22);
+  border-color: var(--eic-light-border-soft);
   border-radius: 5px;
   font-size: 9px;
   font-weight: 800;
@@ -155,9 +155,9 @@
 }
 
 .textActionActive {
-  border-color: rgba(56, 189, 248, 0.48);
-  color: #e0f2fe;
-  background: rgba(14, 165, 233, 0.12);
+  border-color: var(--eic-light-accent-border);
+  color: var(--eic-light-accent-dark);
+  background: var(--eic-light-accent-soft);
 }
 
 .database {
@@ -166,28 +166,28 @@
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--eic-light-border);
   border-radius: 999px;
-  color: #94a3b8;
+  color: var(--eic-light-muted);
   font-size: 9px;
   font-weight: 900;
   white-space: nowrap;
 }
 
 .databaseReady {
-  border-color: rgba(34, 197, 94, 0.35);
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(22, 163, 74, 0.4);
+  color: #15803d;
+  background: #f0fdf4;
 }
 
 .databaseWarning {
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(217, 119, 6, 0.45);
+  color: #b45309;
+  background: #fffbeb;
 }
 
 .saved {
-  color: #86efac;
+  color: #15803d;
   font-size: 9px;
   font-weight: 800;
 }
@@ -216,7 +216,7 @@
   place-items: center;
   border-radius: 50%;
   color: #ffffff;
-  background: #0877a8;
+  background: var(--eic-light-accent);
   font-size: 11px;
   font-weight: 900;
 }

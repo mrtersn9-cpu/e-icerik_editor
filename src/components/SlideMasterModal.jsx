@@ -3,6 +3,8 @@
 // butonuyla başlık/metin alanı nesnelerini sahneye ekler.
 
 // Layout rolü → mini önizleme kutusu konumu (16:9 kapsayıcıda yüzde).
+import { Modal } from './ui';
+
 const ROLE_BOX = {
   title: { left: '8%', top: '12%', width: '84%', height: '20%' },
   subtitle: { left: '8%', top: '36%', width: '60%', height: '12%' },
@@ -51,64 +53,12 @@ export default function SlideMasterModal({ open, onClose, masters = [], currentI
   if (!open) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 10001,
-        background: 'rgba(15,23,42,.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
+    <Modal
+      title="Slide Master Editörü"
+      subtitle="Karta tıkla: tema + arka planı uygula · “Yerleşim Ekle”: başlık/metin alanları"
+      onClose={onClose}
+      size="lg"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(820px, calc(100vw - 32px))',
-          maxHeight: '85vh',
-          background: '#ffffff',
-          borderRadius: 20,
-          boxShadow: '0 32px 80px rgba(0,0,0,.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 24px',
-            borderBottom: '1px solid #e2e8f0',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Slide Master Editörü</div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              Karta tıkla: tema + arka planı uygula · “Yerleşim Ekle”: başlık/metin alanları
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              background: '#fff',
-              fontSize: 18,
-              cursor: 'pointer',
-              color: '#64748b',
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
           <div
             style={{
               display: 'grid',
@@ -180,8 +130,6 @@ export default function SlideMasterModal({ open, onClose, masters = [], currentI
               );
             })}
           </div>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -6,8 +6,8 @@
   gap: 8px;
   padding: 9px 7px;
   overflow-y: auto;
-  border-right: 1px solid var(--eic-shell-border);
-  background: var(--eic-shell-bg);
+  border-right: 1px solid var(--eic-light-border-soft);
+  background: var(--eic-light-panel);
 }
 
 .group {
@@ -15,13 +15,13 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 4px;
-  border: 1px solid var(--eic-shell-border-soft);
+  border: 1px solid var(--eic-light-border-soft);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--eic-light-panel-alt);
 }
 
 .groupLabel {
-  color: var(--eic-shell-muted-soft);
+  color: var(--eic-light-muted);
   font-size: 9px;
   font-weight: 800;
   text-align: center;
@@ -38,25 +38,31 @@
   padding: 5px 2px;
   border: 1px solid transparent;
   border-radius: 6px;
-  color: #7dd3fc;
+  color: var(--eic-light-accent);
   background: transparent;
   cursor: pointer;
 }
 
 .tool:hover:not(:disabled) {
-  border-color: rgba(125, 211, 252, 0.24);
-  background: rgba(14, 165, 233, 0.1);
+  border-color: var(--eic-light-accent-border);
+  background: var(--eic-light-accent-soft);
+}
+
+.tool:focus-visible {
+  outline: none;
+  border-color: var(--eic-light-accent-border);
+  box-shadow: var(--eic-focus-ring-light);
 }
 
 .tool:disabled {
-  color: var(--eic-shell-muted-soft);
+  color: var(--eic-light-disabled-text);
   cursor: default;
-  opacity: 0.38;
+  opacity: 0.5;
 }
 
 .tool span {
   max-width: 100%;
-  color: var(--eic-shell-muted);
+  color: var(--eic-light-muted);
   font-size: 9px;
   font-weight: 700;
   line-height: 1.12;
@@ -70,7 +76,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   border-right: 0;
-  border-bottom: 1px solid var(--eic-shell-border);
+  border-bottom: 1px solid var(--eic-light-border-soft);
 }
 
 .mobile .group {

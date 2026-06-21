@@ -3131,12 +3131,12 @@ export default function PdfCleanStudio({
               onChange={(e) => updateMask(mask.id, (m) => ({ ...m, type: e.target.value }))}
               style={{
                 flex: 1,
-                height: 24,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
-                borderRadius: 5,
+                borderRadius: 6,
                 background: 'rgba(15,23,42,.04)',
                 color: T.text,
-                fontSize: 11,
+                fontSize: 12,
               }}
             >
               {[
@@ -3158,8 +3158,8 @@ export default function PdfCleanStudio({
               value={resolveColorPickerValue(mask.bgColor, '#ffffff')}
               onChange={(e) => updateMask(mask.id, (m) => ({ ...m, bgColor: e.target.value }))}
               style={{
-                width: 32,
-                height: 24,
+                width: 36,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 4,
                 cursor: 'pointer',
@@ -3170,12 +3170,12 @@ export default function PdfCleanStudio({
               onChange={(e) => setSamplingMode(e.target.value)}
               style={{
                 flex: 1,
-                height: 24,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
-                borderRadius: 5,
+                borderRadius: 6,
                 background: 'rgba(15,23,42,.04)',
                 color: T.text,
-                fontSize: 11,
+                fontSize: 12,
               }}
             >
               <option value="auto">Otomatik örnekleme</option>
@@ -3363,13 +3363,13 @@ export default function PdfCleanStudio({
                 }))
               }
               style={{
-                width: 60,
-                height: 24,
+                width: 64,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
-                borderRadius: 5,
+                borderRadius: 6,
                 background: 'rgba(15,23,42,.04)',
                 color: T.text,
-                fontSize: 11,
+                fontSize: 12,
                 padding: '0 6px',
               }}
             />
@@ -3396,12 +3396,12 @@ export default function PdfCleanStudio({
               onChange={(e) => updateText(el.id, (t) => ({ ...t, fontFamily: e.target.value }))}
               style={{
                 flex: 1,
-                height: 24,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
-                borderRadius: 5,
+                borderRadius: 6,
                 background: 'rgba(15,23,42,.04)',
                 color: T.text,
-                fontSize: 11,
+                fontSize: 12,
                 padding: '0 6px',
               }}
             >
@@ -3427,8 +3427,8 @@ export default function PdfCleanStudio({
               value={el.color || '#000000'}
               onChange={(e) => updateText(el.id, (t) => ({ ...t, color: e.target.value }))}
               style={{
-                width: 32,
-                height: 24,
+                width: 36,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 4,
                 cursor: 'pointer',
@@ -3441,8 +3441,8 @@ export default function PdfCleanStudio({
               value={resolveColorPickerValue(el.bgColor, '#ffffff')}
               onChange={(e) => updateText(el.id, (t) => ({ ...t, bgColor: e.target.value }))}
               style={{
-                width: 32,
-                height: 24,
+                width: 36,
+                height: 28,
                 border: `1px solid ${T.borderHi}`,
                 borderRadius: 4,
                 cursor: 'pointer',
@@ -3829,10 +3829,10 @@ export default function PdfCleanStudio({
   const isHeavyOp = busy || renderBusy || bulkBusy || exportBusy || integrationBusy;
 
   const zoomBtnStyle = {
-    width: 22,
-    height: 20,
+    width: 28,
+    height: 28,
     border: `1px solid ${T.border}`,
-    borderRadius: 5,
+    borderRadius: 6,
     background: '#fff',
     color: T.text,
     fontSize: 13,

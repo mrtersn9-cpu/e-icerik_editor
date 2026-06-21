@@ -105,7 +105,7 @@ export default function MobileEditorShell({
         >
           <ChevronLeft size={22} />
         </button>
-        <img src="/logo-light.svg" alt="E-İçerik Studio" className={styles.topbarLogo} />
+        <img src="/logo.svg" alt="E-İçerik Studio" className={styles.topbarLogo} />
         <div className={styles.topbarTitle}>
           <strong>{selActivity?.name || currentProject?.name || 'Etkinlik'}</strong>
           <small>Düzenleme</small>
@@ -298,7 +298,7 @@ export default function MobileEditorShell({
               flexDirection: 'column',
               borderTopLeftRadius: 18,
               borderTopRightRadius: 18,
-              background: '#0f172a',
+              background: '#ffffff',
               boxShadow: '0 -18px 50px rgba(15,23,42,.4)',
               overflow: 'hidden',
               paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -312,7 +312,7 @@ export default function MobileEditorShell({
                 justifyContent: 'space-between',
                 padding: '10px 14px',
                 borderBottom: '1px solid rgba(148,163,184,.18)',
-                color: '#e2e8f0',
+                color: 'var(--eic-light-text)',
                 fontSize: 12,
                 fontWeight: 900,
                 textTransform: 'uppercase',
@@ -332,7 +332,7 @@ export default function MobileEditorShell({
                   border: '1px solid rgba(148,163,184,.3)',
                   borderRadius: 9,
                   background: 'transparent',
-                  color: '#cbd5e1',
+                  color: 'var(--eic-light-muted)',
                   cursor: 'pointer',
                 }}
               >
@@ -356,7 +356,7 @@ export default function MobileEditorShell({
               bottom: 0,
               zIndex: 201,
               width: 'min(340px, 88vw)',
-              background: '#0f172a',
+              background: '#ffffff',
               boxShadow: '18px 0 50px rgba(15,23,42,.4)',
               display: 'flex',
               flexDirection: 'column',
@@ -372,7 +372,7 @@ export default function MobileEditorShell({
                 justifyContent: 'space-between',
                 padding: '10px 14px',
                 borderBottom: '1px solid rgba(148,163,184,.18)',
-                color: '#e2e8f0',
+                color: 'var(--eic-light-text)',
                 fontSize: 12,
                 fontWeight: 900,
                 textTransform: 'uppercase',
@@ -392,7 +392,7 @@ export default function MobileEditorShell({
                   border: '1px solid rgba(148,163,184,.3)',
                   borderRadius: 9,
                   background: 'transparent',
-                  color: '#cbd5e1',
+                  color: 'var(--eic-light-muted)',
                   cursor: 'pointer',
                 }}
               >

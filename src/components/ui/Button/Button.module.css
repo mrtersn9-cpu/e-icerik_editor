@@ -1,33 +1,82 @@
+/* ── Ortak Buton — açık tema, çeşitler ve tüm durumlar ─────────────────────
+   Çeşitler: secondary (varsayılan, çerçeveli) · primary (dolu mavi) ·
+   danger (kırmızı) · ghost (link gibi). Boyut: normal · small.
+   Tüm etkileşim durumları tanımlı: hover · active · focus-visible · disabled. */
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   flex-shrink: 0;
-  min-height: 34px;
+  min-height: var(--eic-control-h);
   padding: 0 14px;
-  border-radius: var(--eic-radius-sm);
-  border: 1px solid var(--eic-shell-accent-strong);
-  background: rgba(3, 105, 161, 0.13);
-  color: var(--eic-shell-accent-strong);
+  border-radius: var(--eic-radius-md);
+  border: 1px solid var(--eic-light-border);
+  background: var(--eic-light-panel);
+  color: var(--eic-light-text);
+  font-family: inherit;
   font-size: var(--eic-type-sm);
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.12s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(3, 105, 161, 0.22);
+  background: var(--eic-light-panel-alt);
+  border-color: var(--eic-light-border-strong);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--eic-focus-ring-light);
 }
 
 .btn:disabled {
-  background: var(--eic-shell-inset);
-  color: var(--eic-shell-muted-soft);
   opacity: 0.5;
   cursor: default;
 }
 
+/* ── Çeşitler ──────────────────────────────────────────────────────────── */
+.primary {
+  border-color: var(--eic-light-accent-strong);
+  background: var(--eic-light-accent);
+  color: #ffffff;
+}
+.primary:hover:not(:disabled) {
+  background: var(--eic-light-accent-strong);
+  border-color: var(--eic-light-accent-strong);
+}
+
+.danger {
+  border-color: var(--eic-tone-red-base);
+  background: var(--eic-tone-red-base);
+  color: #ffffff;
+}
+.danger:hover:not(:disabled) {
+  background: var(--eic-tone-red-strong);
+  border-color: var(--eic-tone-red-strong);
+}
+
+.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--eic-light-accent);
+}
+.ghost:hover:not(:disabled) {
+  background: var(--eic-light-accent-soft);
+  border-color: transparent;
+}
+
+/* ── Boyut ─────────────────────────────────────────────────────────────── */
 .small {
-  min-height: 30px;
+  min-height: var(--eic-control-h-sm);
   padding: 0 10px;
   font-size: var(--eic-type-xs);
 }

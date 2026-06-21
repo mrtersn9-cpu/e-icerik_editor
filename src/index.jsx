@@ -118,8 +118,9 @@ function BootGate() {
       /* sessiz: arka plan doğrulaması */
     });
 
-    // Boot overlay'ini hemen kapat → login anında görünür.
-    window.__EIC_BOOT_DONE__?.();
+    // Açılış ekranını burada KAPATMIYORUZ: kapatma/gösterme kararını EIcerikEditor
+    // veriyor (keepBootVisibleForWorkspace). Böylece girişli kullanıcı yenilediğinde
+    // çalışma alanı yüklenene kadar açılış ekranı kalır; beyaz ekran oluşmaz.
   }, []);
 
   return <EIcerikEditor />;

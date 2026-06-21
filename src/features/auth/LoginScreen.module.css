@@ -486,7 +486,7 @@
 }
 
 .formHeader h2 {
-  margin-top: 8px;
+  margin-top: 14px;
   color: #0f172a;
   font-size: 27px;
   line-height: 1.16;
@@ -775,15 +775,21 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 850;
+  transition: color 0.15s ease;
+}
+
+.quietLink:hover:not(:disabled) {
+  color: #7c2d12;
+  text-decoration: underline;
 }
 
 .errorMessage {
   margin-top: 14px;
   padding: 12px 13px;
-  border: 1px solid #fecaca;
+  border: 1px solid #fca5a5;
   border-radius: 13px;
-  color: #b91c1c;
-  background: #fef2f2;
+  color: #991b1b;
+  background: #fee2e2;
   font-size: 12px;
   font-weight: 750;
 }

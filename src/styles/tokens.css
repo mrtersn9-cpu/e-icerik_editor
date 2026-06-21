@@ -120,6 +120,33 @@
   --eic-shadow-card: 0 12px 30px rgba(14, 165, 233, 0.12); /* light hover */
   --eic-shadow-modal: 0 24px 54px rgba(15, 23, 42, 0.22);
   --eic-shadow-login: 0 30px 80px rgba(15, 23, 42, 0.16);
+
+  /* ── Katman sırası (z-index) — tek ölçek ──────────────────────────────── */
+  /* Eski 9999 / 100000 gibi kaçık değerlerin yerine bunlar kullanılmalı.    */
+  --eic-z-base: 1;
+  --eic-z-dropdown: 100;
+  --eic-z-sticky: 200;
+  --eic-z-drawer: 900;
+  --eic-z-modal: 1000;
+  --eic-z-popover: 1200;
+  --eic-z-toast: 1300;
+  --eic-z-critical: 1400; /* bağlantı koptu / kick gibi kritik kaplamalar */
+
+  /* Açılır pencere kaplaması (overlay) — tek değer */
+  --eic-overlay: rgba(15, 23, 42, 0.55);
+
+  /* Form kontrolleri — ortak yükseklikler */
+  --eic-control-h: 34px;
+  --eic-control-h-sm: 30px;
+  --eic-control-h-lg: 40px;
+
+  /* Klavye odak halkası (focus-visible) */
+  --eic-focus-ring: 0 0 0 3px rgba(2, 132, 199, 0.35);
+  --eic-focus-ring-light: 0 0 0 3px rgba(37, 99, 235, 0.25);
+
+  /* Yer tutucu (placeholder) metin rengi */
+  --eic-light-placeholder: #94a3b8;
+  --eic-shell-placeholder: #64748b;
 }
 
 /* ─── Object tones — learner-content color families ──────────────────────── */

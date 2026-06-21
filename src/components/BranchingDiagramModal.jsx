@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 
+import { Modal } from './ui';
+
 export default function BranchingDiagramModal({
   open,
   onClose,
@@ -65,66 +67,29 @@ export default function BranchingDiagramModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        background: 'rgba(15,23,42,.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '90vw',
-          maxWidth: 1200,
-          maxHeight: '85vh',
-          background: '#ffffff',
-          borderRadius: 20,
-          boxShadow: '0 32px 80px rgba(0,0,0,.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
+    <Modal
+      title="Dallanma Diyagramı"
+      subtitle={`${activities.length} etkinlik • ${graph.edges.length} bağlantı`}
+      onClose={onClose}
+      size="xl"
+      footer={
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 24px',
-            borderBottom: '1px solid #e2e8f0',
+            gap: 16,
+            flexWrap: 'wrap',
+            fontSize: 11,
+            color: '#94a3b8',
+            width: '100%',
           }}
         >
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-              Dallanma Diyagramı
-            </div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              {activities.length} etkinlik • {graph.edges.length} bağlantı
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              background: '#fff',
-              fontSize: 18,
-              cursor: 'pointer',
-              color: '#64748b',
-            }}
-          >
-            ×
-          </button>
+          <span>—— kesikli: varsayılan sıra</span>
+          <span style={{ color: '#2563eb' }}>—— mavi: SayfaGec trigger</span>
+          <span style={{ color: '#7c3aed' }}>—— mor: SlideraGec trigger</span>
         </div>
-        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      }
+    >
+        <div style={{ overflowX: 'auto' }}>
           {graph.nodes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', fontSize: 14 }}>
               Henüz etkinlik yok.
@@ -229,21 +194,6 @@ export default function BranchingDiagramModal({
             </svg>
           )}
         </div>
-        <div
-          style={{
-            padding: '10px 24px',
-            borderTop: '1px solid #e2e8f0',
-            fontSize: 11,
-            color: '#94a3b8',
-            display: 'flex',
-            gap: 16,
-          }}
-        >
-          <span>—— kesikli: varsayılan sıra</span>
-          <span style={{ color: '#2563eb' }}>—— mavi: SayfaGec trigger</span>
-          <span style={{ color: '#7c3aed' }}>—— mor: SlideraGec trigger</span>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

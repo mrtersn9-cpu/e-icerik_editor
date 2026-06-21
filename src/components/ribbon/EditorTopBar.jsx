@@ -116,7 +116,7 @@ export default function EditorTopBar({
   return (
     <header className={styles.topbar}>
       <div className={styles.brand}>
-        <img src="/logo-light.svg" height={25} alt="E-İçerik Studio" />
+        <img src="/logo.svg" height={25} alt="E-İçerik Studio" />
       </div>
 
       <div className={styles.divider} />

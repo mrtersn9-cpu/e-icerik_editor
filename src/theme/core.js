@@ -69,6 +69,25 @@ export const EDITOR_THEME = {
   weightBold: 900,
   shadowLg: '0 10px 25px rgba(0, 0, 0, 0.25)',
   shadowMd: '0 4px 12px rgba(0, 0, 0, 0.15)',
+  shadowModal: '0 24px 54px rgba(15, 23, 42, 0.22)',
+  // Katman sırası (z-index) — tek ölçek; kaçık 9999/100000 değerleri yerine.
+  zBase: 1,
+  zDropdown: 100,
+  zSticky: 200,
+  zDrawer: 900,
+  zModal: 1000,
+  zPopover: 1200,
+  zToast: 1300,
+  zCritical: 1400,
+  // Açılır pencere kaplaması + form kontrol yükseklikleri + odak halkası.
+  overlay: 'rgba(15, 23, 42, 0.55)',
+  controlH: 34,
+  controlHsm: 30,
+  controlHlg: 40,
+  focusRing: '0 0 0 3px rgba(2, 132, 199, 0.35)',
+  focusRingLight: '0 0 0 3px rgba(37, 99, 235, 0.25)',
+  lightPlaceholder: '#94a3b8',
+  shellPlaceholder: '#64748b',
   objectTones: {
     blue: {
       base: '#2563eb',
