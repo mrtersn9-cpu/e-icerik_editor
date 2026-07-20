@@ -1,7 +1,8 @@
 import { clamp, pixelBox, normalizeBox, overlapArea, boxArea, sourceCleanupRect, getPatchSourceCleanupBox } from './geometry';
+import { generateId } from '../../utils/id';
 
 export function uid(prefix = 'item') {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return generateId(prefix);
 }
 
 export function averageSampleColor(ctx, box, width, height) {

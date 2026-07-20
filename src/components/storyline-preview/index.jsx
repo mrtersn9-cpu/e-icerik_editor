@@ -94,6 +94,7 @@ import {
   PreviewMixedFlow,
 } from '../preview/PreviewExtraFlows';
 import { ShapePreviewIcon } from '../ui';
+import { generateId } from '../../utils/id';
 
 export function isButtonIntroInteractiveSlot(item = {}) {
   const slotId = String(item.sceneTemplateSlotId || '');
@@ -2678,7 +2679,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     setDropAssignments({});
     setDragDebug((current) => {
       const resetLog = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: generateId(),
         time: new Date().toLocaleTimeString('tr-TR', {
           hour: '2-digit',
           minute: '2-digit',
@@ -2707,7 +2708,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
     const code = entry.code || 'DD_EVENT';
     const level = entry.level || 'info';
     const normalized = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: generateId(),
       time: new Date().toLocaleTimeString('tr-TR', {
         hour: '2-digit',
         minute: '2-digit',
@@ -3080,7 +3081,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       setRuntimeVariables(buildRuntimeVariableMap(variables));
       setDragDebug((current) => {
         const resetLog = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: generateId(),
           time: new Date().toLocaleTimeString('tr-TR', {
             hour: '2-digit',
             minute: '2-digit',
@@ -3131,7 +3132,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
   const logPreviewRuntimeAction = useCallback((action, message, data = {}) => {
     setDragDebug((current) => {
       const entry = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: generateId(),
         time: new Date().toLocaleTimeString('tr-TR', {
           hour: '2-digit',
           minute: '2-digit',
@@ -3160,7 +3161,7 @@ export function StorylineSystemPreview({ open, onClose, activity, activities = [
       live: null,
       logs: [
         {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: generateId(),
           time: new Date().toLocaleTimeString('tr-TR', {
             hour: '2-digit',
             minute: '2-digit',

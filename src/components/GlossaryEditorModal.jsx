@@ -1,10 +1,7 @@
 import { useState } from 'react';
 
 import { Modal, Inp, Btn } from './ui';
-
-function generateId() {
-  return 'g_' + Math.random().toString(36).slice(2, 10);
-}
+import { generateId } from '../utils/id';
 
 export default function GlossaryEditorModal({
   open,

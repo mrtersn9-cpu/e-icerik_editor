@@ -2,6 +2,7 @@ import { patchActivity } from '../cevapActions';
 import { CevapCard, MiniTable, PanelGrid } from '../components/CevapControls';
 
 import { CanCard, ErisilebilirlikCard, EtkinlikTuruCard, GeriBildirimCard, IpucuCard, PuanlamaCard, YanitKontrolCard } from './OrtakCevapKartlari';
+import { generateId } from '../../../utils/id';
 
 export default function HotspotCevapPanel({ activity, onUpdate }) {
   const hotspots = (activity.objects || []).filter((object) => object.type === 'hotspot');
@@ -44,7 +45,7 @@ export default function HotspotCevapPanel({ activity, onUpdate }) {
               <button
                 onClick={() => {
                   const newObj = {
-                    id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+                    id: generateId(),
                     type: 'hotspot',
                     x: 200,
                     y: 150,

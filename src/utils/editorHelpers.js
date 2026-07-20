@@ -1,5 +1,6 @@
 import { WORKFLOW_STATUS_META, SLIDE_MASTER_PRESETS } from '../constants';
 import { sanitizePdfText } from '../pdfParser';
+import { generateId } from './id';
 
 const INTERACTIVE_OBJECT_TYPES = new Set([
   'button',
@@ -271,7 +272,7 @@ export function getActivityProgressSummary(activity = {}) {
 }
 
 export function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return generateId();
 }
 
 // Ad -> URL-dostu slug. Turkce karakterleri ASCII'ye indirger, kucuk harfe cevirir,

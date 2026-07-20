@@ -6,9 +6,10 @@ import {
 } from '../pdfParser';
 
 import { Btn, Modal } from './uiPrimitives';
+import { generateId } from '../utils/id';
 
 function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return generateId();
 }
 
 function fileToDataUrl(file) {
@@ -162,7 +163,7 @@ function countStoryboardExtractedItems(storyboardPages = []) {
 function createPdfStatusEntry(message = '', tone = 'info') {
   const safeMessage = sanitizePdfText(message);
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: generateId(),
     message: safeMessage,
     tone,
     time: new Date().toLocaleTimeString('tr-TR', {
