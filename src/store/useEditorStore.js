@@ -115,17 +115,6 @@ const useEditorStore = create((set, get) => ({
         typeof value === 'function' ? value(state.isSlidePanelCollapsed) : value,
     })),
 
-  // Toasts
-  toasts: [],
-  addToast: (toast) =>
-    set((state) => ({
-      toasts: [...state.toasts, { id: Date.now() + Math.random(), duration: 4000, ...toast }],
-    })),
-  removeToast: (id) =>
-    set((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
-    })),
-
   // Reset UI to defaults
   resetUi: () =>
     set({
