@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $backupRoot = Join-Path $root "yedekler"
 $packageJsonPath = Join-Path $root "package.json"
 

@@ -8,7 +8,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
 
 if ($Watch) {
     $watchScript = Join-Path $PSScriptRoot "oto-kaydet.ps1"
@@ -108,7 +109,7 @@ function Invoke-FtpPrepareIfNeeded {
 }
 
 function Ensure-Changelog {
-    $path = Join-Path $PSScriptRoot "CHANGELOG.md"
+    $path = Join-Path $root "docs\CHANGELOG.md"
     if (-not (Test-Path $path)) {
         @"
 # Changelog

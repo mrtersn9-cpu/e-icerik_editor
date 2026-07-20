@@ -1,6 +1,6 @@
 # Sistem İnceleme Planı
 
-Kaynak: [INCELEME-KILAVUZU.md](../../INCELEME-KILAVUZU.md) — tüm prompt'lar ve kurallar orada.
+Kaynak: [INCELEME-KILAVUZU.md](../INCELEME-KILAVUZU.md) — tüm prompt'lar ve kurallar orada.
 
 ## Tüm aşamalarda geçerli kurallar
 

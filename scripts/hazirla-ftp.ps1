@@ -1,11 +1,12 @@
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = Split-Path -Parent $scriptsDir
 $buildDir = Join-Path $root "build"
 $templateDir = Join-Path $root "ftp-hosting"
 $outputDir = Join-Path $root "deploy-ftp"
 $stagingDir = Join-Path $root "deploy-ftp-temp"
-$backupScript = Join-Path $root "yedekle.ps1"
+$backupScript = Join-Path $scriptsDir "yedekle.ps1"
 $previousGenerateSourcemap = $env:GENERATE_SOURCEMAP
 
 function Get-MainJsFromManifest {

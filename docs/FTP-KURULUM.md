@@ -18,12 +18,12 @@ Bu proje FTP ile yüklenebilen PHP + MySQL hosting için hazırlanır. Yerel Nod
 PowerShell'de proje klasöründe şu komutu çalıştır:
 
 ```powershell
-.\hazirla-ftp.ps1
+.\scripts\hazirla-ftp.ps1
 ```
 
 Bu komut:
 
-1. `.\yedekle.ps1` ile kaynak kod yedeği alır.
+1. `yedekle.ps1` ile kaynak kod yedeği alır.
 2. Temiz bir React production build üretir.
 3. `ftp-hosting/` şablonu ile build çıktısını `deploy-ftp/` altında birleştirir.
 4. `api/config.php` dosyasını deploy paketine eklemez.

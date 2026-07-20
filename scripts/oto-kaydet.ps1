@@ -6,7 +6,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
 
 if ($BeklemeSaniye -lt 2) {
     throw "BeklemeSaniye en az 2 olmali."
@@ -27,7 +28,7 @@ function Convert-ToRelativePath {
     }
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $rootPath = [System.IO.Path]::GetFullPath($PSScriptRoot)
+    $rootPath = [System.IO.Path]::GetFullPath($root)
 
     if ($fullPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
         $relative = $fullPath.Substring($rootPath.Length).TrimStart("\", "/")
@@ -63,7 +64,7 @@ function Test-IgnoredPath {
         }
     }
 
-    if ($lower -eq "changelog.md") {
+    if ($lower -eq "docs\changelog.md") {
         return $true
     }
 
@@ -98,12 +99,12 @@ function Register-RepoChange {
 }
 
 Write-Host "Anlik otomatik kayit acildi." -ForegroundColor Cyan
-Write-Host "Kaydet komutu: .\\kaydet.ps1 (otomatik tetiklenecek)" -ForegroundColor DarkGray
+Write-Host "Kaydet komutu: .\\scripts\\kaydet.ps1 (otomatik tetiklenecek)" -ForegroundColor DarkGray
 Write-Host "Durdurmak icin Ctrl+C kullanabilirsin." -ForegroundColor DarkGray
 Write-Host "Izlenmeyen klasorler: .git, node_modules, build, deploy-ftp, deploy-ftp-temp, data\\pdf-output-*" -ForegroundColor DarkGray
 
 $watcher = New-Object System.IO.FileSystemWatcher
-$watcher.Path = $PSScriptRoot
+$watcher.Path = $root
 $watcher.IncludeSubdirectories = $true
 $watcher.Filter = "*"
 $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, DirectoryName, LastWrite, CreationTime, Size'

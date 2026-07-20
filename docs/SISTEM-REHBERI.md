@@ -6,8 +6,8 @@ Bu dosya projenin güncel giriş noktasıdır. Ayrıntılı alt belgeleri tek ye
 
 ## Belge Önceliği
 
-1. [AGENTS.md](AGENTS.md): Ajanların uyması gereken bağlayıcı çalışma kuralları.
-2. [docs/TTKB-UYUM-POLITIKASI.md](docs/TTKB-UYUM-POLITIKASI.md): Öğrenci önizlemesi, HTML ve SCORM çıktıları için bağlayıcı TTKB politikası.
+1. [../AGENTS.md](../AGENTS.md): Ajanların uyması gereken bağlayıcı çalışma kuralları.
+2. [TTKB-UYUM-POLITIKASI.md](TTKB-UYUM-POLITIKASI.md): Öğrenci önizlemesi, HTML ve SCORM çıktıları için bağlayıcı TTKB politikası.
 3. [SISTEM-REHBERI.md](SISTEM-REHBERI.md): Güncel mimari, akışlar ve bilinen riskler.
 4. Operasyon belgeleri: FTP, Git, güvenlik, PDF ve widget ayrıntıları.
 5. `CHANGELOG.md`: Yalnız tarihsel kayıt. Güncel mimari kaynağı değildir.
@@ -47,7 +47,7 @@ Yerel API:
 ### FTP/PHP Yayını
 
 ```powershell
-.\hazirla-ftp.ps1
+.\scripts\hazirla-ftp.ps1
 ```
 
 Bu akış yedek alır, temiz build üretir ve `deploy-ftp/` klasörünü hazırlar. Canlı API PHP + MySQL kullanır. Sunucudaki `api/config.php` deploy paketine eklenmez ve ayrıca korunmalıdır.
@@ -65,7 +65,7 @@ Ayrıntı: [FTP-KURULUM.md](FTP-KURULUM.md)
 
 ## TTKB Kontrolü
 
-Öğrenciye görünen her değişiklikte [AGENTS.md](AGENTS.md) ve [docs/TTKB-UYUM-POLITIKASI.md](docs/TTKB-UYUM-POLITIKASI.md) uygulanır.
+Öğrenciye görünen her değişiklikte [../AGENTS.md](../AGENTS.md) ve [TTKB-UYUM-POLITIKASI.md](TTKB-UYUM-POLITIKASI.md) uygulanır.
 
 Asgari kontrol:
 
@@ -95,7 +95,7 @@ Komut satırı ayrıntısı: [PDF-STORYBOARD-IMPORT.md](PDF-STORYBOARD-IMPORT.md
 - Widget iletişimi: `EicerikWidget` postMessage protokolü
 - Widget doğrudan SCORM API, ana React state veya ana DOM yönetmez.
 
-Ayrıntı: [docs/EICERIK_WIDGET_SDK.md](docs/EICERIK_WIDGET_SDK.md)
+Ayrıntı: [EICERIK_WIDGET_SDK.md](EICERIK_WIDGET_SDK.md)
 
 ## Güvenlik
 
@@ -115,8 +115,8 @@ npm start
 npm run test -- --runInBand
 npm run lint
 npm run build
-.\hazirla-ftp.ps1
-.\kaydet.ps1 -Mesaj "Kısa sürüm notu"
+.\scripts\hazirla-ftp.ps1
+.\scripts\kaydet.ps1 -Mesaj "Kısa sürüm notu"
 ```
 
 ## Bilinen Riskler
@@ -127,16 +127,24 @@ npm run build
 
 ## Aktif Belgeler
 
-- [AGENTS.md](AGENTS.md)
+Kök dizinde yalnızca [../AGENTS.md](../AGENTS.md) ve [../CLAUDE.md](../CLAUDE.md) kalır — bu
+ikisi ajan araçlarının (Claude Code, Codex vb.) otomatik olarak kök dizinde aradığı özel
+dosyalardır, taşınamaz. Geri kalan tüm belgeler bu klasördedir (`docs/`):
+
+- [../AGENTS.md](../AGENTS.md)
 - [SISTEM-REHBERI.md](SISTEM-REHBERI.md)
-- [docs/PROJE-DURUM-RAPORU.md](docs/PROJE-DURUM-RAPORU.md) — çalışan/yarıda kalmış/çalışmayan
+- [PROJE-DURUM-RAPORU.md](PROJE-DURUM-RAPORU.md) — çalışan/yarıda kalmış/çalışmayan
   özellikler ve kritik noktalar (son doğrulama: 2026-07-20)
 - [CHANGELOG.md](CHANGELOG.md)
-- [docs/TTKB-UYUM-POLITIKASI.md](docs/TTKB-UYUM-POLITIKASI.md)
-- [docs/UI_DIL_REHBERI.md](docs/UI_DIL_REHBERI.md)
+- [TTKB-UYUM-POLITIKASI.md](TTKB-UYUM-POLITIKASI.md)
+- [UI_DIL_REHBERI.md](UI_DIL_REHBERI.md)
 - [FTP-KURULUM.md](FTP-KURULUM.md)
 - [GIT-AKISI.md](GIT-AKISI.md)
 - [GUVENLIK-AYARLARI.md](GUVENLIK-AYARLARI.md)
 - [PDF-STORYBOARD-IMPORT.md](PDF-STORYBOARD-IMPORT.md)
-- [docs/EICERIK_WIDGET_SDK.md](docs/EICERIK_WIDGET_SDK.md)
-- [docs/MD-DOSYALARI-ANALIZI.md](docs/MD-DOSYALARI-ANALIZI.md)
+- [EICERIK_WIDGET_SDK.md](EICERIK_WIDGET_SDK.md)
+- [MD-DOSYALARI-ANALIZI.md](MD-DOSYALARI-ANALIZI.md)
+- [INCELEME-KILAVUZU.md](INCELEME-KILAVUZU.md)
+
+Scriptler `scripts/` altındadır (`hazirla-ftp.ps1`, `kaydet.ps1`, `oto-kaydet.ps1`,
+`yedekle.ps1`, `baslat.bat`).

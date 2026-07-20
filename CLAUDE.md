@@ -13,10 +13,10 @@ yok).
 1. [AGENTS.md](AGENTS.md) — TTKB (öğrenciye görünen içerik) politikası, ajan kuralları.
 2. [docs/TTKB-UYUM-POLITIKASI.md](docs/TTKB-UYUM-POLITIKASI.md) — önizleme/HTML/SCORM
    çıktısı için bağlayıcı uyum politikası.
-3. [SISTEM-REHBERI.md](SISTEM-REHBERI.md) — mimari, çalışma ortamları, komutlar, bilinen
-   riskler için tek giriş noktası.
+3. [docs/SISTEM-REHBERI.md](docs/SISTEM-REHBERI.md) — mimari, çalışma ortamları, komutlar,
+   bilinen riskler için tek giriş noktası.
 
-Kod mimarisi, dosya yapısı ve komutlar için tekrar üretmek yerine SISTEM-REHBERI.md'ye
+Kod mimarisi, dosya yapısı ve komutlar için tekrar üretmek yerine docs/SISTEM-REHBERI.md'ye
 bakılmalı; burada yalnız güncel durum özeti tutulur.
 
 ## Güncel Durum (son doğrulama: 2026-07-20)
