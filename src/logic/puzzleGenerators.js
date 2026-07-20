@@ -1,3 +1,5 @@
+import { shuffleArray } from './uiPrimitives';
+
 function createEmptyGrid(rows, cols) {
   return Array.from({ length: rows }, () =>
     Array.from({ length: cols }, () => ({ letter: null, number: null, isBlock: false }))
@@ -174,7 +176,7 @@ export function generateCrossword(questions, rows, cols) {
       break;
     }
     const shuffled = attempt > 0
-      ? [...cleanQuestions].sort(() => Math.random() - 0.5)
+      ? shuffleArray(cleanQuestions)
       : [...cleanQuestions];
     const grid = createEmptyGrid(rows, cols);
     const placed = [];
@@ -313,7 +315,7 @@ function solveSudoku(grid, row = 0, col = 0) {
   if (col === 9) return solveSudoku(grid, row + 1, 0);
   if (grid[row][col] !== 0) return solveSudoku(grid, row, col + 1);
 
-  const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
+  const nums = shuffleArray([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   for (const num of nums) {
     if (isValidSudoku(grid, row, col, num)) {
       grid[row][col] = num;
@@ -332,13 +334,13 @@ export function generateSudoku(difficulty = 'medium') {
 
   const removeCounts = { easy: 30, medium: 45, hard: 55 };
   const toRemove = removeCounts[difficulty] || 45;
-  const cells = [];
+  let cells = [];
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
       cells.push({ r, c });
     }
   }
-  cells.sort(() => Math.random() - 0.5);
+  cells = shuffleArray(cells);
 
   for (let i = 0; i < toRemove && i < cells.length; i++) {
     grid[cells[i].r][cells[i].c] = 0;
@@ -414,5 +416,5 @@ export function generateMemoryPairs(pairs) {
     cards.push({ id: p.id + '_b', pairId: p.id, text: p.answer });
   });
 
-  return { cards: cards.sort(() => Math.random() - 0.5) };
+  return { cards: shuffleArray(cards) };
 }
