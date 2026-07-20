@@ -82,13 +82,22 @@ const engineCode = processFile('src/utils/storylineRuntimeEngine.js', engineMapp
 const escapedRuntimeCode = runtimeCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 const escapedEngineCode = engineCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 
-fs.writeFileSync(
+// Guvenlik/hijyen: uzerine yazmadan once mevcut generated dosyalarin yedegini al
+// (B-360 — bu script daha once yedeksiz calisiyordu).
+function backupThenWrite(targetPath, content) {
+  if (fs.existsSync(targetPath)) {
+    fs.copyFileSync(targetPath, targetPath + '.bak');
+  }
+  fs.writeFileSync(targetPath, content);
+}
+
+backupThenWrite(
   'src/generated/storylineRuntimeCore.js',
   'export const STORYLINE_RUNTIME_CORE_SCRIPT = `\n' + escapedRuntimeCode + '\n`;\n'
 );
-fs.writeFileSync(
+backupThenWrite(
   'src/generated/storylineRuntimeEngine.js',
   'export const STORYLINE_RUNTIME_ENGINE_SCRIPT = `\n' + escapedEngineCode + '\n`;\n'
 );
 
-console.log('Generated files updated successfully.');
+console.log('Generated files updated successfully. Onceki icerik .bak olarak yedeklendi.');

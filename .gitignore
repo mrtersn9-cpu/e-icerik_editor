@@ -68,6 +68,9 @@ temp_bulmaca/
 tmp_bulmaca_inceleme/
 /*.zip
 
+# extract-runtime-inline.mjs tarafından üretilen otomatik yedekler
+src/generated/*.bak
+
 # Geri yükleme / kurtarma yedekleri (bilinçli, ama izlenmemeli)
 GERI-YUKLEME-ICIN/
 GERI-YUKLEME-NOTLARI.txt

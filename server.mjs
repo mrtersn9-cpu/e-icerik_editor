@@ -1172,10 +1172,11 @@ function createProject(userId, name, state) {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   const projectName = String(name || "").trim() || "Yeni Proje";
+  const scrubbedState = scrubEditorPayloadSecrets(state || emptyEditorState()).value;
   db.prepare(`
     INSERT INTO projects (id, user_id, name, payload, saved_at, created_at, published_version_id)
     VALUES (?, ?, ?, ?, ?, ?, NULL)
-  `).run(id, userId, projectName, JSON.stringify(state || emptyEditorState()), timestamp, timestamp);
+  `).run(id, userId, projectName, JSON.stringify(scrubbedState), timestamp, timestamp);
   return getProject(id, userId);
 }
 
@@ -1184,11 +1185,12 @@ function saveProjectDraft(userId, projectId, state, name = null) {
   if (!project) throw new Error("Project not found");
   const timestamp = new Date().toISOString();
   const projectName = name && String(name).trim() ? String(name).trim() : project.name;
+  const scrubbedState = scrubEditorPayloadSecrets(state || {}).value;
   db.prepare(`
     UPDATE projects
     SET name = ?, payload = ?, saved_at = ?
     WHERE id = ? AND user_id = ?
-  `).run(projectName, JSON.stringify(state || {}), timestamp, projectId, userId);
+  `).run(projectName, JSON.stringify(scrubbedState), timestamp, projectId, userId);
   return getProject(projectId, userId);
 }
 
@@ -1218,7 +1220,7 @@ function createProjectVersion(userId, projectId, label, publish = false, stateOv
   const versionId = randomUUID();
   const createdAt = new Date().toISOString();
   const versionLabel = String(label || "").trim() || `Sürüm ${versionNo}`;
-  const payload = stateOverride ?? project.state;
+  const payload = scrubEditorPayloadSecrets(stateOverride ?? project.state).value;
 
   if (publish) {
     db.prepare("UPDATE project_versions SET is_published = 0 WHERE project_id = ?").run(projectId);
@@ -1531,7 +1533,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/status" && req.method === "POST") {
       const body = await readBody(req);
       const requestSession = resolveRequestSession(req);
-      if (requestSession.tokenInvalid) {
+      if (!requestSession.tokenValid) {
         sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
         return;
       }
@@ -1653,7 +1655,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/heartbeat" && req.method === "POST") {
       const body = await readBody(req);
       const requestSession = resolveRequestSession(req);
-      if (requestSession.tokenInvalid) {
+      if (!requestSession.tokenValid) {
         sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
         return;
       }
@@ -1692,7 +1694,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/auth/logout" && req.method === "POST") {
       const body = await readBody(req);
       const requestSession = resolveRequestSession(req);
-      if (requestSession.tokenInvalid) {
+      if (!requestSession.tokenValid) {
         sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
         return;
       }
@@ -1718,7 +1720,7 @@ const server = http.createServer(async (req, res) => {
       const requestSession = resolveRequestSession(req);
       currentUser = resolveFixedUser(requestSession.userId);
       currentSessionId = String(requestSession.sessionId || "").trim();
-      if (requestSession.tokenInvalid) {
+      if (!requestSession.tokenValid) {
         sendJson(res, 401, { ok: false, code: "INVALID_SESSION_TOKEN", error: "Oturum token gecersiz" });
         return;
       }

@@ -371,6 +371,13 @@ try {
         }
 
         $file = $_FILES['file'];
+        // Guvenlik: PHP ini limitlerine guvenmeyip acik bir uygulama-seviyesi sinir
+        // koyuyoruz (editor tarafindaki scormMediaInline.js ile ayni 25 MB sinirina uyumlu).
+        $maxUploadBytes = 25 * 1024 * 1024;
+        if ($file['size'] > $maxUploadBytes) {
+            send_json(400, ['ok' => false, 'error' => 'Dosya boyutu 25 MB sinirini asiyor.']);
+        }
+
         $mimeToExt = [
             'image/jpeg' => 'jpg',
             'image/png'  => 'png',
