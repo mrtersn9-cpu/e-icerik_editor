@@ -129,6 +129,8 @@ npm run build
 
 - [AGENTS.md](AGENTS.md)
 - [SISTEM-REHBERI.md](SISTEM-REHBERI.md)
+- [docs/PROJE-DURUM-RAPORU.md](docs/PROJE-DURUM-RAPORU.md) — çalışan/yarıda kalmış/çalışmayan
+  özellikler ve kritik noktalar (son doğrulama: 2026-07-20)
 - [CHANGELOG.md](CHANGELOG.md)
 - [docs/TTKB-UYUM-POLITIKASI.md](docs/TTKB-UYUM-POLITIKASI.md)
 - [docs/UI_DIL_REHBERI.md](docs/UI_DIL_REHBERI.md)
