@@ -55,6 +55,10 @@ import {
   ungroupActivitySelection,
 } from '../../logic/objectLayout';
 import {
+  countActivityObjectTextMatches,
+  replaceActivityObjectTextMatches,
+} from '../../logic/objectTextSearch';
+import {
   DEFAULT_ANSWER_LAYER_STYLE_PRESET_ID,
   EDUCATION_BUTTON_TEXT_SIZE_SMALL,
   SCENE_TEMPLATE_OPTIONS,
@@ -1409,27 +1413,10 @@ export default function useRibbonController({
           });
           showToast?.(`${count} metin güncellendi`);
         }),
-      countObjectText: (search) => {
-        if (!activity || !search) return 0;
-        return (activity.objects || []).reduce((count, item) => {
-          const fields = [item.label, item.text].filter((v) => typeof v === 'string');
-          return count + fields.reduce((c, value) => c + value.split(search).length - 1, 0);
-        }, 0);
-      },
+      countObjectText: (search) => countActivityObjectTextMatches(activity, search),
       replaceObjectText: (search, replace) => {
-        if (!activity || !search) return 0;
-        let count = 0;
-        const objects = (activity.objects || []).map((item) => {
-          let next = item;
-          ['label', 'text'].forEach((key) => {
-            if (typeof next[key] === 'string' && next[key].includes(search)) {
-              count += next[key].split(search).length - 1;
-              next = { ...next, [key]: next[key].split(search).join(replace) };
-            }
-          });
-          return next;
-        });
-        if (count) updateActivity({ ...activity, objects });
+        const { count, objects, slides } = replaceActivityObjectTextMatches(activity, search, replace);
+        if (count) updateActivity({ ...activity, objects, slides });
         return count;
       },
       pasteObjectStyle: () => {
