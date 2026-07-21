@@ -1,5 +1,6 @@
 import { patchActivity } from '../features/cevap/cevapActions';
 import {
+  cloneActivityForDuplicate,
   commitMaterializedActivity,
   materializeActivitySlide,
   pasteActivitySlide,
@@ -192,5 +193,104 @@ describe('materializeActivitySlide', () => {
     expect(pasted.layers.some((layer) => layer.id === pasted.triggers[0].value)).toBe(true);
     expect(pasted.triggers[0].conditions[0].sourceId).toBe(pasted.objects[0].id);
     expect(pasted.objects[2].linkedActionTargetId).toBe(pasted.objects[1].id);
+  });
+});
+
+describe('cloneActivityForDuplicate', () => {
+  test('remaps cross-slide/object/layer trigger references to the fresh copy ids, but leaves activity-id and variable-id references untouched', () => {
+    const slide1 = {
+      id: 'slide-1',
+      name: 'Soru',
+      sceneName: 'Soru',
+      activeLayerId: 'layer-1',
+      layers: [
+        { id: 'base', name: 'Base Layer', kind: 'base' },
+        { id: 'layer-1', name: 'Cevap', kind: 'overlay' },
+      ],
+      objects: [
+        { id: 'btn-1', type: 'button', label: 'Kontrol', layerId: 'base' },
+        { id: 'drop-1', type: 'dropzone', label: 'Hedef', layerId: 'layer-1' },
+      ],
+      dragDropMatches: { 'btn-1': 'drop-1' },
+      timeline: [{ id: 'tl-1', objectId: 'btn-1', keyframes: [{ id: 'kf-1', time: 0 }] }],
+      triggers: [
+        // object referansı ("Goster" -> value bir nesne id'sidir)
+        { id: 'trg-object', target: 'btn-1', when: 'onClick', action: 'Goster', value: 'drop-1' },
+        // katman referansı ("KatmanaGec" -> value bir katman id'sidir)
+        { id: 'trg-layer', target: 'btn-1', when: 'onClick', action: 'KatmanaGec', value: 'layer-1' },
+        // AYNI etkinlik içindeki başka bir SAHNE referansı ("SliderGec" -> value bir slide id'sidir)
+        { id: 'trg-slide', target: 'btn-1', when: 'onClick', action: 'SliderGec', value: 'slide-2' },
+        // BAŞKA bir ETKİNLİĞE referans ("SayfaGec" -> value bir activity id'sidir) — DEĞİŞMEMELİ
+        { id: 'trg-activity', target: 'btn-1', when: 'onClick', action: 'SayfaGec', value: 'other-activity-id' },
+        // DEĞİŞKEN referansı — DEĞİŞMEMELİ (değişkenler bu fonksiyonda yeniden üretilmiyor)
+        { id: 'trg-variable', target: 'btn-1', when: 'onClick', action: 'DegiskenAta', value: 'var-1' },
+      ],
+    };
+    const slide2 = { id: 'slide-2', name: 'Sonuç', objects: [] };
+    const activity = {
+      id: 'act-dup',
+      name: 'Orijinal Etkinlik',
+      currentSlideId: 'slide-1',
+      startSlideId: 'slide-1',
+      slides: [slide1, slide2],
+      // Etkinlik köküne aynalanmış (materializeActivity tarafından yazılan) slide-1 verisi
+      layers: slide1.layers,
+      activeLayerId: slide1.activeLayerId,
+      objects: slide1.objects,
+      triggers: slide1.triggers,
+      timeline: slide1.timeline,
+      dragDropMatches: slide1.dragDropMatches,
+    };
+
+    const copy = cloneActivityForDuplicate(activity);
+
+    // Etkinlik ve sahne id'leri yeni
+    expect(copy.id).not.toBe(activity.id);
+    expect(copy.slides).toHaveLength(2);
+    expect(copy.slides[0].id).not.toBe('slide-1');
+    expect(copy.slides[1].id).not.toBe('slide-2');
+    expect(copy.currentSlideId).toBe(copy.slides[0].id);
+    expect(copy.startSlideId).toBe(copy.slides[0].id);
+
+    const newBtn = copy.slides[0].objects.find((object) => object.label === 'Kontrol');
+    const newDrop = copy.slides[0].objects.find((object) => object.label === 'Hedef');
+    expect(newBtn.id).not.toBe('btn-1');
+    expect(newDrop.id).not.toBe('drop-1');
+
+    const triggerByOldId = Object.fromEntries(
+      slide1.triggers.map((trigger, index) => [trigger.id, copy.slides[0].triggers[index]])
+    );
+
+    // Nesne referansı yeni nesne id'sine güncellendi
+    expect(triggerByOldId['trg-object'].value).toBe(newDrop.id);
+    expect(triggerByOldId['trg-object'].value).not.toBe('drop-1');
+
+    // Katman referansı yeni katman id'sine güncellendi (drop nesnesinin layerId'siyle aynı katman)
+    expect(triggerByOldId['trg-layer'].value).toBe(newDrop.layerId);
+    expect(triggerByOldId['trg-layer'].value).not.toBe('layer-1');
+
+    // Aynı etkinlik içindeki sahne referansı yeni sahne id'sine güncellendi
+    expect(triggerByOldId['trg-slide'].value).toBe(copy.slides[1].id);
+    expect(triggerByOldId['trg-slide'].value).not.toBe('slide-2');
+
+    // Başka bir etkinliğe referans DEĞİŞMEDİ (o etkinlik kopyalanmıyor)
+    expect(triggerByOldId['trg-activity'].value).toBe('other-activity-id');
+
+    // Değişken referansı DEĞİŞMEDİ
+    expect(triggerByOldId['trg-variable'].value).toBe('var-1');
+
+    // dragDropMatches ve timeline yeni nesne id'lerine göre güncellendi
+    expect(Object.keys(copy.slides[0].dragDropMatches)).toEqual([newBtn.id]);
+    expect(copy.slides[0].dragDropMatches[newBtn.id]).toBe(newDrop.id);
+    expect(copy.slides[0].timeline[0].objectId).toBe(newBtn.id);
+
+    // Etkinlik köküne aynalanan alanlar güncel sahneyle senkron (bayat id kalmıyor)
+    expect(copy.objects).toEqual(copy.slides[0].objects);
+    expect(copy.triggers).toEqual(copy.slides[0].triggers);
+
+    // Orijinal etkinlik değişmedi (saf/immutable kopyalama)
+    expect(activity.slides[0].id).toBe('slide-1');
+    expect(activity.slides[0].objects[0].id).toBe('btn-1');
+    expect(activity.slides[0].triggers[0].value).toBe('drop-1');
   });
 });

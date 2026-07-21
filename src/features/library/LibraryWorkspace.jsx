@@ -31,7 +31,12 @@ import {
   OTHER_ACTIVITY_CREATE_PRESETS,
   STANDARD_ACTIVITY_CREATE_PRESETS,
 } from '../../constants';
-import { getActivityLayers, getActivitySlides, selectActivitySlide } from '../../logic/activityHelpers';
+import {
+  cloneActivityForDuplicate,
+  getActivityLayers,
+  getActivitySlides,
+  selectActivitySlide,
+} from '../../logic/activityHelpers';
 import {
   ensureStandardActivityScaffold,
   SCENE_TEMPLATE_LAUNCH_PAGE_ID,
@@ -529,12 +534,11 @@ export default function LibraryWorkspace({
     if (activity.id === focusedActivityId) setFocusedActivityId('');
   };
   const duplicateActivity = (activity) => {
-    const copy = JSON.parse(JSON.stringify(activity));
-    copy.id = uid();
+    // Sahne/nesne/katman id'lerini yeniden üretirken tetikleyici, zaman çizelgesi ve
+    // sürükle-bırak eşleştirme referanslarını da yeni id'lere göre günceller
+    // (bkz. src/logic/activityHelpers.js -> cloneActivityForDuplicate).
+    const copy = cloneActivityForDuplicate(activity);
     copy.name = `${activity.name} (Kopya)`;
-    if (Array.isArray(copy.slides)) copy.slides = copy.slides.map((slide) => ({ ...slide, id: uid() }));
-    if (Array.isArray(copy.objects)) copy.objects = copy.objects.map((object) => ({ ...object, id: uid() }));
-    if (Array.isArray(copy.triggers)) copy.triggers = copy.triggers.map((trigger) => ({ ...trigger, id: uid() }));
     onActivitiesChange([...activities, copy]);
     setFocusedActivityId(copy.id);
   };
