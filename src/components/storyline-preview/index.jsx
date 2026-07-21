@@ -2293,6 +2293,7 @@ function StorylinePreviewSharedRuntimeStage({
     const audioObjects = runtimeApi
       .storylineRendererVisibleObjects({ slide: activity, state: runtimeState })
       .filter((object) => object?.type === 'audio' && object.mediaUrl);
+    const audioNodes = [];
     audioObjects.forEach((object) => {
       const mediaKey = runtimeApi.storylineRendererObjectKey(object);
       const hasExplicitMediaTrigger = (activity.triggers || []).some((trigger) => {
@@ -2319,6 +2320,7 @@ function StorylinePreviewSharedRuntimeStage({
       });
       audio.addEventListener('play', () => onRunTriggers?.(object.id, 'onMediaStart'));
       stage.appendChild(audio);
+      audioNodes.push(audio);
       if (object.autoPlay === true || !hasExplicitMediaTrigger) {
         const result = audio.play?.();
         if (result?.catch) result.catch(() => {});
@@ -2399,6 +2401,21 @@ function StorylinePreviewSharedRuntimeStage({
 
     return () => {
       removers.forEach((remove) => remove());
+      // Bu efekt her yeniden çalıştığında yeni <audio> elemanları ekleniyordu ama
+      // öncekiler hiç durdurulmuyordu ("hayalet ses" — DOM'dan kopsalar bile
+      // tarayıcı çalmaya devam edebiliyordu). Efekt yeniden tetiklenmeden veya
+      // component unmount olmadan önce bu turda eklenen tüm ses elemanları
+      // durdurulup DOM'dan kaldırılır.
+      audioNodes.forEach((node) => {
+        try {
+          node.pause();
+          node.removeAttribute('src');
+          node.load();
+        } catch {
+          // Elde edilemeyen medya durumlarında sessiz geç — temizlik en iyi çaba.
+        }
+        node.remove();
+      });
     };
   }, [
     activeLayerId,
