@@ -30,7 +30,7 @@ export default function BranchingDiagramModal({
         const target = trigger.value;
         const isRelative = typeof target === 'string' && target.startsWith('__');
         if (trigger.action === 'SayfaGec' && target && !isRelative)
-          addEdge(act.id, target, trigger.label || 'SayfaGec', '#2563eb');
+          addEdge(act.id, target, trigger.label || 'SayfaGec', 'var(--eic-light-accent)');
         if (trigger.action === 'SliderGec' && target && !isRelative)
           addEdge(act.id, target, trigger.label || 'SlideraGec', '#7c3aed');
       });
@@ -79,19 +79,19 @@ export default function BranchingDiagramModal({
             gap: 16,
             flexWrap: 'wrap',
             fontSize: 11,
-            color: '#94a3b8',
+            color: 'var(--eic-light-border-strong)',
             width: '100%',
           }}
         >
           <span>—— kesikli: varsayılan sıra</span>
-          <span style={{ color: '#2563eb' }}>—— mavi: SayfaGec trigger</span>
+          <span style={{ color: 'var(--eic-light-accent)' }}>—— mavi: SayfaGec trigger</span>
           <span style={{ color: '#7c3aed' }}>—— mor: SlideraGec trigger</span>
         </div>
       }
     >
         <div style={{ overflowX: 'auto' }}>
           {graph.nodes.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', fontSize: 14 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--eic-light-border-strong)', fontSize: 14 }}>
               Henüz etkinlik yok.
             </div>
           ) : (
@@ -106,7 +106,7 @@ export default function BranchingDiagramModal({
                   markerHeight="8"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--eic-light-border-strong)" />
                 </marker>
                 <marker
                   id="arrow-blue"
@@ -117,7 +117,7 @@ export default function BranchingDiagramModal({
                   markerHeight="8"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" />
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--eic-light-accent)" />
                 </marker>
               </defs>
               {graph.edges.map((edge, i) => {
@@ -135,7 +135,7 @@ export default function BranchingDiagramModal({
                     <path
                       d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
                       fill="none"
-                      stroke={edge.color || '#94a3b8'}
+                      stroke={edge.color || 'var(--eic-light-border-strong)'}
                       strokeWidth={isDefault ? 1.5 : 2}
                       markerEnd={isDefault ? 'url(#arrow)' : 'url(#arrow-blue)'}
                       strokeDasharray={isDefault ? '6 3' : 'none'}
@@ -145,7 +145,7 @@ export default function BranchingDiagramModal({
                         x={(x1 + x2) / 2}
                         y={midY - 4}
                         textAnchor="middle"
-                        fill={edge.color || '#94a3b8'}
+                        fill={edge.color || 'var(--eic-light-border-strong)'}
                         fontSize={9}
                         fontWeight={700}
                       >
@@ -158,7 +158,7 @@ export default function BranchingDiagramModal({
               {graph.nodes.map((node) => {
                 const pos = nodePositions[node.id];
                 const isCurrent = node.id === currentActivityId;
-                const bgColor = isCurrent ? '#dbeafe' : '#f8fafc';
+                const bgColor = isCurrent ? '#dbeafe' : 'var(--eic-light-bg)';
                 const borderColor = isCurrent ? '#3b82f6' : '#dbe7f5';
                 const typeColor = typeColors[node.type] || '#64748b';
                 return (
@@ -180,7 +180,7 @@ export default function BranchingDiagramModal({
                       y={pos.y + 18}
                       fontSize={11}
                       fontWeight={800}
-                      fill="#0f172a"
+                      fill="var(--eic-light-text)"
                     >
                       {(node.name || '').slice(0, 22)}
                       {(node.name || '').length > 22 ? '…' : ''}

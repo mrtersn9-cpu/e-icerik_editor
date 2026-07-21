@@ -73,7 +73,7 @@ export default function VariablesManagerModal({
           width: 'min(920px, 94vw)',
           minHeight: 520,
           maxHeight: '88vh',
-          background: '#ffffff',
+          background: 'var(--eic-light-panel)',
           border: '1px solid #cfd8e3',
           borderRadius: 12,
           boxShadow: '0 24px 60px rgba(15,23,42,.22)',
@@ -156,7 +156,7 @@ export default function VariablesManagerModal({
                 height: 32,
                 borderRadius: 0,
                 border: '1px solid #c9d4df',
-                background: '#ffffff',
+                background: 'var(--eic-light-panel)',
                 color: '#334155',
                 padding: '0 10px',
                 fontSize: 12,
@@ -180,8 +180,8 @@ export default function VariablesManagerModal({
                 height: 30,
                 borderRadius: 0,
                 border: '1px solid #b8c7d9',
-                background: canEditProjectRows ? '#ffffff' : '#f8fafc',
-                color: canEditProjectRows ? '#3b9c34' : '#94a3b8',
+                background: canEditProjectRows ? 'var(--eic-light-panel)' : 'var(--eic-light-bg)',
+                color: canEditProjectRows ? '#3b9c34' : 'var(--eic-light-border-strong)',
                 cursor: canEditProjectRows ? 'pointer' : 'default',
                 fontSize: 20,
                 lineHeight: 1,
@@ -211,8 +211,8 @@ export default function VariablesManagerModal({
                 height: 30,
                 borderRadius: 0,
                 border: '1px solid #b8c7d9',
-                background: '#ffffff',
-                color: selectedProjectVariable && canEditProjectRows ? '#64748b' : '#cbd5e1',
+                background: 'var(--eic-light-panel)',
+                color: selectedProjectVariable && canEditProjectRows ? '#64748b' : 'var(--eic-light-border)',
                 cursor: selectedProjectVariable && canEditProjectRows ? 'pointer' : 'default',
                 fontSize: 14,
               }}
@@ -247,8 +247,8 @@ export default function VariablesManagerModal({
                 height: 30,
                 borderRadius: 0,
                 border: '1px solid #b8c7d9',
-                background: '#ffffff',
-                color: selectedProjectVariable && canEditProjectRows ? '#e11d48' : '#cbd5e1',
+                background: 'var(--eic-light-panel)',
+                color: selectedProjectVariable && canEditProjectRows ? '#e11d48' : 'var(--eic-light-border)',
                 cursor: selectedProjectVariable && canEditProjectRows ? 'pointer' : 'default',
                 fontSize: 15,
               }}
@@ -273,7 +273,7 @@ export default function VariablesManagerModal({
               gridTemplateColumns: 'minmax(220px,1.5fr) 140px minmax(180px,1fr) 100px',
               borderTop: '1px solid #dbe4ee',
               borderBottom: '1px solid #dbe4ee',
-              background: '#f8fafc',
+              background: 'var(--eic-light-bg)',
               color: '#52667a',
               fontSize: 12,
               fontWeight: 500,
@@ -296,8 +296,8 @@ export default function VariablesManagerModal({
                     display: 'grid',
                     gridTemplateColumns: 'minmax(220px,1.5fr) 140px minmax(180px,1fr) 100px',
                     borderBottom: '1px solid #edf2f7',
-                    background: isSelected ? '#228be6' : '#ffffff',
-                    color: isSelected ? '#ffffff' : '#334155',
+                    background: isSelected ? '#228be6' : 'var(--eic-light-panel)',
+                    color: isSelected ? 'var(--eic-light-panel)' : '#334155',
                     fontSize: 12,
                     cursor: 'pointer',
                   }}
@@ -434,7 +434,7 @@ export default function VariablesManagerModal({
               );
             })}
             {filteredRows.length === 0 && (
-              <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>
+              <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--eic-light-border-strong)' }}>
                 Aramanla eşleşen değişken bulunamadı.
               </div>
             )}
@@ -449,7 +449,7 @@ export default function VariablesManagerModal({
             justifyContent: 'space-between',
             padding: '0 16px',
             borderTop: '1px solid #dbe4ee',
-            background: '#ffffff',
+            background: 'var(--eic-light-panel)',
           }}
         >
           <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -463,7 +463,7 @@ export default function VariablesManagerModal({
               borderRadius: 18,
               border: 'none',
               background: '#228be6',
-              color: '#ffffff',
+              color: 'var(--eic-light-panel)',
               fontSize: 12,
               fontWeight: 700,
               cursor: 'pointer',
