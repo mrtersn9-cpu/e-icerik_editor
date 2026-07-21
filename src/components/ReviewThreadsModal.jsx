@@ -17,6 +17,7 @@ export default function ReviewThreadsModal({
   const [newMessage, setNewMessage] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const loadThreads = useCallback(async () => {
     if (!projectId) return;
@@ -24,8 +25,10 @@ export default function ReviewThreadsModal({
     try {
       const data = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/threads`);
       setThreads(data.threads || []);
-    } catch {
+      setError('');
+    } catch (err) {
       setThreads([]);
+      setError(err?.message || 'Yorumlar yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -48,33 +51,46 @@ export default function ReviewThreadsModal({
       });
       setNewMessage('');
       setReplyTo(null);
+      setError('');
       await loadThreads();
+    } catch (err) {
+      setError(err?.message || 'Yorum gönderilemedi. Tekrar deneyin.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleResolve = async (thread) => {
-    await apiRequest(
-      `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolved: !thread.resolved }),
-      }
-    );
-    await loadThreads();
+    try {
+      await apiRequest(
+        `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resolved: !thread.resolved }),
+        }
+      );
+      setError('');
+      await loadThreads();
+    } catch (err) {
+      setError(err?.message || 'Durum güncellenemedi. Tekrar deneyin.');
+    }
   };
 
   const handleDelete = async (thread) => {
     if (!window.confirm('Bu yorum silinsin mi?')) return;
-    await apiRequest(
-      `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
-      {
-        method: 'DELETE',
-      }
-    );
-    await loadThreads();
+    try {
+      await apiRequest(
+        `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(thread.id)}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      setError('');
+      await loadThreads();
+    } catch (err) {
+      setError(err?.message || 'Yorum silinemedi. Tekrar deneyin.');
+    }
   };
 
   if (!open) return null;
@@ -114,6 +130,42 @@ export default function ReviewThreadsModal({
   return (
     <Modal title="Yorumlar & Geri Bildirim" onClose={onClose} width={580}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {error && (
+          <div
+            role="alert"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: '#fee2e2',
+              border: '1px solid #fecaca',
+              color: '#991b1b',
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            <span aria-hidden="true">!</span>
+            <span style={{ flex: 1 }}>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError('')}
+              aria-label="Hata mesajını kapat"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: '#991b1b',
+                cursor: 'pointer',
+                fontWeight: 800,
+                fontSize: 13,
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {tabBtn('open', 'Açık', openCount)}
           {tabBtn('resolved', 'Çözüldü', resolvedCount)}
