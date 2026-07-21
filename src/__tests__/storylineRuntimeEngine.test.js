@@ -789,6 +789,16 @@ describe('storyline runtime kısayol tuşu değerlendirmesi', () => {
     const slide = { type: 'shortcut-key', shortcutAnswers: [{ combo: 'Ctrl+S' }] };
     expect(evaluateStorylineRuntimeShortcut({ slide, state: {} }).success).toBe(false);
   });
+
+  test('regresyon: sonuç her zaman completed:true ve type:"shortcut-key" döndürür (SCORM tamamlanma kilidi B-şortcut düzeltmesi)', () => {
+    const slide = { type: 'shortcut-key', shortcutAnswers: [{ combo: 'Ctrl+S' }] };
+    const correct = evaluateStorylineRuntimeShortcut({ slide, state: { shortcutPressed: 'ctrl+s' } });
+    expect(correct.completed).toBe(true);
+    expect(correct.type).toBe('shortcut-key');
+    const empty = evaluateStorylineRuntimeShortcut({ slide, state: {} });
+    expect(empty.completed).toBe(true);
+    expect(empty.type).toBe('shortcut-key');
+  });
 });
 
 describe('storyline runtime kısa cevap eşleşme modu', () => {

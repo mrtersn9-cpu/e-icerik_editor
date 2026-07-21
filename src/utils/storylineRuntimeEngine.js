@@ -1488,12 +1488,13 @@ export function evaluateStorylineRuntimeShortcut({ slide = {}, state = {} } = {}
     .filter(Boolean);
   const pressed = normalizeShortcutCombo(state.shortcutPressed || '');
   if (!pressed) {
-    return { type: 'shortcut', success: false, score: 0, feedback: 'empty' };
+    return { type: 'shortcut-key', success: false, completed: true, score: 0, feedback: 'empty' };
   }
   const success = accepted.includes(pressed);
   return {
-    type: 'shortcut',
+    type: 'shortcut-key',
     success,
+    completed: true,
     score: success ? 1 : 0,
     pressed,
     feedback: success ? 'correct' : 'incorrect',

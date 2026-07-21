@@ -398,6 +398,9 @@ function normalizeRuntimeSlide(activity = {}, slide = {}, slideIndex = 0, activi
     slideAdvance: merged.slideAdvance || activity.slideAdvance || 'user',
     slideRevisit: merged.slideRevisit || activity.slideRevisit || 'resume',
     slideAutoAdvanceDelay: Number(merged.slideAutoAdvanceDelay ?? activity.slideAutoAdvanceDelay ?? 5) || 5,
+    // Etkinlik ayarlarındaki tamamlanma modu ("required"/"optional") runtime'a taşınır;
+    // typed SCORM oynatıcı bunu kurs tamamlanma zorunluluğunu belirlemek için okur.
+    completionMode: activity.settings?.completionMode || 'required',
   };
 }
 

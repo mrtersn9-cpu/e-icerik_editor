@@ -239,9 +239,10 @@ function typedAggregateScore() {
   return Math.round(earned / Math.max(1, total) * 100);
 }
 function typedEveryCompleted() {
-  return PAYLOAD.slides.filter(typedActivitySupported).every(item => 
-    state.activityScores && state.activityScores[item.id] && state.activityScores[item.id].completed
-  );
+  return PAYLOAD.slides.filter(typedActivitySupported).every(item => {
+    if (item.completionMode === "optional") return true;
+    return state.activityScores && state.activityScores[item.id] && state.activityScores[item.id].completed;
+  });
 }
 function checkCourseCompletion() {
   const hasTyped = PAYLOAD.slides.some(typedActivitySupported);
@@ -334,8 +335,8 @@ function typedEvaluate(current) {
   if (current.type === "shortcut-key") {
     var shortcutAccepted = (current.shortcutAnswers || []).map(function (a) { return typedNormShortcut(a && a.combo != null ? a.combo : a); }).filter(Boolean);
     var shortcutPressed = typedNormShortcut(state.shortcutPressed || "");
-    if (!shortcutPressed) return { type: "shortcut", success: false };
-    return { type: "shortcut", success: shortcutAccepted.indexOf(shortcutPressed) >= 0 };
+    if (!shortcutPressed) return { type: "shortcut-key", success: false, completed: true };
+    return { type: "shortcut-key", success: shortcutAccepted.indexOf(shortcutPressed) >= 0, completed: true };
   }
   if (current.type === "content-tabs") {
     if (current.contentRequireAll) {
