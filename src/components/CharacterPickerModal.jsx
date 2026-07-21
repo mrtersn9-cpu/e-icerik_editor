@@ -59,9 +59,9 @@ export default function CharacterPickerModal({ open, onClose, onSelect, title = 
                   height: 30,
                   padding: '0 12px',
                   borderRadius: 999,
-                  border: `1px solid ${active ? '#2563eb' : '#e2e8f0'}`,
-                  background: active ? '#eff6ff' : '#fff',
-                  color: active ? '#1d4ed8' : '#475569',
+                  border: `1px solid ${active ? 'var(--eic-light-accent)' : 'var(--eic-light-border-soft)'}`,
+                  background: active ? 'var(--eic-light-accent-soft)' : 'var(--eic-light-panel)',
+                  color: active ? 'var(--eic-light-accent-strong)' : 'var(--eic-light-muted)',
                   fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
@@ -95,8 +95,8 @@ export default function CharacterPickerModal({ open, onClose, onSelect, title = 
             padding: 10,
             borderRadius: 12,
             border: '1px dashed #93c5fd',
-            background: '#f8fbff',
-            color: '#1d4ed8',
+            background: 'var(--eic-light-panel-soft)',
+            color: 'var(--eic-light-accent-strong)',
             cursor: 'pointer',
             fontWeight: 800,
             fontSize: 12,
@@ -121,22 +121,22 @@ export default function CharacterPickerModal({ open, onClose, onSelect, title = 
               minHeight: 116,
               padding: 10,
               borderRadius: 12,
-              border: '1px solid #e2e8f0',
-              background: '#fff',
+              border: `1px solid var(--eic-light-border-soft)`,
+              background: 'var(--eic-light-panel)',
               color: '#334155',
               cursor: 'pointer',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = '#93c5fd';
-              e.currentTarget.style.background = '#f8fbff';
+              e.currentTarget.style.background = 'var(--eic-light-panel-soft)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#e2e8f0';
-              e.currentTarget.style.background = '#fff';
+              e.currentTarget.style.borderColor = 'var(--eic-light-border-soft)';
+              e.currentTarget.style.background = 'var(--eic-light-panel)';
             }}
           >
             <span style={{ fontSize: 44, lineHeight: 1 }}>{character.thumbnail}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, textAlign: 'center', color: '#475569' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textAlign: 'center', color: 'var(--eic-light-muted)' }}>
               {character.name}
             </span>
           </button>
