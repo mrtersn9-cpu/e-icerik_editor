@@ -24,7 +24,7 @@ function MasterThumbnail({ master }) {
         aspectRatio: '16 / 9',
         borderRadius: 8,
         overflow: 'hidden',
-        background: master.background || '#ffffff',
+        background: master.background || 'var(--eic-light-panel)',
         border: '1px solid rgba(15,23,42,.12)',
       }}
     >
@@ -72,10 +72,10 @@ export default function SlideMasterModal({ open, onClose, masters = [], currentI
                 <div
                   key={master.id}
                   style={{
-                    border: `2px solid ${active ? '#2563eb' : '#e2e8f0'}`,
+                    border: `2px solid ${active ? 'var(--eic-light-accent)' : 'var(--eic-light-border-soft)'}`,
                     borderRadius: 12,
                     padding: 10,
-                    background: active ? '#eff6ff' : '#fff',
+                    background: active ? 'var(--eic-light-accent-soft)' : 'var(--eic-light-panel)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 8,
@@ -91,7 +91,7 @@ export default function SlideMasterModal({ open, onClose, masters = [], currentI
                   </button>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{master.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--eic-light-text)' }}>{master.name}</div>
                       <div
                         style={{
                           fontSize: 11,
@@ -115,8 +115,8 @@ export default function SlideMasterModal({ open, onClose, masters = [], currentI
                           padding: '0 10px',
                           borderRadius: 8,
                           border: '1px solid #93c5fd',
-                          background: '#eff6ff',
-                          color: '#1d4ed8',
+                          background: 'var(--eic-light-accent-soft)',
+                          color: 'var(--eic-light-accent-strong)',
                           fontSize: 11,
                           fontWeight: 800,
                           cursor: 'pointer',
