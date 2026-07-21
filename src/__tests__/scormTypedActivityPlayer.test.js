@@ -297,6 +297,34 @@ describe('SCORM typed activity player', () => {
     captureBox.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
     document.querySelector('.typed-actions .typed-btn').click();
     expect(document.querySelector('.typed-feedback.correct')?.textContent).toContain('✓ Doğru');
+    // Regresyon: shortcut-key tamamlanma alanı (completed) eksikti, kurs hiç
+    // "tamamlandı" durumuna geçmiyordu. Tek sahneli pakette doğru tuş basıldıktan
+    // sonra kurs tamamlanma ekranı görünür olmalı.
+    expect(document.getElementById('complete')?.classList.contains('show')).toBe(true);
+  });
+
+  test('shortcut-key: completionMode "optional" iken hiç yanıtlanmasa da kurs tamamlanabilir', () => {
+    const html = buildStorylinePlayerHtml({
+      selActId: 'sc-optional',
+      activities: [
+        {
+          id: 'sc-optional',
+          name: 'İsteğe Bağlı Kısayol',
+          type: 'shortcut-key',
+          shortcutAnswers: [{ combo: 'Ctrl+S' }],
+          settings: { completionMode: 'optional' },
+        },
+      ],
+    });
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    document.body.innerHTML =
+      '<div id="stage"></div><div id="complete"><button id="closeComplete">Kapat</button></div>';
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+
+    // Hiçbir etkileşim yapılmadan (kısayol basılmadan), yalnızca sahne render'ı
+    // sonrası kurs tamamlanmış sayılmalı — çünkü etkinlik isteğe bağlı.
+    expect(document.getElementById('complete')?.classList.contains('show')).toBe(true);
   });
 
   test('carries ready button typography into typed SCORM player controls', () => {
