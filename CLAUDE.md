@@ -19,50 +19,61 @@ yok).
 Kod mimarisi, dosya yapısı ve komutlar için tekrar üretmek yerine docs/SISTEM-REHBERI.md'ye
 bakılmalı; burada yalnız güncel durum özeti tutulur.
 
-## Güncel Durum (son doğrulama: 2026-07-20)
+## Güncel Durum (son doğrulama: 2026-07-21)
 
 Ayrıntılı kanıtlı rapor: **[docs/PROJE-DURUM-RAPORU.md](docs/PROJE-DURUM-RAPORU.md)**
 (çalışan/yarıda kalmış/çalışmayan özellikler + kritik noktalar + mimari temizlik özeti,
-dosya:satır referanslı). Denetim geçmişi ve bulgu takibi: [docs/inceleme/](docs/inceleme/)
-(99-BIRLESIK-RAPOR.md konsolide sonuç).
+dosya:satır referanslı — 2026-07-20 tarihli, bazı maddeler 2026-07-21'de düzeltildi, bkz.
+aşağı). Denetim geçmişi: [docs/inceleme/](docs/inceleme/) (99-BIRLESIK-RAPOR.md).
 
-**Sağlık:** 349/349 test yeşil (42 dosya), lint temiz, `npm run build` başarılı.
-`CI=true npm run build` ESLint uyarılarını hataya çevirdiği için **başarısız** oluyor
+**Sağlık:** 368/368 test yeşil (45 dosya), lint temiz, `npm run build` başarılı.
+`CI=true npm run build` hâlâ ESLint uyarılarını hataya çevirdiği için başarısız oluyor
 (bkz. rapor § 4.6) — CI'ya bağlanmadan önce düzeltilmeli.
 
-**Aynı gün yapılan mimari temizlik** (rapor § 9): ölü/yetim kod ve 11 tehlikeli tek-seferlik
+**2026-07-20 mimari temizliği** (rapor § 9): ölü/yetim kod ve 11 tehlikeli tek-seferlik
 script silindi; `server.mjs` sır temizleme + token doğrulama açıkları ve PHP upload boyut
-sınırı kapatıldı; `PreviewExtraFlows.jsx` (2225→17 satır), `PdfCleanStudio.jsx`
-(5824→4944), `EIcerikEditor.jsx` (5001→4286) modüllere bölündü; ID üretimi ve zayıf shuffle
-tek yardımcıya konsolide edildi. Renk paleti (9 modal) ve toast sistemi (6 dosya)
-konsolidasyonu bilinçli olarak ertelendi (gerekçe raporda).
+sınırı kapatıldı; `PreviewExtraFlows.jsx`/`PdfCleanStudio.jsx`/`EIcerikEditor.jsx`
+modüllere bölündü; ID üretimi ve zayıf shuffle konsolide edildi; kök dizindeki `.md`/
+`.ps1`/`.bat` dosyaları `docs/`/`scripts/` altına taşındı.
 
-**Çalışmayan / kırık (öncelik sırasıyla, bu temizlik kapsamı dışında — davranış değişikliği,
-ayrı onay gerekiyor):**
-- `shortcut-key` etkinlik tipi SCORM'da hiçbir zaman "tamamlandı" işaretlenmiyor →
-  bu tipi içeren paket öğrenci tarafında asla tamamlanamıyor.
-  `src/utils/scormTypedActivityPlayer.js:334-338`, `src/utils/storylineRuntimeEngine.js:1485-1501`.
-- `duplicateActivity` kopyalanan etkinlikte trigger/nesne çapraz referanslarını remap
-  etmiyor → sessiz veri bozulması. `LibraryWorkspace.jsx:531-540`.
-- Karma etkinlikte tip değişimi cevap alanlarını siliyor, geri ekleme arayüzü yok.
-  `KarmaCevapPanel.jsx:74-79`.
-- "URL Aç" tetikleyicisinde URL girme alanı arayüzden hiç kurulamıyor.
-  `FormatRightPanel.jsx:318-363`.
-- Bul-Değiştir çok-sahneli etkinliklerde `slides[].objects`'i atlıyor.
-  `useRibbonController.js:1412-1434`.
+**2026-07-21: aşağıdaki maddeler düzeltildi** (önceden "çalışmayan/kırık" ve "yarıda kalmış"
+listesindeydi):
+- `shortcut-key` etkinlik tipi artık SCORM'da doğru tamamlanıyor (`completed:true` eksikliği
+  giderildi) — `scormTypedActivityPlayer.js`, `storylineRuntimeEngine.js`.
+- `completionMode` (opsiyonel/zorunlu) artık typed SCORM player tarafından okunuyor —
+  `storylineRuntime.js` (PAYLOAD'a taşıma), `scormTypedActivityPlayer.js`.
+- `duplicateActivity` artık kopyalanan etkinlikteki trigger/nesne/timeline referanslarını
+  doğru remap ediyor — `LibraryWorkspace.jsx`, `src/logic/activityHelpers.js`.
+- Karma etkinlikte tip değişimi artık cevap alanlarını silmiyor, seçenek/eşleştirme ekleme
+  butonları eklendi — `KarmaCevapPanel.jsx`.
+- "URL Aç" tetikleyicisine Bağlantı Adresi (URL) alanı eklendi — `FormatRightPanel.jsx`.
+- Bul-Değiştir artık çok-sahneli etkinliklerde `slides[].objects`'i de tarıyor —
+  `useRibbonController.js`, yeni `src/logic/objectTextSearch.js`.
+- Renk paleti: 9 modalin ortak slate/blue paleti `var(--eic-light-x)` token'larına
+  bağlandı (bileşene özgü renkler bilinçli olarak dokunulmadı).
+- `scripts/build.bat` eklendi — çalıştırınca sunucuya yüklemeye hazır `dist/` klasörü üretir
+  (mevcut `hazirla-ftp.ps1`'i sarmalıyor).
 
-**Yarıda kalmış:**
-- Açık tema/token yenilemesi (`d794dca`) yalnız `src/components/ui/` çekirdeğinde tam;
-  9 modal (Character/Icon/Symbol/Table/Chart/SlideMaster/Variables/Branching
-  Picker/Editor) hâlâ hardcoded hex renk kullanıyor, token'a bağlı değil (konsolidasyon
-  denendi, gerekçeli olarak ertelendi — rapor § 9).
-- Yeni Articulate freeform cevap sistemi (`bce2715`, 8 yeni etkinlik tipi) genel olarak
-  beta seviyesinde çalışıyor; `completionMode` (opsiyonel/zorunlu) ayarı typed SCORM
-  player'da okunmuyor.
+**Kritik yeni bulgu (ayrı, acil teknik borç):** `src/generated/` paketi kaynak dosyalardan
+**sapmış** — üretilen `storylineRuntimeCore.js` içinde zaman çizelgesi kodu
+(`runtimeStartTimeline`/`runtimeStopTimeline`) var ama bu artık hiçbir kaynak dosyada
+(`src/utils/storylineRuntime.js`) tanımlı değil. `node scripts/extract-runtime-inline.mjs`
+yeniden çalıştırılırsa bu fonksiyonlar paketten düşer ve gerçek SCORM paketlerinde
+`ReferenceError: runtimeStopTimeline is not defined` regresyonuna yol açar. Kaynağı
+(muhtemelen `src/generated/` bir noktada elle düzenlenmiş veya kaynaktaki bir yeniden
+adlandırma script'e yansıtılmamış) araştırılıp giderilene kadar **bu script'i
+çalıştırmayın**; mevcut committed `src/generated/*.js` dosyaları şu an doğru/çalışır
+durumda, dokunulmadı.
 
-**Güvenlik:** B-301 (PHP yetkilendirme atlama), B-310..B-314 (SCORM dış-link sızıntısı),
-B-350 (server.mjs sır temizleme), B-351 (token doğrulama atlatma), B-353 (PHP upload boyut
-sınırı) düzeltildi ve doğrulandı. `scormTypedActivityPlayer.js` içindeki 3 zayıf shuffle
-bilinçli olarak dokunulmadı (SCORM'a gömülen template-literal script, ayrı ele alınmalı).
+**Yarıda kalmış (değişmedi):**
+- Yeni Articulate freeform cevap sistemi (`bce2715`, 8 etkinlik tipi) genel olarak beta
+  seviyesinde; `completionMode` artık okunuyor ama sistemin geneli hâlâ olgunlaşma
+  aşamasında.
+- Toast sistemi (6 dosya, `showToast` prop-drilling) konsolide edilmedi.
 
-Detaylı öncelik sırası ve tam bulgu listesi için docs/PROJE-DURUM-RAPORU.md § 7 ve § 9'a bakın.
+**Güvenlik:** B-301, B-310..B-314, B-350, B-351, B-353 düzeltildi ve doğrulandı.
+`scormTypedActivityPlayer.js` içindeki 3 zayıf shuffle bilinçli olarak dokunulmadı (SCORM'a
+gömülen template-literal script).
+
+Detaylı bulgu listesi için docs/PROJE-DURUM-RAPORU.md'ye bakın (bazı maddeler yukarıdaki
+2026-07-21 düzeltmeleriyle güncelliğini yitirdi, rapor dosyası henüz güncellenmedi).
