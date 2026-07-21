@@ -12,6 +12,61 @@ const MIXED_TYPE_LABELS = {
   'fill-blank': 'Boşluk Doldurma',
 };
 
+// Panel genelinde tekrar eden "+ ekle" / "× kaldır" düğme stilleri — tip
+// ekleme, seçenek ekleme ve eşleştirme çifti ekleme düğmeleri arasında
+// paylaşılır.
+const ADD_BUTTON_STYLE = {
+  borderRadius: 6,
+  border: '1px solid #c7d9f1',
+  background: '#ffffff',
+  color: '#2563eb',
+  fontSize: 11,
+  fontWeight: 800,
+  cursor: 'pointer',
+};
+
+const REMOVE_ROW_BUTTON_STYLE = {
+  border: 'none',
+  background: 'transparent',
+  color: '#ef4444',
+  cursor: 'pointer',
+  fontSize: 13,
+};
+
+// Karma öğe tipine göre alan varsayılanlarını üretir. Hem yeni öğe eklerken
+// hem de mevcut bir öğenin tipi değiştirilirken kullanılır — böylece tip
+// değişince eski tipe ait alanlar (options/pairs/acceptedAnswers/sentence)
+// sessizce silinip yerine boş dizi/obje kalmaz, yeni tipe uygun dolu
+// varsayılanlar kurulur.
+export function defaultsForType(type) {
+  if (type === 'selection') {
+    return {
+      options: [
+        { id: uid(), label: 'Seçenek A', isCorrect: true },
+        { id: uid(), label: 'Seçenek B', isCorrect: false },
+      ],
+    };
+  }
+  if (type === 'drag-drop') {
+    return {
+      pairs: [
+        { id: uid(), left: 'Sol 1', right: 'Sağ 1' },
+        { id: uid(), left: 'Sol 2', right: 'Sağ 2' },
+      ],
+    };
+  }
+  if (type === 'text-entry') {
+    return { acceptedAnswers: [''] };
+  }
+  if (type === 'numeric') {
+    return { acceptedAnswers: ['0'] };
+  }
+  if (type === 'fill-blank') {
+    return { sentence: 'Cümledeki ___ boşluğu doldurun.' };
+  }
+  return {};
+}
+
 function MixedItemsEditor({ activity, onUpdate }) {
   const patch = (p) => onUpdate({ ...activity, ...p });
   const items = activity.mixedItems || [];
@@ -21,24 +76,8 @@ function MixedItemsEditor({ activity, onUpdate }) {
       id: uid(),
       type,
       question: '',
+      ...defaultsForType(type),
     };
-    if (type === 'selection') {
-      base.options = [
-        { id: uid(), label: 'Seçenek A', isCorrect: true },
-        { id: uid(), label: 'Seçenek B', isCorrect: false },
-      ];
-    } else if (type === 'drag-drop') {
-      base.pairs = [
-        { id: uid(), left: 'Sol 1', right: 'Sağ 1' },
-        { id: uid(), left: 'Sol 2', right: 'Sağ 2' },
-      ];
-    } else if (type === 'text-entry') {
-      base.acceptedAnswers = [''];
-    } else if (type === 'numeric') {
-      base.acceptedAnswers = ['0'];
-    } else if (type === 'fill-blank') {
-      base.sentence = 'Cümledeki ___ boşluğu doldurun.';
-    }
     patch({ mixedItems: [...items, base] });
   };
 
@@ -72,8 +111,11 @@ function MixedItemsEditor({ activity, onUpdate }) {
             <select
               value={item.type}
               onChange={(e) => {
+                const nextType = e.target.value;
                 const next = items.map((it) =>
-                  it.id === item.id ? { id: it.id, type: e.target.value, question: it.question || '' } : it
+                  it.id === item.id
+                    ? { id: it.id, type: nextType, question: it.question || '', ...defaultsForType(nextType) }
+                    : it
                 );
                 patch({ mixedItems: next });
               }}
@@ -129,14 +171,35 @@ function MixedItemsEditor({ activity, onUpdate }) {
                     }}
                     style={{ flex: 1, height: 26, borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12, padding: '0 6px' }}
                   />
+                  <button
+                    type="button"
+                    title="Seçeneği kaldır"
+                    onClick={() => {
+                      const nextOpts = (item.options || []).filter((o) => o.id !== opt.id);
+                      updateItem(item.id, 'options', nextOpts);
+                    }}
+                    style={REMOVE_ROW_BUTTON_STYLE}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextOpts = [...(item.options || []), { id: uid(), label: '', isCorrect: false }];
+                  updateItem(item.id, 'options', nextOpts);
+                }}
+                style={{ ...ADD_BUTTON_STYLE, alignSelf: 'flex-start', padding: '4px 10px' }}
+              >
+                + Seçenek ekle
+              </button>
             </div>
           )}
           {item.type === 'drag-drop' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {(item.pairs || []).map((pair) => (
-                <div key={pair.id} style={{ display: 'flex', gap: 6 }}>
+                <div key={pair.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input
                     value={pair.left}
                     onChange={(e) => {
@@ -159,8 +222,29 @@ function MixedItemsEditor({ activity, onUpdate }) {
                     placeholder="Sağ"
                     style={{ flex: 1, height: 26, borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12, padding: '0 6px' }}
                   />
+                  <button
+                    type="button"
+                    title="Eşleştirme çiftini kaldır"
+                    onClick={() => {
+                      const nextPairs = (item.pairs || []).filter((p) => p.id !== pair.id);
+                      updateItem(item.id, 'pairs', nextPairs);
+                    }}
+                    style={REMOVE_ROW_BUTTON_STYLE}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextPairs = [...(item.pairs || []), { id: uid(), left: '', right: '' }];
+                  updateItem(item.id, 'pairs', nextPairs);
+                }}
+                style={{ ...ADD_BUTTON_STYLE, alignSelf: 'flex-start', padding: '4px 10px' }}
+              >
+                + Eşleştirme çifti ekle
+              </button>
             </div>
           )}
           {(item.type === 'text-entry' || item.type === 'numeric') && (
@@ -194,16 +278,7 @@ function MixedItemsEditor({ activity, onUpdate }) {
           <button
             key={k}
             onClick={() => addItem(k)}
-            style={{
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid #c7d9f1',
-              background: '#ffffff',
-              color: '#2563eb',
-              fontSize: 11,
-              fontWeight: 800,
-              cursor: 'pointer',
-            }}
+            style={{ ...ADD_BUTTON_STYLE, padding: '6px 10px' }}
           >
             + {v}
           </button>
