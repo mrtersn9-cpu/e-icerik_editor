@@ -14,8 +14,8 @@ const toolButtonStyle = {
   height: 30,
   padding: '0 12px',
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
+  border: '1px solid var(--eic-light-border)',
+  background: 'var(--eic-light-panel)',
   color: '#334155',
   fontSize: 12,
   fontWeight: 800,
@@ -37,7 +37,7 @@ export default function TableEditorModal({ open, onClose, tableData, onChange, t
           gap: 8,
           paddingBottom: 12,
           marginBottom: 12,
-          borderBottom: '1px solid #f1f5f9',
+          borderBottom: '1px solid var(--eic-light-panel-alt)',
         }}
       >
         <button type="button" style={toolButtonStyle} onClick={() => apply(tableAddRow(tableData))}>
@@ -54,7 +54,7 @@ export default function TableEditorModal({ open, onClose, tableData, onChange, t
         </button>
         <button
           type="button"
-          style={{ ...toolButtonStyle, borderColor: headerRow ? '#2563eb' : '#cbd5e1', color: headerRow ? '#1d4ed8' : '#334155', background: headerRow ? '#eff6ff' : '#fff' }}
+          style={{ ...toolButtonStyle, borderColor: headerRow ? 'var(--eic-light-accent)' : 'var(--eic-light-border)', color: headerRow ? 'var(--eic-light-accent-strong)' : '#334155', background: headerRow ? 'var(--eic-light-accent-soft)' : 'var(--eic-light-panel)' }}
           onClick={() => apply(tableToggleHeader(tableData))}
         >
           Başlık Satırı
@@ -67,7 +67,7 @@ export default function TableEditorModal({ open, onClose, tableData, onChange, t
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
                 {row.map((cell, colIndex) => (
-                  <td key={colIndex} style={{ border: '1px solid #e2e8f0', padding: 2 }}>
+                  <td key={colIndex} style={{ border: '1px solid var(--eic-light-border-soft)', padding: 2 }}>
                     <input
                       value={cell}
                       onChange={(e) => apply(tableSetCell(tableData, rowIndex, colIndex, e.target.value))}
@@ -81,7 +81,7 @@ export default function TableEditorModal({ open, onClose, tableData, onChange, t
                         fontSize: 13,
                         fontWeight: headerRow && rowIndex === 0 ? 800 : 500,
                         color: '#1f2937',
-                        background: headerRow && rowIndex === 0 ? '#f8fafc' : '#fff',
+                        background: headerRow && rowIndex === 0 ? 'var(--eic-light-bg)' : 'var(--eic-light-panel)',
                         boxSizing: 'border-box',
                       }}
                     />

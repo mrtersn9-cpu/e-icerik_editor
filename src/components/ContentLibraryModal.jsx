@@ -43,7 +43,7 @@ function ItemPreview({ item }) {
           fontWeight: 800,
           borderRadius: item.value?.borderRadius ?? 8,
           background: item.value?.background || '#3b82f6',
-          color: item.value?.color || '#fff',
+          color: item.value?.color || 'var(--eic-light-panel)',
           border: item.value?.borderColor ? `1px solid ${item.value.borderColor}` : 'none',
         }}
       >
@@ -101,9 +101,9 @@ export default function ContentLibraryModal({ open, onClose, onSelect, title = '
                   height: 30,
                   padding: '0 12px',
                   borderRadius: 999,
-                  border: `1px solid ${active ? '#2563eb' : '#e2e8f0'}`,
-                  background: active ? '#eff6ff' : '#fff',
-                  color: active ? '#1d4ed8' : '#475569',
+                  border: `1px solid ${active ? 'var(--eic-light-accent)' : 'var(--eic-light-border-soft)'}`,
+                  background: active ? 'var(--eic-light-accent-soft)' : 'var(--eic-light-panel)',
+                  color: active ? 'var(--eic-light-accent-strong)' : 'var(--eic-light-muted)',
                   fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
@@ -117,7 +117,7 @@ export default function ContentLibraryModal({ open, onClose, onSelect, title = '
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--eic-light-disabled-text)', fontSize: 13 }}>
           “{search}” ile eşleşen öğe yok.
         </div>
       ) : (
@@ -143,22 +143,22 @@ export default function ContentLibraryModal({ open, onClose, onSelect, title = '
                 minHeight: 92,
                 padding: 10,
                 borderRadius: 12,
-                border: '1px solid #e2e8f0',
-                background: '#fff',
+                border: '1px solid var(--eic-light-border-soft)',
+                background: 'var(--eic-light-panel)',
                 color: '#334155',
                 cursor: 'pointer',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = '#93c5fd';
-                e.currentTarget.style.background = '#f8fbff';
+                e.currentTarget.style.background = 'var(--eic-light-panel-soft)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '#e2e8f0';
-                e.currentTarget.style.background = '#fff';
+                e.currentTarget.style.borderColor = 'var(--eic-light-border-soft)';
+                e.currentTarget.style.background = 'var(--eic-light-panel)';
               }}
             >
               <ItemPreview item={item} />
-              <span style={{ fontSize: 11, fontWeight: 700, textAlign: 'center', color: '#475569' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textAlign: 'center', color: 'var(--eic-light-muted)' }}>
                 {item.name}
               </span>
             </button>
