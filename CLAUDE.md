@@ -52,7 +52,14 @@ listesindeydi):
 - Renk paleti: 9 modalin ortak slate/blue paleti `var(--eic-light-x)` token'larına
   bağlandı (bileşene özgü renkler bilinçli olarak dokunulmadı).
 - `scripts/build.bat` eklendi — çalıştırınca sunucuya yüklemeye hazır `dist/` klasörü üretir
-  (mevcut `hazirla-ftp.ps1`'i sarmalıyor).
+  (mevcut `hazirla-ftp.ps1`'i sarmalıyor; `deploy-ftp/` artık kopyalanmıyor, `dist/`e
+  taşınıyor — tek klasör kalıyor).
+- Zaman çizelgesi (timeline) klip/cue point sürüklemesi artık her `pointermove`'da değil,
+  sürükleme bitince TEK SEFER geri al (undo) geçmişine commit ediyor — `useTimelineController.js`.
+- Önizlemede audio elemanları artık efekt yeniden çalışmadan/unmount'tan önce durdurulup
+  DOM'dan kaldırılıyor (hayalet ses düzeltmesi) — `storyline-preview/index.jsx`.
+- `ReviewThreadsModal`'da API hataları artık kullanıcıya banner ile gösteriliyor, sessizce
+  yutulmuyor — `ReviewThreadsModal.jsx`.
 
 **Kritik yeni bulgu (ayrı, acil teknik borç):** `src/generated/` paketi kaynak dosyalardan
 **sapmış** — üretilen `storylineRuntimeCore.js` içinde zaman çizelgesi kodu
