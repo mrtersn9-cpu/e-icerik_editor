@@ -599,14 +599,22 @@ export function FormatRightPanelContent({ controller }) {
                 }}
               />
             </FieldLabel>
-            {clickTrigger && targetOptions.length > 0 && (
+            {clickTrigger && (targetOptions.length > 0 || clickTrigger.action === 'URLAc') && (
               <FieldLabel>
-                Hedef
-                <NativeSelect
-                  value={clickTrigger.value || ''}
-                  options={targetOptions}
-                  onChange={(value) => setClickTask(clickTrigger.action, value)}
-                />
+                {clickTrigger.action === 'URLAc' ? 'Bağlantı Adresi' : 'Hedef'}
+                {clickTrigger.action === 'URLAc' ? (
+                  <TextInput
+                    value={clickTrigger.value || ''}
+                    placeholder="https://..."
+                    onChange={(value) => setClickTask(clickTrigger.action, value)}
+                  />
+                ) : (
+                  <NativeSelect
+                    value={clickTrigger.value || ''}
+                    options={targetOptions}
+                    onChange={(value) => setClickTask(clickTrigger.action, value)}
+                  />
+                )}
               </FieldLabel>
             )}
             {clickTrigger?.action === 'NesneDurumuAyarla' && (
@@ -898,14 +906,22 @@ export function FormatRightPanelContent({ controller }) {
                 onChange={(value) => setClickTask(value, clickTrigger?.value)}
               />
             </FieldLabel>
-            {clickTrigger && targetOptions.length > 0 && (
+            {clickTrigger && (targetOptions.length > 0 || clickTrigger.action === 'URLAc') && (
               <FieldLabel>
-                Hedef
-                <NativeSelect
-                  value={clickTrigger.value || ''}
-                  options={targetOptions}
-                  onChange={(value) => setClickTask(clickTrigger.action, value)}
-                />
+                {clickTrigger.action === 'URLAc' ? 'Bağlantı Adresi' : 'Hedef'}
+                {clickTrigger.action === 'URLAc' ? (
+                  <TextInput
+                    value={clickTrigger.value || ''}
+                    placeholder="https://..."
+                    onChange={(value) => setClickTask(clickTrigger.action, value)}
+                  />
+                ) : (
+                  <NativeSelect
+                    value={clickTrigger.value || ''}
+                    options={targetOptions}
+                    onChange={(value) => setClickTask(clickTrigger.action, value)}
+                  />
+                )}
               </FieldLabel>
             )}
             {clickTrigger?.action === 'NesneDurumuAyarla' && (
