@@ -67,7 +67,16 @@ export default function useTimelineController({
   shouldObjectPersistAfterTimeline = () => true,
   visualization = true,
 }) {
-  const safeActivity = useMemo(() => activity || { objects: [], timeline: [] }, [activity]);
+  // Sürükleme sırasında (klip taşıma/yeniden boyutlandırma, cue point taşıma) her
+  // pointermove'da geri al geçmişine commit etmemek için: sürükleme sürerken hesaplanan
+  // sonuç yalnızca bu local taslağa yazılır, gerçek onUpdate (geri al kaydı) yalnızca
+  // pointerup'ta TEK SEFER çağrılır (bkz. StageCanvas.jsx'teki setLiveInteractionActivity
+  // deseniyle aynı yaklaşım).
+  const [liveDraftPatch, setLiveDraftPatch] = useState(null);
+  const safeActivity = useMemo(() => {
+    const base = activity || { objects: [], timeline: [] };
+    return liveDraftPatch ? { ...base, ...liveDraftPatch } : base;
+  }, [activity, liveDraftPatch]);
   const selectedIdSet = useMemo(
     () => (selectedIds instanceof Set ? selectedIds : new Set()),
     [selectedIds]
@@ -93,15 +102,41 @@ export default function useTimelineController({
   const [lastSelectedObjectId, setLastSelectedObjectId] = useState('');
   // Satır sürükle-bırak (yeniden sıralama) oturumu: {sourceId, overId, placeAfter}
   const [trackDrag, setTrackDrag] = useState(null);
-  const dragRef = useRef(null);
+  // Dört bağımsız sürükleme akışının (klip taşıma, cue point taşıma, kayan panel taşıma/
+  // yeniden boyutlandırma, satır yeniden sıralama) HER BİRİ kendi ref'ini kullanır — tek bir
+  // paylaşılan ref, biri sürerken diğeri başlarsa ilkinin event listener'larının temizlenmeden
+  // sızmasına yol açardı (bkz. B-348).
+  const clipDragRef = useRef(null);
+  const cueDragRef = useRef(null);
+  const floatingDragRef = useRef(null);
   const trackDragRef = useRef(null);
 
   useEffect(
     () => () => {
-      if (!dragRef.current) return;
-      window.removeEventListener('pointermove', dragRef.current.move);
-      window.removeEventListener('pointerup', dragRef.current.up);
-      dragRef.current = null;
+      if (!clipDragRef.current) return;
+      window.removeEventListener('pointermove', clipDragRef.current.move);
+      window.removeEventListener('pointerup', clipDragRef.current.up);
+      clipDragRef.current = null;
+    },
+    []
+  );
+
+  useEffect(
+    () => () => {
+      if (!cueDragRef.current) return;
+      window.removeEventListener('pointermove', cueDragRef.current.move);
+      window.removeEventListener('pointerup', cueDragRef.current.up);
+      cueDragRef.current = null;
+    },
+    []
+  );
+
+  useEffect(
+    () => () => {
+      if (!floatingDragRef.current) return;
+      window.removeEventListener('pointermove', floatingDragRef.current.move);
+      window.removeEventListener('pointerup', floatingDragRef.current.up);
+      floatingDragRef.current = null;
     },
     []
   );
@@ -184,11 +219,13 @@ export default function useTimelineController({
     onUpdate({ ...safeActivity, ...patch });
   };
 
+  const buildTimelinePatch = (nextTimeline) => ({
+    timeline: nextTimeline.map((item, index) => normalizeTimelineItem(item, index, objects)),
+    timelineDuration: patchTimelineDuration(safeActivity, nextTimeline),
+  });
+
   const patchTimeline = (nextTimeline) => {
-    patchActivity({
-      timeline: nextTimeline.map((item, index) => normalizeTimelineItem(item, index, objects)),
-      timelineDuration: patchTimelineDuration(safeActivity, nextTimeline),
-    });
+    patchActivity(buildTimelinePatch(nextTimeline));
   };
 
   const patchTimelineItem = (itemId, patch) => {
@@ -260,10 +297,10 @@ export default function useTimelineController({
       duration: Number(item.duration || TIMELINE_MIN_CLIP_DURATION),
       starts: new Map(timeline.map((entry) => [entry.id, Number(entry.start || 0)])),
     };
+    let latestPatch = null;
     const move = (moveEvent) => {
       const delta = (moveEvent.clientX - session.startX) / zoom;
-      patchTimeline(
-        timeline.map((entry) => {
+      const nextTimeline = timeline.map((entry) => {
           if (!session.ids.includes(entry.id)) return entry;
           if (!canEditTimelineItem(entry, objects)) return entry;
           const baseStart = session.starts.get(entry.id) || 0;
@@ -288,15 +325,21 @@ export default function useTimelineController({
             enabled: snapEnabled,
           });
           return { ...entry, start };
-        })
-      );
+        });
+      // Sürükleme sürerken yalnızca local taslağa yaz — geri al geçmişine commit etme
+      // (bkz. dosya başındaki liveDraftPatch açıklaması).
+      latestPatch = buildTimelinePatch(nextTimeline);
+      setLiveDraftPatch(latestPatch);
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      dragRef.current = null;
+      clipDragRef.current = null;
+      setLiveDraftPatch(null);
+      // Tüm sürükleme hareketi TEK bir geri al adımı olarak commit edilir.
+      if (latestPatch) patchActivity(latestPatch);
     };
-    dragRef.current = { move, up };
+    clipDragRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
@@ -328,22 +371,29 @@ export default function useTimelineController({
     event.stopPropagation();
     const startX = event.clientX;
     const startTime = Number(cue.time) || 0;
+    let latestCuePoints = null;
     const move = (moveEvent) => {
       const raw = startTime + (moveEvent.clientX - startX) / zoom;
-      patchCuePoint(cue.id, {
-        time: getTimelineSnapValue(raw, {
-          cuePoints: cuePoints.filter((item) => item.id !== cue.id),
-          duration: totalDuration,
-          enabled: snapEnabled,
-        }),
+      const nextTime = getTimelineSnapValue(raw, {
+        cuePoints: cuePoints.filter((item) => item.id !== cue.id),
+        duration: totalDuration,
+        enabled: snapEnabled,
       });
+      latestCuePoints = normalizeTimelineCuePoints(
+        cuePoints.map((item) => (item.id === cue.id ? { ...item, time: nextTime } : item)),
+        totalDuration
+      );
+      // Sürükleme sürerken yalnızca local taslağa yaz — geri al geçmişine commit etme.
+      setLiveDraftPatch({ timelineCuePoints: latestCuePoints });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      dragRef.current = null;
+      cueDragRef.current = null;
+      setLiveDraftPatch(null);
+      if (latestCuePoints) patchActivity({ timelineCuePoints: latestCuePoints });
     };
-    dragRef.current = { move, up };
+    cueDragRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
@@ -476,9 +526,9 @@ export default function useTimelineController({
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      dragRef.current = null;
+      floatingDragRef.current = null;
     };
-    dragRef.current = { move, up };
+    floatingDragRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
@@ -496,9 +546,9 @@ export default function useTimelineController({
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      dragRef.current = null;
+      floatingDragRef.current = null;
     };
-    dragRef.current = { move, up };
+    floatingDragRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
