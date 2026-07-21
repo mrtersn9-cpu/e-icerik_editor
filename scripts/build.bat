@@ -29,7 +29,7 @@ if exist "dist" (
   rd /s /q "dist"
 )
 
-xcopy "deploy-ftp" "dist" /E /I /Y /Q >nul
+move /y "deploy-ftp" "dist" >nul
 if errorlevel 1 (
   echo dist klasoru olusturulamadi.
   pause
@@ -38,6 +38,5 @@ if errorlevel 1 (
 
 echo.
 echo Dagitim paketi hazir: dist\ (sunucuya yuklenebilir)
-echo (deploy-ftp\ klasoru de mevcut, dist\ onun bir kopyasidir)
 
 endlocal
