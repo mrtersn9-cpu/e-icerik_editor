@@ -101,11 +101,11 @@ export default function IconPickerModal({ open, onClose, onSelect, title = 'İko
           İkon kataloğu yüklenemedi. `npm run icons:catalog` ile üretildiğinden emin olun.
         </div>
       ) : !catalog ? (
-        <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--eic-light-disabled-text)', fontSize: 13 }}>
           Yükleniyor…
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 32, color: '#94a3b8', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--eic-light-disabled-text)', fontSize: 13 }}>
           “{search}” ile eşleşen ikon yok.
         </div>
       ) : (
@@ -132,19 +132,19 @@ export default function IconPickerModal({ open, onClose, onSelect, title = 'İko
                   aspectRatio: '1 / 1',
                   padding: 6,
                   borderRadius: 10,
-                  border: '1px solid #e2e8f0',
-                  background: '#fff',
+                  border: `1px solid var(--eic-light-border-soft)`,
+                  background: 'var(--eic-light-panel)',
                   color: '#334155',
                   cursor: 'pointer',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#eff6ff';
+                  e.currentTarget.style.background = 'var(--eic-light-accent-soft)';
                   e.currentTarget.style.borderColor = '#93c5fd';
-                  e.currentTarget.style.color = '#1d4ed8';
+                  e.currentTarget.style.color = 'var(--eic-light-accent-strong)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#fff';
-                  e.currentTarget.style.borderColor = '#e2e8f0';
+                  e.currentTarget.style.background = 'var(--eic-light-panel)';
+                  e.currentTarget.style.borderColor = 'var(--eic-light-border-soft)';
                   e.currentTarget.style.color = '#334155';
                 }}
               >
