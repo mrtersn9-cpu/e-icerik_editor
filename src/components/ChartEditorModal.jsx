@@ -14,8 +14,8 @@ const toolButtonStyle = {
   height: 30,
   padding: '0 12px',
   borderRadius: 8,
-  border: '1px solid #cbd5e1',
-  background: '#fff',
+  border: '1px solid var(--eic-light-border)',
+  background: 'var(--eic-light-panel)',
   color: '#334155',
   fontSize: 12,
   fontWeight: 800,
@@ -42,9 +42,9 @@ export default function ChartEditorModal({ open, onClose, chartType = 'bar', cha
                     style={{
                       ...toolButtonStyle,
                       flex: 1,
-                      borderColor: active ? '#2563eb' : '#cbd5e1',
-                      background: active ? '#eff6ff' : '#fff',
-                      color: active ? '#1d4ed8' : '#334155',
+                      borderColor: active ? 'var(--eic-light-accent)' : 'var(--eic-light-border)',
+                      background: active ? 'var(--eic-light-accent-soft)' : 'var(--eic-light-panel)',
+                      color: active ? 'var(--eic-light-accent-strong)' : '#334155',
                     }}
                   >
                     {type.label}
@@ -60,13 +60,13 @@ export default function ChartEditorModal({ open, onClose, chartType = 'bar', cha
                   <input
                     value={point.label}
                     onChange={(e) => onChange?.({ chartData: chartSetLabel(chartData, index, e.target.value) })}
-                    style={{ flex: 1, height: 30, border: '1px solid #e2e8f0', borderRadius: 6, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }}
+                    style={{ flex: 1, height: 30, border: '1px solid var(--eic-light-border-soft)', borderRadius: 6, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }}
                   />
                   <input
                     type="number"
                     value={point.value}
                     onChange={(e) => onChange?.({ chartData: chartSetValue(chartData, index, e.target.value) })}
-                    style={{ width: 70, height: 30, border: '1px solid #e2e8f0', borderRadius: 6, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }}
+                    style={{ width: 70, height: 30, border: '1px solid var(--eic-light-border-soft)', borderRadius: 6, padding: '0 8px', fontSize: 12, boxSizing: 'border-box' }}
                   />
                 </div>
               ))}
@@ -86,7 +86,7 @@ export default function ChartEditorModal({ open, onClose, chartType = 'bar', cha
             style={{
               flex: 1,
               minWidth: 0,
-              border: '1px solid #e2e8f0',
+              border: '1px solid var(--eic-light-border-soft)',
               borderRadius: 12,
               padding: 12,
               display: 'flex',
