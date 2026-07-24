@@ -27,6 +27,17 @@ export async function writeObjectClipboardToSystem(payload) {
   }
 }
 
+// Bir "Yapıştır" giriş noktasının (Ribbon düğmesi, sağ tık menüsü, Ctrl+V) etkin
+// gösterilip gösterilmeyeceğine karar verir. Sistem panosu API'si destekleniyorsa
+// HER ZAMAN true döner: farklı bir sekmede/projede kopyalanmış nesneler bu sekmenin
+// yerel panosunda (ref/sessionStorage) görünmez, ama tıklanınca readObjectClipboardFromSystem
+// senkron olarak denenir. Aksi halde yalnızca bu sekmenin yerel panosuna bakılır — bu
+// olmadan menü/düğme hep devre dışı kalır ve kullanıcı Canva'daki gibi başka bir
+// projeye/sekmeye asla yapıştıramaz.
+export function hasPasteableObjectClipboard(hasLocalClipboard) {
+  return isSystemClipboardSupported() || !!hasLocalClipboard;
+}
+
 // Sistem panosunda bizim işaretimizi taşıyan geçerli bir nesne kopyası varsa
 // { objects, timeline, copiedAt } döner, yoksa null (asla throw etmez).
 export async function readObjectClipboardFromSystem() {

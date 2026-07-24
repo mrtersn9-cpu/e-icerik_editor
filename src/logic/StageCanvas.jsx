@@ -62,7 +62,11 @@ import {
   getSnapshotBounds,
 } from './resizeGeometry';
 import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
-import { writeObjectClipboardToSystem, readObjectClipboardFromSystem } from '../utils/systemClipboard';
+import {
+  writeObjectClipboardToSystem,
+  readObjectClipboardFromSystem,
+  hasPasteableObjectClipboard,
+} from '../utils/systemClipboard';
 import { resolveCornerRadiusPx } from '../utils/cornerRadius';
 import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
 import { upgradeDragDropStyle } from './factories';
@@ -2609,7 +2613,12 @@ const StageCanvas = forwardRef(function StageCanvas(
                 : new Set(target ? [target.id] : []);
             const groupState = getSelectionGroupState(canvasActivity, selForMenu);
             const multiSel = selForMenu.size > 1;
-            const hasClip = !!(clipboardRef.current && (clipboardRef.current.objects || []).length);
+            // bkz. hasPasteableObjectClipboard: sistem panosu destekleniyorsa "Yapıştır"
+            // her zaman etkin bırakılır (Ribbon'daki hasObjectClipboard ile aynı desen —
+            // useRibbonController.js), aksi halde yalnızca bu sekmenin yerel panosuna bakılır.
+            const hasClip = hasPasteableObjectClipboard(
+              clipboardRef.current && (clipboardRef.current.objects || []).length
+            );
             const activeLayerId = canvasActivity.activeLayerId || 'base';
             const moveLayers = (canvasActivity.layers || []).filter(
               (layer) => layer?.id && layer.id !== (target?.layerId || 'base')
