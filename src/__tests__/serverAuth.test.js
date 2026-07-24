@@ -175,6 +175,38 @@ describe('server auth and admin API', () => {
     ).toBe(true);
   });
 
+  test('remember:true issues a ~3 month session token, remember:false keeps the short default TTL', async () => {
+    const shortLogin = await requestJson(port, 'POST', '/api/auth/login', {
+      userId: 'kullanici1',
+      password: 'user1-pass',
+      sessionId: 'test-session-remember-false',
+      sessionLabel: 'Jest',
+      remember: false,
+    });
+    expect(shortLogin.status).toBe(200);
+    const shortTtlMs = shortLogin.body.tokenExpiresAt - Date.now();
+    // Varsayilan TTL 8 saat; toleransli ust sinir 1 gun.
+    expect(shortTtlMs).toBeLessThan(24 * 60 * 60 * 1000);
+
+    const rememberLogin = await requestJson(port, 'POST', '/api/auth/login', {
+      userId: 'kullanici2',
+      password: 'user2-pass',
+      sessionId: 'test-session-remember-true',
+      sessionLabel: 'Jest',
+      remember: true,
+    });
+    expect(rememberLogin.status).toBe(200);
+    const rememberTtlMs = rememberLogin.body.tokenExpiresAt - Date.now();
+    // ~90 gun (7_776_000_000 ms); genis toleransla en az 80 gun olmali.
+    expect(rememberTtlMs).toBeGreaterThan(80 * 24 * 60 * 60 * 1000);
+
+    // Token'in kendi icine gomulu exp alani da ayni farki yansitmali.
+    const decode = (token) => JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
+    const shortPayload = decode(shortLogin.body.token);
+    const rememberPayload = decode(rememberLogin.body.token);
+    expect(rememberPayload.exp - shortPayload.exp).toBeGreaterThan(80 * 24 * 60 * 60 * 1000);
+  });
+
   test('protects manual SQL backup downloads with the admin token', async () => {
     const forbidden = await requestJson(port, 'GET', '/api/admin/backup');
     expect(forbidden.status).toBe(403);

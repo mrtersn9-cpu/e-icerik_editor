@@ -609,6 +609,7 @@ export default function EIcerikEditor() {
     return {
       userId: FIXED_EDITOR_USERS[0].id,
       password: '',
+      remember: false,
     };
   });
   const [loginError, setLoginError] = useState('');
@@ -987,6 +988,7 @@ export default function EIcerikEditor() {
         ...current,
         userId: nextLockState?.userId || current.userId,
         password: nextLockState?.password || current.password,
+        remember: nextLockState?.remember ?? current.remember,
       }));
       setLoginError(nextLockState ? '' : message);
       resetWorkspaceSession('');
@@ -1006,6 +1008,7 @@ export default function EIcerikEditor() {
         sessionId,
         sessionLabel,
         force: credentials.force || false,
+        remember: credentials.remember || false,
       }),
     });
     return {
@@ -1537,6 +1540,7 @@ export default function EIcerikEditor() {
           forceLogoutToLogin('', {
             userId: activeUserId,
             password: loginForm.password,
+            remember: loginForm.remember,
             sessionId: activeSessionId,
             sessionLabel: authState?.sessionLabel || createSessionLabel(),
             session: error.session || null,
@@ -1560,6 +1564,7 @@ export default function EIcerikEditor() {
     forceLogoutToLogin,
     loadWorkspaceState,
     loginForm.password,
+    loginForm.remember,
     setDbStatus,
     syncWorkspaceMeta,
   ]);
@@ -1615,6 +1620,7 @@ export default function EIcerikEditor() {
           forceLogoutToLogin('', {
             userId: activeUserId,
             password: loginForm.password,
+            remember: loginForm.remember,
             sessionId: activeSessionId,
             sessionLabel: authState?.sessionLabel || createSessionLabel(),
             session: error.session || null,
@@ -1639,6 +1645,7 @@ export default function EIcerikEditor() {
     forceLogoutToLogin,
     loadWorkspaceState,
     loginForm.password,
+    loginForm.remember,
     setDbStatus,
     showToast,
     syncWorkspaceMeta,
@@ -1735,6 +1742,7 @@ export default function EIcerikEditor() {
           forceLogoutToLogin('', {
             userId: activeUserId,
             password: loginForm.password,
+            remember: loginForm.remember,
             sessionId: activeSessionId,
             sessionLabel: authState?.sessionLabel || createSessionLabel(),
             session: error.session || null,
@@ -1763,6 +1771,7 @@ export default function EIcerikEditor() {
     currentProjectId,
     forceLogoutToLogin,
     loginForm.password,
+    loginForm.remember,
     mergeWorkspaceProjectData,
     projectNameDraft,
     releaseBookLock,
@@ -2294,6 +2303,7 @@ export default function EIcerikEditor() {
         setLockState((current) => ({
           userId: loginForm.userId,
           password: loginForm.password,
+          remember: loginForm.remember,
           sessionId: attemptedSession.sessionId,
           sessionLabel: attemptedSession.sessionLabel,
           session: error.session || null,
@@ -2316,7 +2326,7 @@ export default function EIcerikEditor() {
     setLoginError('');
     try {
       const nextAuth = await claimLoginSession(
-        { userId: lockState.userId, password: lockState.password, force: true },
+        { userId: lockState.userId, password: lockState.password, remember: lockState.remember, force: true },
         { sessionId: lockState.sessionId, sessionLabel: lockState.sessionLabel }
       );
       finalizeLogin(nextAuth);
@@ -2349,7 +2359,7 @@ export default function EIcerikEditor() {
     const tryAgain = async () => {
       try {
         const nextAuth = await claimLoginSession(
-          { userId: lockState.userId, password: lockState.password },
+          { userId: lockState.userId, password: lockState.password, remember: lockState.remember },
           lockState
         );
         if (cancelled) return;
@@ -3192,13 +3202,9 @@ export default function EIcerikEditor() {
         lockState={lockState}
         logoutReason={logoutReason}
         onDismissLogoutReason={() => setLogoutReason(null)}
-        onSelectQuickUser={(userId) => {
-          setLockState(null);
-          setLoginError('');
-          setLoginForm((current) => ({ ...current, userId }));
-        }}
         onUserIdChange={(userId) => setLoginForm((current) => ({ ...current, userId }))}
         onPasswordChange={(password) => setLoginForm((current) => ({ ...current, password }))}
+        onRememberChange={(remember) => setLoginForm((current) => ({ ...current, remember }))}
         onLogin={handleLogin}
         onForceKick={handleForceKick}
         onChooseDifferentUser={() => {
