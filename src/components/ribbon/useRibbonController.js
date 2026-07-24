@@ -81,7 +81,10 @@ import {
   uid,
 } from '../../utils/editorHelpers';
 import { getSemanticSvgIcon } from '../../utils/iconSvg';
-import { isSystemClipboardSupported, readObjectClipboardFromSystem } from '../../utils/systemClipboard';
+import {
+  hasPasteableObjectClipboard,
+  readObjectClipboardFromSystem,
+} from '../../utils/systemClipboard';
 
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
@@ -192,17 +195,16 @@ export default function useRibbonController({
 
   const hasObjectClipboard = useMemo(() => {
     void clipboardTick;
-    // Sistem panosu API'si varsa buton her zaman etkin bırakılır: başka bir
-    // sekmede kopyalanmış nesneler bu sekmenin sessionStorage'ında görünmez,
-    // ama tıklanınca (paste action) sistem panosundan senkron denenecek.
-    if (isSystemClipboardSupported()) return true;
-    if (typeof sessionStorage === 'undefined') return false;
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem('eicerik_obj_clipboard') || 'null');
-      return Array.isArray(parsed?.objects) && parsed.objects.length > 0;
-    } catch {
-      return false;
+    let localHasClipboard = false;
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem('eicerik_obj_clipboard') || 'null');
+        localHasClipboard = Array.isArray(parsed?.objects) && parsed.objects.length > 0;
+      } catch {
+        localHasClipboard = false;
+      }
     }
+    return hasPasteableObjectClipboard(localHasClipboard);
   }, [clipboardTick]);
 
   // Seçimin grup/kilit durumundan türeyen bağlam bayrakları (dinamik tek düğme için).

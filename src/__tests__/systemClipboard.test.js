@@ -2,6 +2,7 @@ import {
   isSystemClipboardSupported,
   writeObjectClipboardToSystem,
   readObjectClipboardFromSystem,
+  hasPasteableObjectClipboard,
 } from '../utils/systemClipboard';
 
 function mockClipboard(overrides = {}) {
@@ -107,5 +108,34 @@ describe('systemClipboard', () => {
     clearClipboard();
     const result = await readObjectClipboardFromSystem();
     expect(result).toBeNull();
+  });
+
+  describe('hasPasteableObjectClipboard', () => {
+    // Bu regresyon testi, "Canva'daki gibi başka bir projeye/sekmeye yapıştıramıyorum"
+    // şikayetinin kök nedenini kapsar: sistem panosu API'si (navigator.clipboard)
+    // destekleniyorsa "Yapıştır" giriş noktaları (sağ tık menüsü, Ribbon düğmesi) HER
+    // ZAMAN etkin kalmalı — yeni bir sekmede/projede bu sekmenin yerel panosu (ref/
+    // sessionStorage) boş olsa bile, çünkü asıl veri tıklanınca sistem panosundan
+    // senkron okunur (readObjectClipboardFromSystem). Aksi halde menü öğesi hep gri
+    // kalır ve kullanıcı hiçbir zaman yapıştıramaz.
+    test('sistem panosu destekleniyorsa yerel pano boş olsa bile true döner (farklı proje/sekme senaryosu)', () => {
+      mockClipboard();
+      expect(hasPasteableObjectClipboard(false)).toBe(true);
+      expect(hasPasteableObjectClipboard(0)).toBe(true);
+      expect(hasPasteableObjectClipboard(undefined)).toBe(true);
+    });
+
+    test('sistem panosu destekleniyorsa yerel pano doluyken de true döner', () => {
+      mockClipboard();
+      expect(hasPasteableObjectClipboard(true)).toBe(true);
+    });
+
+    test('sistem panosu desteklenmiyorsa yalnızca yerel panoya bakar', () => {
+      clearClipboard();
+      expect(hasPasteableObjectClipboard(true)).toBe(true);
+      expect(hasPasteableObjectClipboard(false)).toBe(false);
+      expect(hasPasteableObjectClipboard(0)).toBe(false);
+      expect(hasPasteableObjectClipboard(undefined)).toBe(false);
+    });
   });
 });
