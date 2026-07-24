@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+// Node server.mjs'deki DEFAULT_USER_ID ile tutarli: mevcut/eski (paylasim
+// oncesi) satirlarin geriye donuk atandigi varsayilan kullanici.
+const DEFAULT_EDITOR_USER_ID = 'kullanici1';
+
 $config = require __DIR__ . '/config.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -167,6 +171,10 @@ try {
     if (!$sessionExemptPath) {
         require_active_session($pdo);
     }
+    // Kullanici bazli izolasyon (B-360): oturumu dogrulanan istegin sahibi. Auth-muaf
+    // yollarda bos kalir (bu yollar projeye erismiyor). Asagidaki tum /projects,
+    // /workspace, /state route'lari bu degeri erisim kontrolu icin kullanir.
+    $currentUserId = trim((string) ($_SERVER['HTTP_X_USER_ID'] ?? ''));
 
     if ($path === '/admin/backup' && $method === 'GET') {
         require_admin_token($config);
@@ -179,23 +187,23 @@ try {
     }
 
     if ($path === '/workspace' && $method === 'GET') {
-        send_json(200, ensure_workspace($pdo));
+        send_json(200, ensure_workspace($pdo, $currentUserId));
     }
 
     if ($path === '/workspace/current-project' && $method === 'PUT') {
         $body = read_json_body();
         $projectId = trim((string) ($body['projectId'] ?? ''));
 
-        if ($projectId === '' || !project_exists($pdo, $projectId)) {
+        if ($projectId === '' || !project_exists($pdo, $projectId, $currentUserId)) {
             send_json(404, ['ok' => false, 'error' => 'Project not found']);
         }
 
-        set_workspace_current_project($pdo, $projectId);
-        send_json(200, ensure_workspace($pdo));
+        set_workspace_current_project($pdo, $currentUserId, $projectId);
+        send_json(200, ensure_workspace($pdo, $currentUserId));
     }
 
     if ($path === '/state' && $method === 'GET') {
-        $workspace = ensure_workspace($pdo);
+        $workspace = ensure_workspace($pdo, $currentUserId);
         send_json(200, [
             'state' => $workspace['state'],
             'updatedAt' => $workspace['updatedAt'],
@@ -205,18 +213,18 @@ try {
     }
 
     if ($path === '/state' && $method === 'PUT') {
-        $workspace = ensure_workspace($pdo);
+        $workspace = ensure_workspace($pdo, $currentUserId);
         $body = read_json_body();
         $projectId = trim((string) ($body['projectId'] ?? ($workspace['currentProject']['id'] ?? '')));
 
-        if ($projectId === '' || !project_exists($pdo, $projectId)) {
+        if ($projectId === '' || !project_exists($pdo, $projectId, $currentUserId)) {
             send_json(404, ['ok' => false, 'error' => 'Project not found']);
         }
 
         $state = $body['state'] ?? new stdClass();
         $projectName = array_key_exists('projectName', $body) ? (string) $body['projectName'] : null;
-        $project = save_project_draft($pdo, $projectId, $state, $projectName);
-        set_workspace_current_project($pdo, $projectId);
+        $project = save_project_draft($pdo, $projectId, $state, $projectName, $currentUserId);
+        set_workspace_current_project($pdo, $currentUserId, $projectId);
 
         send_json(200, [
             'ok' => true,
@@ -226,7 +234,7 @@ try {
     }
 
     if ($path === '/projects' && $method === 'GET') {
-        send_json(200, ['projects' => list_projects($pdo)]);
+        send_json(200, ['projects' => list_projects($pdo, $currentUserId)]);
     }
 
     if ($path === '/projects' && $method === 'POST') {
@@ -234,14 +242,14 @@ try {
         $name = trim((string) ($body['name'] ?? ''));
         $state = $body['state'] ?? empty_editor_state();
 
-        $project = create_project($pdo, $name, $state);
-        set_workspace_current_project($pdo, $project['id']);
+        $project = create_project($pdo, $name, $state, $currentUserId);
+        set_workspace_current_project($pdo, $currentUserId, $project['id']);
 
-        send_json(200, ensure_workspace($pdo));
+        send_json(200, ensure_workspace($pdo, $currentUserId));
     }
 
     if (preg_match('#^/projects/([^/]+)$#', $path, $matches) === 1 && $method === 'GET') {
-        $project = get_project($pdo, urldecode($matches[1]));
+        $project = get_project($pdo, urldecode($matches[1]), $currentUserId);
 
         if (!$project) {
             send_json(404, ['ok' => false, 'error' => 'Project not found']);
@@ -249,30 +257,39 @@ try {
 
         send_json(200, [
             'project' => $project,
-            'versions' => list_project_versions($pdo, $project['id']),
+            'versions' => list_project_versions($pdo, $project['id'], $currentUserId),
         ]);
     }
 
     if (preg_match('#^/projects/([^/]+)$#', $path, $matches) === 1 && $method === 'DELETE') {
         $projectId = urldecode($matches[1]);
+        // Guvenlik: yalniz sahip silebilir. Paylasilan kullanicilar goruntuleyip
+        // duzenleyebilir ama projeyi silemez (bkz. PR aciklamasi izin modeli).
+        if (!project_is_owner($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Sadece proje sahibi silebilir.']);
+        }
         delete_project($pdo, $projectId);
 
-        $workspace = ensure_workspace($pdo);
+        $workspace = ensure_workspace($pdo, $currentUserId);
         send_json(200, ['ok' => true] + $workspace);
     }
 
     if (preg_match('#^/projects/([^/]+)/draft$#', $path, $matches) === 1 && $method === 'PUT') {
         $projectId = urldecode($matches[1]);
         $body = read_json_body();
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
         $project = save_project_draft(
             $pdo,
             $projectId,
             $body['state'] ?? new stdClass(),
-            array_key_exists('name', $body) ? (string) $body['name'] : null
+            array_key_exists('name', $body) ? (string) $body['name'] : null,
+            $currentUserId
         );
 
         if (($body['setCurrent'] ?? true) === true) {
-            set_workspace_current_project($pdo, $projectId);
+            set_workspace_current_project($pdo, $currentUserId, $projectId);
         }
 
         send_json(200, [
@@ -284,27 +301,33 @@ try {
 
     if (preg_match('#^/projects/([^/]+)/versions$#', $path, $matches) === 1 && $method === 'GET') {
         $projectId = urldecode($matches[1]);
-        send_json(200, ['versions' => list_project_versions($pdo, $projectId)]);
+        send_json(200, ['versions' => list_project_versions($pdo, $projectId, $currentUserId)]);
     }
 
     if (preg_match('#^/projects/([^/]+)/versions$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
         $body = read_json_body();
         $label = trim((string) ($body['label'] ?? ''));
         $publish = !empty($body['publish']);
-        $version = create_project_version($pdo, $projectId, $label, $publish, $body['state'] ?? null);
+        $version = create_project_version($pdo, $projectId, $label, $publish, $body['state'] ?? null, $currentUserId);
 
         send_json(200, [
             'ok' => true,
             'version' => $version,
-            'versions' => list_project_versions($pdo, $projectId),
-            'projects' => list_projects($pdo),
-            'currentProject' => get_project_summary($pdo, $projectId),
+            'versions' => list_project_versions($pdo, $projectId, $currentUserId),
+            'projects' => list_projects($pdo, $currentUserId),
+            'currentProject' => get_project_summary($pdo, $projectId, $currentUserId),
         ]);
     }
 
     if (preg_match('#^/projects/([^/]+)/publish$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
         $body = read_json_body();
         $versionId = trim((string) ($body['versionId'] ?? ''));
 
@@ -316,14 +339,17 @@ try {
 
         send_json(200, [
             'ok' => true,
-            'versions' => list_project_versions($pdo, $projectId),
-            'projects' => list_projects($pdo),
-            'currentProject' => get_project_summary($pdo, $projectId),
+            'versions' => list_project_versions($pdo, $projectId, $currentUserId),
+            'projects' => list_projects($pdo, $currentUserId),
+            'currentProject' => get_project_summary($pdo, $projectId, $currentUserId),
         ]);
     }
 
     if (preg_match('#^/projects/([^/]+)/restore$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
         $body = read_json_body();
         $versionId = trim((string) ($body['versionId'] ?? ''));
 
@@ -332,33 +358,78 @@ try {
         }
 
         restore_project_version($pdo, $projectId, $versionId);
-        set_workspace_current_project($pdo, $projectId);
-        send_json(200, ensure_workspace($pdo));
+        set_workspace_current_project($pdo, $currentUserId, $projectId);
+        send_json(200, ensure_workspace($pdo, $currentUserId));
     }
 
     if (preg_match('#^/projects/([^/]+)/versions/([^/]+)$#', $path, $matches) === 1 && $method === 'DELETE') {
         $projectId = urldecode($matches[1]);
         $versionId = urldecode($matches[2]);
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
         $pdo->prepare('DELETE FROM project_versions WHERE id = :id AND project_id = :project_id')
             ->execute([':id' => $versionId, ':project_id' => $projectId]);
         $pdo->prepare('UPDATE projects SET published_version_id = NULL WHERE id = :id AND published_version_id = :vid')
             ->execute([':id' => $projectId, ':vid' => $versionId]);
-        $versions = list_project_versions($pdo, $projectId);
-        $project = get_project($pdo, $projectId);
+        $versions = list_project_versions($pdo, $projectId, $currentUserId);
+        $project = get_project($pdo, $projectId, $currentUserId);
         send_json(200, ['ok' => true, 'versions' => $versions, 'currentProject' => $project]);
     }
 
     if (preg_match('#^/projects/([^/]+)/duplicate$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
         $body = read_json_body();
-        $srcProject = get_project($pdo, $projectId);
+        $srcProject = get_project($pdo, $projectId, $currentUserId);
         if (!$srcProject) {
             send_json(404, ['ok' => false, 'error' => 'Kaynak proje bulunamadi']);
         }
         $newName = trim((string) ($body['name'] ?? '')) ?: ($srcProject['name'] . ' (Kopya)');
-        $project = create_project($pdo, $newName, $srcProject['state']);
-        set_workspace_current_project($pdo, $project['id']);
-        send_json(200, ensure_workspace($pdo));
+        $project = create_project($pdo, $newName, $srcProject['state'], $currentUserId);
+        set_workspace_current_project($pdo, $currentUserId, $project['id']);
+        send_json(200, ensure_workspace($pdo, $currentUserId));
+    }
+
+    if (preg_match('#^/projects/([^/]+)/shares$#', $path, $matches) === 1 && $method === 'GET') {
+        $projectId = urldecode($matches[1]);
+        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
+        }
+        send_json(200, ['ok' => true, 'shares' => list_project_shares($pdo, $projectId)]);
+    }
+
+    if (preg_match('#^/projects/([^/]+)/shares$#', $path, $matches) === 1 && $method === 'POST') {
+        $projectId = urldecode($matches[1]);
+        if (!project_is_owner($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Sadece proje sahibi paylasabilir.']);
+        }
+        $body = read_json_body();
+        $targetUserId = trim((string) ($body['userId'] ?? ''));
+        if ($targetUserId === '') {
+            send_json(400, ['ok' => false, 'error' => 'Kullanici id gerekli.']);
+        }
+        if ($targetUserId === $currentUserId) {
+            send_json(400, ['ok' => false, 'error' => 'Kendinizle paylasamazsiniz.']);
+        }
+        if (!editor_user_exists($pdo, $targetUserId)) {
+            send_json(404, ['ok' => false, 'error' => 'Kullanici bulunamadi.']);
+        }
+        share_project($pdo, $projectId, $targetUserId);
+        send_json(200, ['ok' => true, 'shares' => list_project_shares($pdo, $projectId)]);
+    }
+
+    if (preg_match('#^/projects/([^/]+)/shares/([^/]+)$#', $path, $matches) === 1 && $method === 'DELETE') {
+        $projectId = urldecode($matches[1]);
+        $targetUserId = urldecode($matches[2]);
+        if (!project_is_owner($pdo, $projectId, $currentUserId)) {
+            send_json(403, ['ok' => false, 'error' => 'Sadece proje sahibi paylasimi kaldirabilir.']);
+        }
+        unshare_project($pdo, $projectId, $targetUserId);
+        send_json(200, ['ok' => true, 'shares' => list_project_shares($pdo, $projectId)]);
+    }
+
+    if ($path === '/users' && $method === 'GET') {
+        send_json(200, ['ok' => true, 'users' => list_active_editor_users($pdo)]);
     }
 
     if (preg_match('#^/projects/([^/]+)/versions/([^/]+)/export$#', $path, $matches) === 1 && $method === 'GET') {
@@ -448,6 +519,9 @@ try {
 
         if ($userId === '' || $sessionId === '') {
             send_json(401, ['ok' => false, 'error' => 'Oturum bilgisi eksik.']);
+        }
+        if (!project_is_accessible($pdo, $projectId, $userId)) {
+            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
         }
 
         // Check if book already locked by another active session
@@ -1209,6 +1283,18 @@ function ensure_workspace_schema(PDO $pdo, array $config): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
 
+    // Kullanici bazli izolasyon (B-360): her proje bir sahibe (user_id) baglanir.
+    // Mevcut satirlar geriye donuk DEFAULT_EDITOR_USER_ID'ye atanir (Node
+    // server.mjs'deki DEFAULT_USER_ID migration mantigiyla tutarli).
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS project_shares (
+            project_id VARCHAR(64) NOT NULL,
+            shared_with_user_id VARCHAR(64) NOT NULL,
+            shared_at DATETIME NOT NULL,
+            PRIMARY KEY (project_id, shared_with_user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
     $hasLegacyState = column_exists($pdo, 'projects', 'state');
     $hasLegacyDraftUpdatedAt = column_exists($pdo, 'projects', 'draft_updated_at');
 
@@ -1216,6 +1302,11 @@ function ensure_workspace_schema(PDO $pdo, array $config): void
     ensure_projects_column($pdo, 'saved_at', 'ALTER TABLE projects ADD COLUMN saved_at VARCHAR(40) NULL AFTER payload');
     ensure_projects_column($pdo, 'created_at', 'ALTER TABLE projects ADD COLUMN created_at VARCHAR(40) NULL AFTER saved_at');
     ensure_projects_column($pdo, 'published_version_id', 'ALTER TABLE projects ADD COLUMN published_version_id VARCHAR(64) NULL AFTER created_at');
+    ensure_projects_column(
+        $pdo,
+        'user_id',
+        'ALTER TABLE projects ADD COLUMN user_id VARCHAR(64) NOT NULL DEFAULT \'' . DEFAULT_EDITOR_USER_ID . '\' AFTER id'
+    );
 
     if ($hasLegacyState) {
         $pdo->exec('UPDATE projects SET payload = state WHERE (payload IS NULL OR payload = "") AND state IS NOT NULL AND state != ""');
@@ -1228,6 +1319,7 @@ function ensure_workspace_schema(PDO $pdo, array $config): void
     $stmt->execute([':payload' => $emptyState]);
     $pdo->exec('UPDATE projects SET saved_at = UTC_TIMESTAMP() WHERE saved_at IS NULL OR saved_at = ""');
     $pdo->exec('UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ""');
+    $pdo->exec('UPDATE projects SET user_id = \'' . DEFAULT_EDITOR_USER_ID . '\' WHERE user_id IS NULL OR user_id = ""');
 }
 
 function ensure_workspace_schema_if_required(PDO $pdo, array $config): void
@@ -1246,11 +1338,12 @@ function workspace_schema_is_current(PDO $pdo): bool
 {
     $requiredColumns = [
         'app_state' => ['id', 'payload', 'updated_at'],
-        'projects' => ['id', 'name', 'payload', 'saved_at', 'created_at', 'published_version_id'],
+        'projects' => ['id', 'user_id', 'name', 'payload', 'saved_at', 'created_at', 'published_version_id'],
         'book_locks' => ['project_id', 'book_id', 'user_id', 'user_name', 'session_id', 'locked_at'],
         'user_sessions' => ['session_id', 'user_id', 'session_label', 'last_seen_at', 'kick_requested_at'],
         'project_versions' => ['id', 'project_id', 'version_no', 'label', 'payload', 'created_at', 'is_published'],
         'editor_users' => ['id', 'name', 'password_hash', 'active'],
+        'project_shares' => ['project_id', 'shared_with_user_id', 'shared_at'],
     ];
 
     try {
@@ -1258,7 +1351,7 @@ function workspace_schema_is_current(PDO $pdo): bool
             "SELECT TABLE_NAME, COLUMN_NAME
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME IN ('app_state', 'projects', 'book_locks', 'user_sessions', 'project_versions', 'editor_users')"
+               AND TABLE_NAME IN ('app_state', 'projects', 'book_locks', 'user_sessions', 'project_versions', 'editor_users', 'project_shares')"
         );
         $foundColumns = [];
         foreach ($stmt as $row) {
@@ -1391,6 +1484,39 @@ function is_workspace_meta($payload): bool
     return is_array($payload) && array_key_exists('currentProjectId', $payload);
 }
 
+// workspaceVersion 2: her kullanici kendi currentProjectId'sini tutar (Node
+// server.mjs sanitizeWorkspaceRegistry ile ayni sema/mantik). Boylece tek
+// global gosterge yerine her kullanicinin "acik proje"si birbirinden bagimsiz
+// kalir; aksi halde paylasim sonrasi kullanicilar birbirinin projesini
+// "kapatip" surekli yeni bos proje uretebilirdi.
+function is_workspace_meta_v2($payload): bool
+{
+    return is_array($payload) && (($payload['workspaceVersion'] ?? null) === 2) && is_array($payload['users'] ?? null);
+}
+
+function sanitize_workspace_registry($payload): array
+{
+    if (is_workspace_meta_v2($payload)) {
+        $result = [];
+        foreach ($payload['users'] as $userId => $entry) {
+            $result[(string) $userId] = [
+                'currentProjectId' => trim((string) (is_array($entry) ? ($entry['currentProjectId'] ?? '') : '')),
+            ];
+        }
+        return $result;
+    }
+
+    if (is_workspace_meta($payload)) {
+        return [
+            DEFAULT_EDITOR_USER_ID => [
+                'currentProjectId' => trim((string) ($payload['currentProjectId'] ?? '')),
+            ],
+        ];
+    }
+
+    return [];
+}
+
 function get_app_state(PDO $pdo): array
 {
     $stmt = $pdo->query('SELECT payload, updated_at FROM app_state WHERE id = 1 LIMIT 1');
@@ -1406,7 +1532,7 @@ function get_app_state(PDO $pdo): array
     ];
 }
 
-function save_workspace_meta(PDO $pdo, string $currentProjectId): string
+function save_workspace_registry(PDO $pdo, array $users): string
 {
     $updatedAt = gmdate('c');
     $stmt = $pdo->prepare(
@@ -1416,8 +1542,8 @@ function save_workspace_meta(PDO $pdo, string $currentProjectId): string
     );
     $stmt->execute([
         ':payload' => encode_json([
-            'workspaceVersion' => 1,
-            'currentProjectId' => $currentProjectId,
+            'workspaceVersion' => 2,
+            'users' => $users,
         ]),
         ':updated_at' => $updatedAt,
     ]);
@@ -1425,46 +1551,64 @@ function save_workspace_meta(PDO $pdo, string $currentProjectId): string
     return $updatedAt;
 }
 
-function set_workspace_current_project(PDO $pdo, string $currentProjectId): void
+function save_workspace_meta(PDO $pdo, string $userId, string $currentProjectId): string
 {
-    save_workspace_meta($pdo, $currentProjectId);
+    $appState = get_app_state($pdo);
+    $users = sanitize_workspace_registry($appState['payload']);
+    $users[$userId] = ['currentProjectId' => trim($currentProjectId)];
+    return save_workspace_registry($pdo, $users);
 }
 
-function ensure_workspace(PDO $pdo): array
+function get_workspace_meta(PDO $pdo, string $userId): array
 {
     $appState = get_app_state($pdo);
     $payload = $appState['payload'];
+    $users = sanitize_workspace_registry($payload);
 
-    if (is_editor_state($payload)) {
-        $project = create_project($pdo, 'Varsayilan Proje', $payload);
-        save_workspace_meta($pdo, $project['id']);
-        return build_workspace($pdo, $project['id']);
-    }
-
-    $currentProjectId = '';
-    if (is_workspace_meta($payload)) {
-        $currentProjectId = trim((string) ($payload['currentProjectId'] ?? ''));
-    }
-
-    if ($currentProjectId !== '' && project_exists($pdo, $currentProjectId)) {
-        return build_workspace($pdo, $currentProjectId);
-    }
-
-    $projects = list_projects($pdo);
-    if (count($projects) > 0) {
-        $currentProjectId = $projects[0]['id'];
-        save_workspace_meta($pdo, $currentProjectId);
-        return build_workspace($pdo, $currentProjectId);
-    }
-
-    $project = create_project($pdo, 'Varsayilan Proje', empty_editor_state());
-    save_workspace_meta($pdo, $project['id']);
-    return build_workspace($pdo, $project['id']);
+    return [
+        'currentProjectId' => trim((string) ($users[$userId]['currentProjectId'] ?? '')),
+        'updatedAt' => $appState['updatedAt'],
+        'legacyState' => is_editor_state($payload) ? $payload : null,
+    ];
 }
 
-function build_workspace(PDO $pdo, string $currentProjectId): array
+function set_workspace_current_project(PDO $pdo, string $userId, string $currentProjectId): void
 {
-    $currentProject = get_project($pdo, $currentProjectId);
+    save_workspace_meta($pdo, $userId, $currentProjectId);
+}
+
+function ensure_workspace(PDO $pdo, string $userId): array
+{
+    $workspaceMeta = get_workspace_meta($pdo, $userId);
+
+    if ($workspaceMeta['legacyState']) {
+        // Paylasim oncesi tek-proje kurulumundan gecis: eski global durumu ilk
+        // istegi atan kullaniciya (sahip olarak) atar.
+        $project = create_project($pdo, 'Varsayilan Proje', $workspaceMeta['legacyState'], $userId);
+        set_workspace_current_project($pdo, $userId, $project['id']);
+        return build_workspace($pdo, $project['id'], $userId);
+    }
+
+    $currentProjectId = $workspaceMeta['currentProjectId'];
+    if ($currentProjectId !== '' && project_exists($pdo, $currentProjectId, $userId)) {
+        return build_workspace($pdo, $currentProjectId, $userId);
+    }
+
+    $projects = list_projects($pdo, $userId);
+    if (count($projects) > 0) {
+        $currentProjectId = $projects[0]['id'];
+        set_workspace_current_project($pdo, $userId, $currentProjectId);
+        return build_workspace($pdo, $currentProjectId, $userId);
+    }
+
+    $project = create_project($pdo, 'Varsayilan Proje', empty_editor_state(), $userId);
+    set_workspace_current_project($pdo, $userId, $project['id']);
+    return build_workspace($pdo, $project['id'], $userId);
+}
+
+function build_workspace(PDO $pdo, string $currentProjectId, string $userId): array
+{
+    $currentProject = get_project($pdo, $currentProjectId, $userId);
 
     if (!$currentProject) {
         throw new RuntimeException('Current project not found');
@@ -1472,16 +1616,24 @@ function build_workspace(PDO $pdo, string $currentProjectId): array
 
     return [
         'currentProject' => project_summary_from_project($currentProject),
-        'projects' => list_projects($pdo),
-        'versions' => list_project_versions($pdo, $currentProjectId),
+        'projects' => list_projects($pdo, $userId),
+        'versions' => list_project_versions($pdo, $currentProjectId, $userId),
         'state' => $currentProject['state'],
         'updatedAt' => $currentProject['draftUpdatedAt'],
     ];
 }
 
-function list_projects(PDO $pdo): array
+// Sahip OLUNAN + kullaniciya PAYLASILAN projelerin birlesimi (B-360).
+function list_projects(PDO $pdo, string $userId): array
 {
-    $stmt = $pdo->query('SELECT id, name, saved_at, created_at, published_version_id FROM projects ORDER BY saved_at DESC');
+    $stmt = $pdo->prepare(
+        'SELECT DISTINCT p.id, p.user_id, p.name, p.saved_at, p.created_at, p.published_version_id
+         FROM projects p
+         LEFT JOIN project_shares s ON s.project_id = p.id
+         WHERE p.user_id = :uid1 OR s.shared_with_user_id = :uid2
+         ORDER BY p.saved_at DESC'
+    );
+    $stmt->execute([':uid1' => $userId, ':uid2' => $userId]);
     $projects = [];
 
     foreach ($stmt as $row) {
@@ -1491,16 +1643,95 @@ function list_projects(PDO $pdo): array
     return $projects;
 }
 
-function project_exists(PDO $pdo, string $projectId): bool
+function project_is_owner(PDO $pdo, string $projectId, string $userId): bool
 {
-    $stmt = $pdo->prepare('SELECT 1 FROM projects WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => $projectId]);
+    if ($projectId === '' || $userId === '') {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT 1 FROM projects WHERE id = :id AND user_id = :uid LIMIT 1');
+    $stmt->execute([':id' => $projectId, ':uid' => $userId]);
     return (bool) $stmt->fetchColumn();
 }
 
-function get_project(PDO $pdo, string $projectId): ?array
+function project_is_shared_with(PDO $pdo, string $projectId, string $userId): bool
 {
-    $stmt = $pdo->prepare('SELECT id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = :id LIMIT 1');
+    if ($projectId === '' || $userId === '') {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT 1 FROM project_shares WHERE project_id = :id AND shared_with_user_id = :uid LIMIT 1');
+    $stmt->execute([':id' => $projectId, ':uid' => $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+// Okuma/duzenleme erisimi: sahip VEYA paylasilan. Silme/paylasim-yonetimi
+// icin bu YETERLI DEGIL — o eylemler project_is_owner ister (bkz. route'lar).
+function project_is_accessible(PDO $pdo, string $projectId, string $userId): bool
+{
+    return project_is_owner($pdo, $projectId, $userId) || project_is_shared_with($pdo, $projectId, $userId);
+}
+
+function list_project_shares(PDO $pdo, string $projectId): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT shared_with_user_id, shared_at FROM project_shares WHERE project_id = :project_id ORDER BY shared_at DESC'
+    );
+    $stmt->execute([':project_id' => $projectId]);
+    $shares = [];
+    foreach ($stmt as $row) {
+        $shares[] = [
+            'userId' => $row['shared_with_user_id'],
+            'sharedAt' => $row['shared_at'],
+        ];
+    }
+    return $shares;
+}
+
+function share_project(PDO $pdo, string $projectId, string $targetUserId): void
+{
+    $stmt = $pdo->prepare(
+        'INSERT INTO project_shares (project_id, shared_with_user_id, shared_at)
+         VALUES (:project_id, :uid, :shared_at)
+         ON DUPLICATE KEY UPDATE shared_at = VALUES(shared_at)'
+    );
+    $stmt->execute([
+        ':project_id' => $projectId,
+        ':uid' => $targetUserId,
+        ':shared_at' => date('Y-m-d H:i:s'),
+    ]);
+}
+
+function unshare_project(PDO $pdo, string $projectId, string $targetUserId): void
+{
+    $stmt = $pdo->prepare('DELETE FROM project_shares WHERE project_id = :project_id AND shared_with_user_id = :uid');
+    $stmt->execute([':project_id' => $projectId, ':uid' => $targetUserId]);
+}
+
+function editor_user_exists(PDO $pdo, string $userId): bool
+{
+    $stmt = $pdo->prepare('SELECT 1 FROM editor_users WHERE id = :id AND active = 1 LIMIT 1');
+    $stmt->execute([':id' => $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+// Paylasim diyalogundaki kullanici secimi icin: sifre/hash asla donmez.
+function list_active_editor_users(PDO $pdo): array
+{
+    $stmt = $pdo->query('SELECT id, name FROM editor_users WHERE active = 1 ORDER BY id COLLATE utf8mb4_unicode_ci');
+    $users = [];
+    foreach ($stmt as $row) {
+        $users[] = ['id' => $row['id'], 'name' => $row['name']];
+    }
+    return $users;
+}
+
+function project_exists(PDO $pdo, string $projectId, string $userId): bool
+{
+    return project_is_accessible($pdo, $projectId, $userId);
+}
+
+function get_project(PDO $pdo, string $projectId, string $userId): ?array
+{
+    $stmt = $pdo->prepare('SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = :id LIMIT 1');
     $stmt->execute([':id' => $projectId]);
     $row = $stmt->fetch();
 
@@ -1508,8 +1739,13 @@ function get_project(PDO $pdo, string $projectId): ?array
         return null;
     }
 
+    if (!project_is_accessible($pdo, $projectId, $userId)) {
+        return null;
+    }
+
     return [
         'id' => $row['id'],
+        'userId' => $row['user_id'],
         'name' => $row['name'],
         'state' => decode_json($row['payload']) ?? empty_editor_state(),
         'draftUpdatedAt' => $row['saved_at'],
@@ -1518,9 +1754,9 @@ function get_project(PDO $pdo, string $projectId): ?array
     ];
 }
 
-function get_project_summary(PDO $pdo, string $projectId): ?array
+function get_project_summary(PDO $pdo, string $projectId, string $userId): ?array
 {
-    $project = get_project($pdo, $projectId);
+    $project = get_project($pdo, $projectId, $userId);
     return $project ? project_summary_from_project($project) : null;
 }
 
@@ -1528,6 +1764,9 @@ function project_summary_from_project(array $project): array
 {
     return [
         'id' => $project['id'],
+        // Frontend'in "paylas" butonunu yalniz sahibe gostermesi icin (bkz.
+        // ProjectShareModal.jsx). Node getProjectSummary ile tutarli.
+        'userId' => $project['userId'] ?? null,
         'name' => $project['name'],
         'draftUpdatedAt' => $project['draftUpdatedAt'],
         'createdAt' => $project['createdAt'],
@@ -1539,6 +1778,7 @@ function project_summary_from_row(array $row): array
 {
     return [
         'id' => $row['id'],
+        'userId' => $row['user_id'] ?? null,
         'name' => $row['name'],
         'draftUpdatedAt' => $row['saved_at'],
         'createdAt' => $row['created_at'] ?: $row['saved_at'],
@@ -1546,30 +1786,31 @@ function project_summary_from_row(array $row): array
     ];
 }
 
-function create_project(PDO $pdo, string $name, $state): array
+function create_project(PDO $pdo, string $name, $state, string $userId): array
 {
     $projectId = bin2hex(random_bytes(16));
     $projectName = trim($name) !== '' ? trim($name) : 'Yeni Proje';
     $timestamp = gmdate('c');
 
     $stmt = $pdo->prepare(
-        'INSERT INTO projects (id, name, payload, saved_at, created_at, published_version_id)
-         VALUES (:id, :name, :payload, :saved_at, :created_at, NULL)'
+        'INSERT INTO projects (id, user_id, name, payload, saved_at, created_at, published_version_id)
+         VALUES (:id, :user_id, :name, :payload, :saved_at, :created_at, NULL)'
     );
     $stmt->execute([
         ':id' => $projectId,
+        ':user_id' => $userId,
         ':name' => $projectName,
         ':payload' => encode_json($state),
         ':saved_at' => $timestamp,
         ':created_at' => $timestamp,
     ]);
 
-    return get_project($pdo, $projectId);
+    return get_project($pdo, $projectId, $userId);
 }
 
-function save_project_draft(PDO $pdo, string $projectId, $state, ?string $name = null): array
+function save_project_draft(PDO $pdo, string $projectId, $state, ?string $name, string $userId): array
 {
-    $project = get_project($pdo, $projectId);
+    $project = get_project($pdo, $projectId, $userId);
     if (!$project) {
         throw new RuntimeException('Project not found');
     }
@@ -1589,11 +1830,15 @@ function save_project_draft(PDO $pdo, string $projectId, $state, ?string $name =
         ':saved_at' => $timestamp,
     ]);
 
-    return get_project($pdo, $projectId);
+    return get_project($pdo, $projectId, $userId);
 }
 
-function list_project_versions(PDO $pdo, string $projectId): array
+function list_project_versions(PDO $pdo, string $projectId, string $userId): array
 {
+    if (!project_is_accessible($pdo, $projectId, $userId)) {
+        return [];
+    }
+
     $stmt = $pdo->prepare(
         'SELECT id, project_id, version_no, label, created_at, is_published
          FROM project_versions
@@ -1617,9 +1862,9 @@ function list_project_versions(PDO $pdo, string $projectId): array
     return $versions;
 }
 
-function create_project_version(PDO $pdo, string $projectId, string $label, bool $publish = false, $stateOverride = null): array
+function create_project_version(PDO $pdo, string $projectId, string $label, bool $publish = false, $stateOverride = null, string $userId = ''): array
 {
-    $project = get_project($pdo, $projectId);
+    $project = get_project($pdo, $projectId, $userId);
     if (!$project) {
         throw new RuntimeException('Project not found');
     }
@@ -1672,6 +1917,8 @@ function create_project_version(PDO $pdo, string $projectId, string $label, bool
 
 function restore_project_version(PDO $pdo, string $projectId, string $versionId): void
 {
+    // Not: bu fonksiyon dogrudan cagrilmadan once route'ta project_is_accessible
+    // ile erisim kontrolu yapiliyor (bkz. /projects/:id/restore).
     $stmt = $pdo->prepare(
         'SELECT id, payload
          FROM project_versions
@@ -1703,6 +1950,8 @@ function restore_project_version(PDO $pdo, string $projectId, string $versionId)
 
 function publish_project_version(PDO $pdo, string $projectId, string $versionId): void
 {
+    // Not: route seviyesinde project_is_accessible ile erisim kontrolu yapiliyor
+    // (bkz. /projects/:id/publish) — burada tekrar kontrol edilmez.
     $stmt = $pdo->prepare(
         'SELECT id
          FROM project_versions
@@ -1734,6 +1983,11 @@ function publish_project_version(PDO $pdo, string $projectId, string $versionId)
 
 function delete_project(PDO $pdo, string $projectId): void
 {
+    // Not: route seviyesinde project_is_owner ile SADECE SAHIP silebilir kontrolu
+    // yapiliyor (bkz. DELETE /projects/:id) — burada tekrar kontrol edilmez.
+    $deleteShares = $pdo->prepare('DELETE FROM project_shares WHERE project_id = :project_id');
+    $deleteShares->execute([':project_id' => $projectId]);
+
     $deleteVersions = $pdo->prepare('DELETE FROM project_versions WHERE project_id = :project_id');
     $deleteVersions->execute([':project_id' => $projectId]);
 

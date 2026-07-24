@@ -151,6 +151,13 @@ db.exec(`
     parent_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS project_shares (
+    project_id TEXT NOT NULL,
+    shared_with_user_id TEXT NOT NULL,
+    shared_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, shared_with_user_id)
+  );
 `);
 
 ensureProjectColumn("created_at", "ALTER TABLE projects ADD COLUMN created_at TEXT");
@@ -1136,18 +1143,62 @@ function getWorkspaceMeta(userId) {
   };
 }
 
+// ─── Proje paylasimi (B-360) ───────────────────────────────────────────────
+// Node tarafi zaten user_id ile tam izole; burada eklenen SADECE paylasim.
+// Izin modeli: paylasilan kullanicilar goruntuleyebilir + duzenleyebilir
+// (taslak kaydet, surum olustur/yayinla/geri yukle) ama SILEMEZ ve paylasim
+// listesini yonetemez (yalniz sahip paylasabilir/kaldirabilir). Bkz. PR aciklamasi.
+function isProjectOwner(projectId, userId) {
+  return Boolean(db.prepare("SELECT 1 FROM projects WHERE id = ? AND user_id = ? LIMIT 1").get(projectId, userId));
+}
+
+function isProjectSharedWith(projectId, userId) {
+  return Boolean(db.prepare("SELECT 1 FROM project_shares WHERE project_id = ? AND shared_with_user_id = ? LIMIT 1").get(projectId, userId));
+}
+
+function isProjectAccessible(projectId, userId) {
+  return isProjectOwner(projectId, userId) || isProjectSharedWith(projectId, userId);
+}
+
+function listProjectShares(projectId) {
+  return db
+    .prepare("SELECT shared_with_user_id AS userId, shared_at AS sharedAt FROM project_shares WHERE project_id = ? ORDER BY shared_at DESC")
+    .all(projectId);
+}
+
+function shareProject(projectId, targetUserId) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO project_shares (project_id, shared_with_user_id, shared_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(project_id, shared_with_user_id) DO UPDATE SET shared_at = excluded.shared_at
+  `).run(projectId, targetUserId, now);
+}
+
+function unshareProject(projectId, targetUserId) {
+  db.prepare("DELETE FROM project_shares WHERE project_id = ? AND shared_with_user_id = ?").run(projectId, targetUserId);
+}
+
+// Sahip OLUNAN + kullaniciya PAYLASILAN projelerin birlesimi.
 function listProjects(userId) {
   return db
-    .prepare("SELECT id, user_id, name, saved_at, created_at, published_version_id FROM projects WHERE user_id = ? ORDER BY saved_at DESC")
-    .all(userId)
+    .prepare(`
+      SELECT DISTINCT p.id, p.user_id, p.name, p.saved_at, p.created_at, p.published_version_id
+      FROM projects p
+      LEFT JOIN project_shares s ON s.project_id = p.id
+      WHERE p.user_id = ? OR s.shared_with_user_id = ?
+      ORDER BY p.saved_at DESC
+    `)
+    .all(userId, userId)
     .map(projectSummaryFromRow);
 }
 
 function getProject(projectId, userId) {
   const row = db
-    .prepare("SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ? AND user_id = ?")
-    .get(projectId, userId);
+    .prepare("SELECT id, user_id, name, payload, saved_at, created_at, published_version_id FROM projects WHERE id = ?")
+    .get(projectId);
   if (!row) return null;
+  if (!isProjectAccessible(projectId, userId)) return null;
   return {
     id: row.id,
     userId: row.user_id || DEFAULT_USER_ID,
@@ -1172,7 +1223,7 @@ function getProjectSummary(projectId, userId) {
 }
 
 function projectExists(projectId, userId) {
-  return Boolean(db.prepare("SELECT 1 FROM projects WHERE id = ? AND user_id = ? LIMIT 1").get(projectId, userId));
+  return isProjectAccessible(projectId, userId);
 }
 
 function createProject(userId, name, state) {
@@ -1196,8 +1247,8 @@ function saveProjectDraft(userId, projectId, state, name = null) {
   db.prepare(`
     UPDATE projects
     SET name = ?, payload = ?, saved_at = ?
-    WHERE id = ? AND user_id = ?
-  `).run(projectName, JSON.stringify(scrubbedState), timestamp, projectId, userId);
+    WHERE id = ?
+  `).run(projectName, JSON.stringify(scrubbedState), timestamp, projectId);
   return getProject(projectId, userId);
 }
 
@@ -1239,7 +1290,7 @@ function createProjectVersion(userId, projectId, label, publish = false, stateOv
   `).run(versionId, projectId, versionNo, versionLabel, JSON.stringify(payload), createdAt, publish ? 1 : 0);
 
   if (publish) {
-    db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(versionId, projectId, userId);
+    db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(versionId, projectId);
   }
 
   return {
@@ -1257,7 +1308,7 @@ function restoreProjectVersion(userId, projectId, versionId) {
   const row = db.prepare("SELECT payload FROM project_versions WHERE id = ? AND project_id = ?").get(versionId, projectId);
   if (!row) throw new Error("Version not found");
   const savedAt = new Date().toISOString();
-  db.prepare("UPDATE projects SET payload = ?, saved_at = ? WHERE id = ? AND user_id = ?").run(row.payload, savedAt, projectId, userId);
+  db.prepare("UPDATE projects SET payload = ?, saved_at = ? WHERE id = ?").run(row.payload, savedAt, projectId);
 }
 
 function publishProjectVersion(userId, projectId, versionId) {
@@ -1266,11 +1317,23 @@ function publishProjectVersion(userId, projectId, versionId) {
   if (!row) throw new Error("Version not found");
   db.prepare("UPDATE project_versions SET is_published = 0 WHERE project_id = ?").run(projectId);
   db.prepare("UPDATE project_versions SET is_published = 1 WHERE id = ?").run(versionId);
-  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(versionId, projectId, userId);
+  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(versionId, projectId);
 }
 
 function deleteProject(userId, projectId) {
-  if (!projectExists(projectId, userId)) throw new Error("Project not found");
+  // Guvenlik: yalniz SAHIP silebilir; paylasilan kullanicilar goruntuleyip
+  // duzenleyebilir ama silemez.
+  if (!projectExists(projectId, userId)) {
+    const err = new Error("Project not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!isProjectOwner(projectId, userId)) {
+    const err = new Error("Sadece proje sahibi silebilir.");
+    err.statusCode = 403;
+    throw err;
+  }
+  db.prepare("DELETE FROM project_shares WHERE project_id = ?").run(projectId);
   db.prepare("DELETE FROM project_versions WHERE project_id = ?").run(projectId);
   db.prepare("DELETE FROM projects WHERE id = ? AND user_id = ?").run(projectId, userId);
   db.prepare("DELETE FROM book_locks WHERE project_id = ?").run(projectId);
@@ -1280,7 +1343,7 @@ function deleteProjectVersion(userId, projectId, versionId) {
   if (!projectExists(projectId, userId)) throw new Error("Project not found");
   db.prepare("DELETE FROM project_versions WHERE id = ? AND project_id = ?").run(versionId, projectId);
   const remainingPublished = db.prepare("SELECT id FROM project_versions WHERE project_id = ? AND is_published = 1 LIMIT 1").get(projectId);
-  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ? AND user_id = ?").run(remainingPublished?.id || null, projectId, userId);
+  db.prepare("UPDATE projects SET published_version_id = ? WHERE id = ?").run(remainingPublished?.id || null, projectId);
 }
 
 function duplicateProject(userId, projectId) {
@@ -1761,6 +1824,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Hafif kullanici listesi (admin-token GEREKTIRMEZ, sadece aktif oturum) —
+    // paylasim dialogunda "kime paylasayim" secimi icin. /api/admin/users
+    // (admin-token korumali) BURADAN AYRI ve DEGISTIRILMEDI.
+    if (url.pathname === "/api/users" && req.method === "GET") {
+      const users = listEditorUsers()
+        .filter(user => user.active)
+        .map(user => ({ id: user.id, name: user.name }));
+      sendJson(res, 200, { ok: true, users });
+      return;
+    }
+
     if (url.pathname === "/api/workspace/current-project" && req.method === "PUT") {
       const body = await readBody(req);
       const projectId = String(body.projectId || "").trim();
@@ -1861,6 +1935,10 @@ const server = http.createServer(async (req, res) => {
     if (bookLockMatch && req.method === "POST") {
       const projectId = decodeURIComponent(bookLockMatch[1]);
       const bookId = decodeURIComponent(bookLockMatch[2]);
+      if (!projectExists(projectId, currentUser.id)) {
+        sendJson(res, 403, { ok: false, error: "Bu projeye erisim yetkiniz yok." });
+        return;
+      }
       const claimed = claimBookLock(currentUser.id, currentSessionId, projectId, bookId, currentUser.name);
       if (!claimed.ok) {
         sendJson(res, 409, {
@@ -1961,10 +2039,61 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ─── Proje paylasimi ────────────────────────────────────────────────────────
+    const sharesMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/shares$/);
+    if (sharesMatch && req.method === "GET") {
+      const projectId = decodeURIComponent(sharesMatch[1]);
+      if (!projectExists(projectId, currentUser.id)) {
+        sendJson(res, 403, { ok: false, error: "Bu projeye erisim yetkiniz yok." });
+        return;
+      }
+      sendJson(res, 200, { ok: true, shares: listProjectShares(projectId) });
+      return;
+    }
+
+    if (sharesMatch && req.method === "POST") {
+      const projectId = decodeURIComponent(sharesMatch[1]);
+      if (!isProjectOwner(projectId, currentUser.id)) {
+        sendJson(res, 403, { ok: false, error: "Sadece proje sahibi paylasabilir." });
+        return;
+      }
+      const body = await readBody(req);
+      const targetUserId = normalizeAdminUserId(body.userId);
+      if (!targetUserId) {
+        sendJson(res, 400, { ok: false, error: "Gecerli bir kullanici id girin" });
+        return;
+      }
+      if (targetUserId === currentUser.id) {
+        sendJson(res, 400, { ok: false, error: "Kendinizle paylasamazsiniz." });
+        return;
+      }
+      if (!getEditorUserRecord(targetUserId)) {
+        sendJson(res, 404, { ok: false, error: "Kullanici bulunamadi." });
+        return;
+      }
+      shareProject(projectId, targetUserId);
+      sendJson(res, 200, { ok: true, shares: listProjectShares(projectId) });
+      return;
+    }
+
+    const shareDeleteMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/shares\/([^/]+)$/);
+    if (shareDeleteMatch && req.method === "DELETE") {
+      const projectId = decodeURIComponent(shareDeleteMatch[1]);
+      const targetUserId = decodeURIComponent(shareDeleteMatch[2]);
+      if (!isProjectOwner(projectId, currentUser.id)) {
+        sendJson(res, 403, { ok: false, error: "Sadece proje sahibi paylasimi kaldirabilir." });
+        return;
+      }
+      unshareProject(projectId, targetUserId);
+      sendJson(res, 200, { ok: true, shares: listProjectShares(projectId) });
+      return;
+    }
+
     // ─── Review Threads ─────────────────────────────────────────────────────────
-    // Güvenlik: tüm thread işlemleri yalnızca ilgili projenin SAHİBİ tarafından
-    // yapılabilir. Aksi halde başka kullanıcının projesinin yorumlarına erişim
-    // (IDOR) mümkün olurdu. projectExists(projectId, userId) sahiplik kontrolüdür.
+    // Güvenlik: tüm thread işlemleri yalnızca projenin SAHİBİ veya PAYLAŞILDIĞI
+    // kullanıcılar tarafından yapılabilir. Aksi halde başka kullanıcının projesinin
+    // yorumlarına erişim (IDOR) mümkün olurdu. projectExists(projectId, userId)
+    // artık B-360 ile sahiplik-veya-paylaşım erişim kontrolüdür (bkz. isProjectAccessible).
     const threadsListMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads$/);
     if (threadsListMatch && req.method === "GET") {
       const projectId = decodeURIComponent(threadsListMatch[1]);

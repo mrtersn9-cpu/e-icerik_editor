@@ -26,6 +26,7 @@ import IconPickerModal from './components/IconPickerModal';
 import ContentLibraryModal from './components/ContentLibraryModal';
 import CharacterPickerModal from './components/CharacterPickerModal';
 import SymbolPickerModal from './components/SymbolPickerModal';
+import ProjectShareModal from './components/ProjectShareModal';
 import ProjectVersionManagerModal from './components/ProjectVersionManagerModal';
 import ReviewThreadsModal from './components/ReviewThreadsModal';
 import EditorTopBar from './components/ribbon/EditorTopBar';
@@ -689,6 +690,7 @@ export default function EIcerikEditor() {
     versions: [],
   });
   const [showProjectManager, setShowProjectManager] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showVariablesManager, setShowVariablesManager] = useState(false);
   const [showBranchDiagram, setShowBranchDiagram] = useState(false);
   const [showGlossaryEditor, setShowGlossaryEditor] = useState(false);
@@ -940,6 +942,7 @@ export default function EIcerikEditor() {
     setVersionLabel('');
     setSelectedIds(new Set());
     setShowProjectManager(false);
+    setShowShareModal(false);
     setBookLockInfo(null);
     setBookLockWarning('');
     setActiveTab('sahne');
@@ -3085,6 +3088,13 @@ export default function EIcerikEditor() {
     registerBackDismissible,
   });
   useBackDismissible({
+    id: 'project-share',
+    open: showShareModal,
+    onDismiss: () => setShowShareModal(false),
+    priority: 805,
+    registerBackDismissible,
+  });
+  useBackDismissible({
     id: 'variables-manager',
     open: showVariablesManager,
     onDismiss: () => setShowVariablesManager(false),
@@ -3314,6 +3324,7 @@ export default function EIcerikEditor() {
         setShowAdminManagement={setShowAdminManagement}
         setShowProjectManager={setShowProjectManager}
         setShowReviewThreads={setShowReviewThreads}
+        setShowShareModal={setShowShareModal}
         setStoryRibbonTab={setStoryRibbonTab}
         undo={undo}
       />
@@ -4310,6 +4321,14 @@ export default function EIcerikEditor() {
           name: book.name,
           activityCount: present.activities.filter((a) => a.bookId === book.id).length,
         }))}
+      />
+
+      <ProjectShareModal
+        open={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        currentProject={currentProject}
+        currentProjectId={currentProjectId}
+        activeUserId={activeUserId}
       />
 
       <DesignToolsDialog

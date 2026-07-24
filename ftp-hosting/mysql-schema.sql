@@ -17,12 +17,24 @@ CREATE TABLE IF NOT EXISTS app_state (
 
 CREATE TABLE IF NOT EXISTS projects (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL DEFAULT 'kullanici1',
     name VARCHAR(255) NOT NULL,
     payload LONGTEXT NOT NULL,
     saved_at VARCHAR(40) NOT NULL,
     created_at VARCHAR(40) NULL,
     published_version_id VARCHAR(64) NULL,
-    INDEX idx_projects_saved_at (saved_at)
+    INDEX idx_projects_saved_at (saved_at),
+    INDEX idx_projects_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- project_shares: bir projenin sahibi disinda hangi kullanicilarla paylasildigi
+-- (bkz. POST/DELETE/GET /projects/:id/shares). Bu dosyayi elle calistirmak
+-- GEREKMEZ; ensure_workspace_schema() ilk istekte otomatik olusturur.
+CREATE TABLE IF NOT EXISTS project_shares (
+    project_id VARCHAR(64) NOT NULL,
+    shared_with_user_id VARCHAR(64) NOT NULL,
+    shared_at DATETIME NOT NULL,
+    PRIMARY KEY (project_id, shared_with_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS book_locks (
