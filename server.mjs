@@ -27,6 +27,10 @@ const SEEDED_USERS = [
 const DEFAULT_USER_ID = SEEDED_USERS[0].id;
 const SESSION_TTL_MS = Number(process.env.EICERIK_SESSION_TTL_MS || 60_000);
 const SESSION_TOKEN_TTL_MS = Number(process.env.EICERIK_SESSION_TOKEN_TTL_MS || 8 * 60 * 60_000);
+// "Beni hatirla" isaretliyse oturum token'i 3 ay (90 gun) gecerli kalir.
+const SESSION_TOKEN_REMEMBER_TTL_MS = Number(
+  process.env.EICERIK_SESSION_TOKEN_REMEMBER_TTL_MS || 90 * 24 * 60 * 60_000
+);
 const SESSION_TOKEN_SECRET = process.env.EICERIK_SESSION_TOKEN_SECRET || `dev-${DB_PATH}`;
 const ADMIN_TOKEN = String(process.env.EICERIK_ADMIN_TOKEN || "").trim();
 const PASSWORD_HASH_ITERATIONS = Number(process.env.EICERIK_PASSWORD_ITERATIONS || 120_000);
@@ -365,8 +369,8 @@ function signTokenPayload(payloadPart) {
   return createHmac("sha256", SESSION_TOKEN_SECRET).update(payloadPart).digest("base64url");
 }
 
-function createSessionToken(userId, sessionId) {
-  const expiresAt = Date.now() + SESSION_TOKEN_TTL_MS;
+function createSessionToken(userId, sessionId, ttlMs = SESSION_TOKEN_TTL_MS) {
+  const expiresAt = Date.now() + ttlMs;
   const payloadPart = base64UrlJson({ userId, sessionId, exp: expiresAt });
   return {
     token: `${payloadPart}.${signTokenPayload(payloadPart)}`,
@@ -1571,6 +1575,7 @@ const server = http.createServer(async (req, res) => {
       const sessionId = String(body.sessionId || "").trim();
       const sessionLabel = String(body.sessionLabel || "").trim();
       const force = body.force === true;
+      const remember = body.remember === true;
       const rateStatus = getLoginRateStatus(req, userId);
       if (rateStatus.limited) {
         logSecurityEvent("login_rate_limited", { userId, ip: getRequestIp(req), waitSeconds: rateStatus.waitSeconds });
@@ -1647,7 +1652,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       pendingKickRequests.delete(user.id);
-      const sessionToken = createSessionToken(user.id, sessionId);
+      const sessionToken = createSessionToken(
+        user.id,
+        sessionId,
+        remember ? SESSION_TOKEN_REMEMBER_TTL_MS : SESSION_TOKEN_TTL_MS
+      );
       logSecurityEvent("login_success", { userId: user.id, ip: getRequestIp(req) });
       sendJson(res, 200, {
         ok: true,

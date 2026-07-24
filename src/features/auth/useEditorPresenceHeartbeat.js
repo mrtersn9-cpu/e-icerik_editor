@@ -64,6 +64,7 @@ export default function useEditorPresenceHeartbeat({
           forceLogoutToLogin('', {
             userId: activeUserId,
             password: loginForm.password,
+            remember: loginForm.remember,
             sessionId: activeSessionId,
             sessionLabel: authState?.sessionLabel || createSessionLabel(),
             session: error.session || null,
@@ -123,6 +124,7 @@ export default function useEditorPresenceHeartbeat({
     forceLogoutToLogin,
     heartbeatFailCountRef,
     loginForm.password,
+    loginForm.remember,
     offlineDraftPendingRef,
     remoteReadyRef,
     setDbStatus,
