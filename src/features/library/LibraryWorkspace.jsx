@@ -19,7 +19,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { generateDiceBirdDemoTemplate } from '../../activity-types/custom-interaction/customInteractionTemplates';
 import {
@@ -372,11 +372,6 @@ export default function LibraryWorkspace({
   const focusedActivity = activities.find((activity) => activity.id === focusedActivityId) || null;
   const publisherBooks = books.filter((book) => book.publisherId === selectedPublisherId);
   const bookActivities = activities.filter((activity) => activity.bookId === selectedBookId);
-  const selectionPath = [
-    selectedPublisher?.name || 'Yayınevi',
-    selectedBook?.name || 'Kitap',
-    focusedActivity?.name || 'Etkinlik',
-  ];
 
   const visiblePublishers = useMemo(
     () =>
@@ -683,63 +678,6 @@ export default function LibraryWorkspace({
       <div className={styles.aurora + ' ' + styles.aurora3} aria-hidden="true" />
       <div className={styles.scanline} aria-hidden="true" />
       <div className={styles.gridFloor} aria-hidden="true" />
-
-      <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>
-            <span className={styles.liveDot} aria-hidden="true" />
-            Canlı · İçerik Komuta Güvertesi
-          </span>
-          <h1>İçerik filonuzu yörüngeye taşıyın</h1>
-          <p>Yayınevi, kitap ve etkinliği sırayla kenetleyin; düzenleme güvertesini yalnızca tüm sistemler hazır olduğunda ateşleyin.</p>
-          <div className={styles.pathBar} aria-label="Geçerli seçim yolu">
-            {selectionPath.map((item, index) => {
-              const isDone = index < selectionPath.length - 1;
-              const isCur = index === selectionPath.length - 1;
-              return (
-                <Fragment key={`${item}-${index}`}>
-                  {index > 0 && (
-                    <span className={styles.pathLink + (isDone ? ' ' + styles.pathLinkActive : '')} aria-hidden="true" />
-                  )}
-                  <span className={isDone ? styles.pathDone : isCur ? styles.pathCurrent : ''}>
-                    <span className={styles.pathDot}>{isDone ? '✓' : index + 1}</span>
-                    {item}
-                  </span>
-                </Fragment>
-              );
-            })}
-          </div>
-        </div>
-        <div className={styles.summary}>
-          <div className={styles.gauge}>
-            <div className={styles.gaugeRing}>
-              <Building2 size={15} color="#38bdf8" aria-hidden="true" />
-            </div>
-            <div>
-              <div className={styles.gaugeNum}>{String(publishers.length).padStart(2, '0')}</div>
-              <div className={styles.gaugeLabel}>Yayınevi</div>
-            </div>
-          </div>
-          <div className={styles.gauge}>
-            <div className={styles.gaugeRing}>
-              <BookOpen size={15} color="#22d3ee" aria-hidden="true" />
-            </div>
-            <div>
-              <div className={styles.gaugeNum}>{String(books.length).padStart(2, '0')}</div>
-              <div className={styles.gaugeLabel}>Kitap</div>
-            </div>
-          </div>
-          <div className={styles.gauge}>
-            <div className={styles.gaugeRing}>
-              <Layers3 size={15} color="#a855f7" aria-hidden="true" />
-            </div>
-            <div>
-              <div className={styles.gaugeNum}>{String(activities.length).padStart(2, '0')}</div>
-              <div className={styles.gaugeLabel}>Etkinlik</div>
-            </div>
-          </div>
-        </div>
-      </header>
 
       <div className={styles.mobileBreadcrumb}>
         {mobileColumn !== 'publishers' && (

@@ -41,7 +41,6 @@ describe('LibraryWorkspace', () => {
   test('renders the modern selection center and hierarchy actions', () => {
     const markup = renderLibrary();
 
-    expect(markup).toContain('İçerik filonuzu yörüngeye taşıyın');
     expect(markup).toContain('Dijital Yayın');
     expect(markup).toContain('Tarih 10');
     expect(markup).toContain('Kavram Eşleştirme');
