@@ -61,6 +61,15 @@ import {
   getResizeAnchor,
   getSnapshotBounds,
 } from './resizeGeometry';
+import {
+  calculateSafeAreaGuides,
+  collectSnapCandidates,
+  getObjectBounds,
+  getSelectionBounds,
+  normalizeSmartGuideSettings,
+  renderSmartGuides,
+  resolveSmartGuideSnap,
+} from './snapGuides';
 import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
 import { writeObjectClipboardToSystem, readObjectClipboardFromSystem } from '../utils/systemClipboard';
 import { resolveCornerRadiusPx } from '../utils/cornerRadius';
@@ -143,10 +152,25 @@ const StageCanvas = forwardRef(function StageCanvas(
   const dragSnapshotRef = useRef(null);
   const interactionDraftRef = useRef(null);
   const vectorEditRef = useRef(null);
+  // Akıllı hizalama/snap: drag başlangıcında bir kez toplanan aday öge listesi
+  // (kilitsiz/görünür/seçili-olmayan) — sürükleme boyunca DEĞİŞMEZ (yeniden taranmaz),
+  // yalnız sürüklenen öge hareket ettiği için bu cache güvenlidir (bkz. snapGuides.js).
+  const snapCandidatesRef = useRef([]);
+  // Taşınan seçimin sürükleme BAŞLANGICINDAKİ ortak sınır kutusu (delta bu kutuya uygulanır).
+  const dragSelectionBoundsRef = useRef(null);
+  // Shift ile düz taşıma ekseni kilidi: null=serbest, 'x'|'y'=kilitli. Shift bırakılınca
+  // null'a döner, tekrar basılınca O ANKİ harekete göre yeniden hesaplanır.
+  const axisLockRef = useRef(null);
+  // Yardımcı çizgi (guide) React state güncellemesi pointermove başına değil, animasyon
+  // karesi başına bir kez yapılsın diye rAF ile toplu işlenir (performans, madde 9).
+  const smartGuideRafRef = useRef(null);
+  const pendingSmartGuideGuidesRef = useRef(null);
   const [rubberBand, setRubberBand] = useState(null);
   const [selectedVectorAnchor, setSelectedVectorAnchor] = useState({ objectId: null, indices: [] });
   const [viewportSize, setViewportSize] = useState({ width: 1280, height: 760 });
   const [interactionDraft, setInteractionDraft] = useState(null);
+  // Sürükleme/boyutlandırma sırasında gösterilen akıllı hizalama çizgileri (sahne birimi).
+  const [smartGuides, setSmartGuides] = useState([]);
   // Çift tıkla satıriçi metin düzenlemesi: düzenlenen ögenin id'si
   const [editingObjectId, setEditingObjectId] = useState(null);
   const editTextareaRef = useRef(null);
@@ -340,6 +364,52 @@ const StageCanvas = forwardRef(function StageCanvas(
     },
     [baseScale]
   );
+
+  // Akıllı hizalama ayarları: activity.viewOptions.smartGuides + geçerli zoom (tolerans
+  // zoom'a göre normalize edilsin diye). Bkz. snapGuides.js DEFAULT_SMART_GUIDE_SETTINGS.
+  const smartGuideSettings = useMemo(
+    () => normalizeSmartGuideSettings({ ...(canvasActivity.viewOptions?.smartGuides || {}), zoom: scale }),
+    [canvasActivity.viewOptions?.smartGuides, scale]
+  );
+  const smartGuideCanvasSize = useMemo(
+    () => ({
+      width: Number(canvasActivity.stageWidth) || 1920,
+      height: Number(canvasActivity.stageHeight) || 1080,
+    }),
+    [canvasActivity.stageWidth, canvasActivity.stageHeight]
+  );
+  // "Güvenli Alanı Göster" sürekli-görünür modu: drag/resize dışında da her zaman render edilir.
+  const persistentSafeAreaGuides = useMemo(
+    () => calculateSafeAreaGuides(smartGuideCanvasSize, smartGuideSettings),
+    [smartGuideCanvasSize, smartGuideSettings]
+  );
+
+  // Yardımcı çizgi state güncellemesini bir sonraki animasyon karesine kadar toplar;
+  // aynı karede birden fazla pointermove gelirse yalnız SONUNCUSU işlenir.
+  const scheduleSmartGuidesUpdate = useCallback((guides) => {
+    pendingSmartGuideGuidesRef.current = guides;
+    if (smartGuideRafRef.current) return;
+    smartGuideRafRef.current = requestAnimationFrame(() => {
+      smartGuideRafRef.current = null;
+      setSmartGuides(pendingSmartGuideGuidesRef.current || []);
+    });
+  }, []);
+
+  const clearSmartGuides = useCallback(() => {
+    if (smartGuideRafRef.current) {
+      cancelAnimationFrame(smartGuideRafRef.current);
+      smartGuideRafRef.current = null;
+    }
+    pendingSmartGuideGuidesRef.current = null;
+    setSmartGuides([]);
+  }, []);
+
+  // Kilitli sürükleme çıkışında (unmount) bekleyen rAF'ı temizle.
+  useEffect(() => {
+    return () => {
+      if (smartGuideRafRef.current) cancelAnimationFrame(smartGuideRafRef.current);
+    };
+  }, []);
 
   const patchAct = useCallback(
     (p) => {
@@ -969,6 +1039,14 @@ const StageCanvas = forwardRef(function StageCanvas(
         .filter((o) => snapIds.has(o.id) && (!o.locked || o.generatedBy === 'answer-placement'))
         .map((o) => [o.id, { x: o.x, y: o.y, width: o.width, height: o.height }])
     );
+    // Akıllı hizalama: aday ögeler ve seçimin başlangıç sınır kutusu drag BAŞLANGICINDA
+    // bir kez hesaplanır (kilitsiz/görünür/seçili-olmayan ögeler drag sırasında yerinde
+    // durduğundan bu cache güvenlidir) — pointermove başına yeniden taranmaz (performans).
+    snapCandidatesRef.current = collectSnapCandidates(a.objects || [], smartGuideCanvasSize, {
+      excludeIds: snapIds,
+    });
+    dragSelectionBoundsRef.current = getSelectionBounds(Object.values(dragSnapshotRef.current));
+    axisLockRef.current = null;
 
     const onMove = (me) => {
       const pt = toStage(me.clientX, me.clientY);
@@ -986,13 +1064,65 @@ const StageCanvas = forwardRef(function StageCanvas(
         const padX = sw * 0.75;
         const padY = sh * 0.75;
         const snap = dragSnapshotRef.current || {};
+
+        // Shift ile düz taşıma: ilk basışta o anki hareketin baskın eksenine kilitlenir
+        // (X farkı >= Y farkı → yatay kilit), Shift bırakılınca serbest taşımaya döner,
+        // tekrar basılınca GÜNCEL harekete göre yeniden kilitlenir. Resize'daki Shift
+        // (oran koru) davranışından tamamen ayrı bir akıştır — burada yalnız 'move'
+        // modunda ve me.shiftKey (dinamik) okunur.
+        let lockedAxis = null;
+        if (me.shiftKey) {
+          if (!axisLockRef.current) {
+            axisLockRef.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+          }
+          lockedAxis = axisLockRef.current;
+        } else {
+          axisLockRef.current = null;
+        }
+        let effectiveDx = lockedAxis === 'y' ? 0 : dx;
+        let effectiveDy = lockedAxis === 'x' ? 0 : dy;
+
+        // Akıllı hizalama/snap: seçimin başlangıç sınır kutusunu (eksen kilidi
+        // uygulanmış) delta ile öteleyip diğer ögelerin kenarına/sayfa merkezine/
+        // güvenli alana en iyi X ve Y eşleşmesini bulur; eşleşme varsa delta'ya eklenir.
+        let guidesForFrame = [];
+        if (smartGuideSettings.enabled && dragSelectionBoundsRef.current) {
+          const startBounds = dragSelectionBoundsRef.current;
+          const activeBounds = {
+            left: startBounds.left + effectiveDx,
+            top: startBounds.top + effectiveDy,
+            right: startBounds.right + effectiveDx,
+            bottom: startBounds.bottom + effectiveDy,
+            width: startBounds.width,
+            height: startBounds.height,
+            centerX: startBounds.centerX + effectiveDx,
+            centerY: startBounds.centerY + effectiveDy,
+          };
+          const snapResult = resolveSmartGuideSnap(activeBounds, {
+            candidates: snapCandidatesRef.current,
+            canvasSize: smartGuideCanvasSize,
+            settings: smartGuideSettings,
+            spacingObjects: snapCandidatesRef.current,
+          });
+          if (lockedAxis !== 'y') effectiveDx += snapResult.deltaX;
+          if (lockedAxis !== 'x') effectiveDy += snapResult.deltaY;
+          // Kilitli eksende (varsa) o eksenin çizgilerini gösterme — snap zaten
+          // uygulanmıyor, çizgi göstermek yanıltıcı olurdu.
+          guidesForFrame = snapResult.guides.filter((guide) => {
+            if (lockedAxis === 'x' && guide.type === 'horizontal') return false;
+            if (lockedAxis === 'y' && guide.type === 'vertical') return false;
+            return true;
+          });
+        }
+        scheduleSmartGuidesUpdate(guidesForFrame);
+
         const updatedObjects = (curr.objects || []).map((o) => {
           if (!snap[o.id]) return o;
           const s = snap[o.id];
           const moved = {
             ...o,
-            x: Math.min(Math.max(s.x + dx, -padX), sw + padX),
-            y: Math.min(Math.max(s.y + dy, -padY), sh + padY),
+            x: Math.min(Math.max(s.x + effectiveDx, -padX), sw + padX),
+            y: Math.min(Math.max(s.y + effectiveDy, -padY), sh + padY),
           };
           return o.generatedBy === 'answer-placement'
             ? { ...moved, answerPlacementManual: true, disableDrag: false, locked: false }
@@ -1012,6 +1142,49 @@ const StageCanvas = forwardRef(function StageCanvas(
         });
         const snapshotIds = Object.keys(snap);
         let updatedObjects;
+
+        // Resize snap: yalnız TEK obje boyutlandırılırken ve Shift(oran koru)/Alt
+        // (merkez sabit) BASILI DEĞİLKEN uygulanır — bu modifier'lar zaten iki kenarı
+        // birden/oranlı değiştirdiğinden, tek-kenar snap ile çakışıp öngörülemez sonuç
+        // doğurabilir (kapsam bilinçli olarak böyle sınırlandı). Çoklu seçim resize'ı da
+        // (ölçek faktörü tüm seçime uygulandığından) snap kapsamı dışında bırakıldı.
+        // Merkez/eşit-boşluk çizgileri resize'da devre dışı — yalnız diğer ögelerin
+        // kenarlarına ve güvenli alan (margin) sınırına snap.
+        let resizeGuidesForFrame = [];
+        if (snapshotIds.length === 1 && !me.shiftKey && !me.altKey && smartGuideSettings.enabled) {
+          const activeEdges = {
+            x: handle.includes('e') ? 'right' : handle.includes('w') ? 'left' : '__none__',
+            y: handle.includes('s') ? 'bottom' : handle.includes('n') ? 'top' : '__none__',
+          };
+          const nextBounds = getObjectBounds(next);
+          const resizeSnap = resolveSmartGuideSnap(nextBounds, {
+            candidates: snapCandidatesRef.current,
+            canvasSize: smartGuideCanvasSize,
+            settings: {
+              ...smartGuideSettings,
+              activeEdges,
+              centerGuides: false,
+              spacingGuides: false,
+            },
+          });
+          if (activeEdges.x === 'right' && resizeSnap.deltaX) {
+            next.width = Math.max(MIN, next.width + resizeSnap.deltaX);
+          } else if (activeEdges.x === 'left' && resizeSnap.deltaX) {
+            const right = next.x + next.width;
+            next.x = Math.max(0, Math.min(next.x + resizeSnap.deltaX, right - MIN));
+            next.width = Math.max(MIN, right - next.x);
+          }
+          if (activeEdges.y === 'bottom' && resizeSnap.deltaY) {
+            next.height = Math.max(MIN, next.height + resizeSnap.deltaY);
+          } else if (activeEdges.y === 'top' && resizeSnap.deltaY) {
+            const bottom = next.y + next.height;
+            next.y = Math.max(0, Math.min(next.y + resizeSnap.deltaY, bottom - MIN));
+            next.height = Math.max(MIN, bottom - next.y);
+          }
+          resizeGuidesForFrame = resizeSnap.guides;
+        }
+        scheduleSmartGuidesUpdate(resizeGuidesForFrame);
+
         if (snapshotIds.length > 1) {
           // Çoklu seçim: birincil ögenin ölçek faktörü, tutamacın karşı
           // kenarı (Alt'ta seçim merkezi) ankraj alınarak TÜM seçime uygulanır.
@@ -1051,6 +1224,10 @@ const StageCanvas = forwardRef(function StageCanvas(
       interactRef.current = null;
       const finalActivity = interactionDraftRef.current;
       dragSnapshotRef.current = null;
+      snapCandidatesRef.current = [];
+      dragSelectionBoundsRef.current = null;
+      axisLockRef.current = null;
+      clearSmartGuides();
       if (hasMoved && finalActivity) {
         onUpdate(finalActivity);
         clearLiveInteractionActivity();
@@ -1677,6 +1854,83 @@ const StageCanvas = forwardRef(function StageCanvas(
                 />
               );
             })()}
+          {/* Akıllı hizalama: "Güvenli Alanı Göster" açıkken her zaman görünen margin çizgileri */}
+          {persistentSafeAreaGuides.length > 0 &&
+            renderSmartGuides(persistentSafeAreaGuides, { scale }).map((line) => (
+              <div
+                key={`safe-area-${line.key}`}
+                style={{
+                  position: 'absolute',
+                  left: line.left,
+                  top: line.top,
+                  width: line.width,
+                  height: line.height,
+                  borderLeft: line.orientation === 'vertical' ? '1px dashed rgba(245,158,11,.6)' : 'none',
+                  borderTop: line.orientation === 'horizontal' ? '1px dashed rgba(245,158,11,.6)' : 'none',
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}
+              />
+            ))}
+          {/* Akıllı hizalama: sürükleme/boyutlandırma sırasındaki canlı yardımcı çizgiler.
+              Renk kodu: pembe=obje kenarı, mor=sayfa merkezi, turuncu=güvenli alan,
+              yeşil+etiket=eşit boşluk. Yalnız drag/resize sırasında görünür, bitince kaybolur. */}
+          {smartGuides.length > 0 &&
+            renderSmartGuides(smartGuides, { scale }).map((line) => {
+              if (line.kind === 'spacing') {
+                const color = '#10b981';
+                return (
+                  <div
+                    key={`smart-guide-${line.key}`}
+                    style={{
+                      position: 'absolute',
+                      left: line.left,
+                      top: line.top,
+                      width: line.width,
+                      height: line.height,
+                      pointerEvents: 'none',
+                      zIndex: 2000000000,
+                    }}
+                  >
+                    <div style={{ position: 'absolute', inset: 0, background: color }} />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        ...(line.orientation === 'horizontal'
+                          ? { left: '50%', top: -9, transform: 'translate(-50%, -100%)' }
+                          : { top: '50%', left: -9, transform: 'translate(-100%, -50%)' }),
+                        background: color,
+                        color: '#ffffff',
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: '1px 5px',
+                        borderRadius: 999,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {Math.round(line.distance)}px
+                    </div>
+                  </div>
+                );
+              }
+              const color =
+                line.source === 'center' ? '#8b5cf6' : line.source === 'margin' ? '#f59e0b' : '#ff3d9a';
+              return (
+                <div
+                  key={`smart-guide-${line.key}`}
+                  style={{
+                    position: 'absolute',
+                    left: line.left,
+                    top: line.top,
+                    width: line.width,
+                    height: line.height,
+                    background: color,
+                    pointerEvents: 'none',
+                    zIndex: 2000000000,
+                  }}
+                />
+              );
+            })}
           {/* Nesneler */}
           {[...renderObjects]
             .filter((o) => o.visible !== false)
