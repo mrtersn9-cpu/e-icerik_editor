@@ -12,7 +12,6 @@ import {
   Palette,
   Redo2,
   Save,
-  Settings,
   Undo2,
 } from 'lucide-react';
 
@@ -84,7 +83,6 @@ export default function EditorTopBar({
   onlineUsers = [],
   currentBookEditor = null,
   setDesignToolsOpen,
-  setShowAdminManagement,
   setShowProjectManager,
   setShowReviewThreads,
   setStoryRibbonTab,
@@ -204,9 +202,8 @@ export default function EditorTopBar({
         {lastSaved && <span className={styles.saved}>{lastSaved.toLocaleTimeString('tr-TR')}</span>}
 
         <IconAction icon={CircleHelp} label="Yardım" onClick={() => setStoryRibbonTab('help')} />
-        <IconAction icon={Settings} label="Yönetim" onClick={() => setShowAdminManagement(true)} />
 
-        {activeUser && (
+        {activeUser && !isEditor && (
           <button className={styles.user} type="button" onClick={handleLogout} title="Kullanıcı değiştir">
             <span>{activeUserInitial}</span>
             <ChevronDown size={14} aria-hidden="true" />

@@ -15,7 +15,6 @@ import { apiRequest, fileToDataUrl, uploadMediaFile } from './api/apiClient';
 import MixedActivityEditor from './components/activity-editors/MixedActivityEditor';
 import SelectionEditor from './components/activity-editors/SelectionEditor';
 import SequenceEditor from './components/activity-editors/SequenceEditor';
-import AdminManagementModal from './components/AdminManagementModal';
 import BranchingDiagramModal from './components/BranchingDiagramModal';
 import RuntimeVideoElement from './components/editor/RuntimeVideoElement';
 import KickNotificationOverlay from './components/editor/KickNotificationOverlay';
@@ -701,8 +700,6 @@ export default function EIcerikEditor() {
   // Sembol Seçici: { onSelect } veya null. onSelect, seçilen sembol öğesi ile çağrılır.
   const [symbolPicker, setSymbolPicker] = useState(null);
   const [showDesignTools, setShowDesignTools] = useState(false);
-  const [showAdminManagement, setShowAdminManagement] = useState(false);
-  const [adminSessionToken, setAdminSessionTokenState] = useState('');
   const [isTextStudioMode, setIsTextStudioMode] = useState(() =>
     typeof window !== 'undefined' ? window.location.hash === '#text-studio' : false
   );
@@ -728,7 +725,6 @@ export default function EIcerikEditor() {
   const remoteSavePendingRef = useRef(false);
   const offlineDraftPendingRef = useRef(false);
   const toastIdRef = useRef(0);
-  const adminSessionTokenRef = useRef('');
   // Ctrl+S ile anlık kayıt komutu — klavye handler'ı bu dosyada handleManualSaveProject/
   // performRemoteSave'den ÖNCE tanımlandığı için ref üzerinden dolaylı çağrılır
   // (slideClipboardCommandsRef ile aynı desen).
@@ -763,11 +759,6 @@ export default function EIcerikEditor() {
   const backDismissOverlayIdsRef = useRef(new Set());
   const backDismissOrderRef = useRef(0);
 
-  const setAdminSessionToken = useCallback((value) => {
-    adminSessionTokenRef.current = value;
-    setAdminSessionTokenState(value);
-  }, []);
-
   const showToast = useCallback((message, type = 'error') => {
     const id = ++toastIdRef.current;
     setToasts((prev) => [...prev.slice(-4), { id, message, type }]);
@@ -789,7 +780,6 @@ export default function EIcerikEditor() {
     presence,
     currentUserId: activeUserId,
     activeBookId: present.selBookId,
-    onNotify: showToast,
   });
   const isRemoteMutationLocked =
     isRemoteWorkspaceMutationLocked(activeUserId, dbStatus) &&
@@ -2289,16 +2279,6 @@ export default function EIcerikEditor() {
     [commit, present.selBookId, selActivity?.bookId, showToast]
   );
 
-  const handleSelectAdminUser = useCallback((user) => {
-    setLockState(null);
-    setLoginError('');
-    setLoginForm((current) => ({
-      ...current,
-      userId: user?.id || current.userId,
-      password: '',
-    }));
-  }, []);
-
   const handleLogin = useCallback(async () => {
     setLoginBusy(true);
     setLoginError('');
@@ -3071,13 +3051,6 @@ export default function EIcerikEditor() {
     registerBackDismissible,
   });
   useBackDismissible({
-    id: 'admin-management',
-    open: showAdminManagement,
-    onDismiss: () => setShowAdminManagement(false),
-    priority: 820,
-    registerBackDismissible,
-  });
-  useBackDismissible({
     id: 'project-manager',
     open: showProjectManager,
     onDismiss: () => setShowProjectManager(false),
@@ -3311,7 +3284,6 @@ export default function EIcerikEditor() {
         onlineUsers={onlineUsers}
         currentBookEditor={currentBookEditor}
         setDesignToolsOpen={setShowDesignTools}
-        setShowAdminManagement={setShowAdminManagement}
         setShowProjectManager={setShowProjectManager}
         setShowReviewThreads={setShowReviewThreads}
         setStoryRibbonTab={setStoryRibbonTab}
@@ -4271,14 +4243,6 @@ export default function EIcerikEditor() {
         projectId={currentProjectId}
         currentUserId={activeUserId}
         currentUserName={activeUserId}
-      />
-
-      <AdminManagementModal
-        open={showAdminManagement}
-        onClose={() => setShowAdminManagement(false)}
-        onSelectUser={handleSelectAdminUser}
-        adminToken={adminSessionToken}
-        onAdminTokenChange={setAdminSessionToken}
       />
 
       <ProjectVersionManagerModal
