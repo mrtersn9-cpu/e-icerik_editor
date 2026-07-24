@@ -81,6 +81,7 @@ import {
   uid,
 } from '../../utils/editorHelpers';
 import { getSemanticSvgIcon } from '../../utils/iconSvg';
+import { isSystemClipboardSupported, readObjectClipboardFromSystem } from '../../utils/systemClipboard';
 
 const CONTENT_LANGUAGE_OPTIONS = [
   { value: 'tr', label: 'Türkçe' },
@@ -191,6 +192,10 @@ export default function useRibbonController({
 
   const hasObjectClipboard = useMemo(() => {
     void clipboardTick;
+    // Sistem panosu API'si varsa buton her zaman etkin bırakılır: başka bir
+    // sekmede kopyalanmış nesneler bu sekmenin sessionStorage'ında görünmez,
+    // ama tıklanınca (paste action) sistem panosundan senkron denenecek.
+    if (isSystemClipboardSupported()) return true;
     if (typeof sessionStorage === 'undefined') return false;
     try {
       const parsed = JSON.parse(sessionStorage.getItem('eicerik_obj_clipboard') || 'null');
@@ -1293,7 +1298,12 @@ export default function useRibbonController({
       openSceneNotes: () => setStoryRibbonTab('scene'),
       openScenePanel: () => handleEditorTabSelect('sahne'),
       openTextStudio: () => openTextStudioWindow?.(true),
-      paste: () => canvasRef.current?.pasteClipboard?.(),
+      paste: () => {
+        readObjectClipboardFromSystem().then((payload) => {
+          if (payload) canvasRef.current?.applySystemClipboard?.(payload);
+          canvasRef.current?.pasteClipboard?.();
+        });
+      },
       pasteSlide,
       pasteSelectedAnimation: () => {
         if (!animationClipboardRef.current) {

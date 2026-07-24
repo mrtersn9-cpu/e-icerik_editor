@@ -7,6 +7,13 @@ import { DatabaseSync } from "node:sqlite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+try {
+  process.loadEnvFile(path.join(__dirname, ".env"));
+} catch {
+  // .env yoksa ortam degiskenleri baska yoldan (PM2, sistem env, vb.) saglanmis olabilir.
+}
+
 const PORT = Number(process.env.PORT || 4001);
 const DATA_DIR = path.resolve(process.env.EICERIK_DATA_DIR || path.join(__dirname, "data"));
 const DB_PATH = path.join(DATA_DIR, "e-icerik-editor.sqlite");

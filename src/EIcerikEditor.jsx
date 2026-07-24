@@ -345,6 +345,7 @@ import {
 } from './logic/objectLayout';
 import { createLearnerSafeStateForExport } from './utils/learnerSecurity';
 import { readWorkspaceCache, writeWorkspaceCache } from './utils/workspaceCache';
+import { readObjectClipboardFromSystem } from './utils/systemClipboard';
 import {
   buildStorylinePlayerHtml,
   downloadScorm12Zip,
@@ -728,6 +729,10 @@ export default function EIcerikEditor() {
   const offlineDraftPendingRef = useRef(false);
   const toastIdRef = useRef(0);
   const adminSessionTokenRef = useRef('');
+  // Ctrl+S ile anlık kayıt komutu — klavye handler'ı bu dosyada handleManualSaveProject/
+  // performRemoteSave'den ÖNCE tanımlandığı için ref üzerinden dolaylı çağrılır
+  // (slideClipboardCommandsRef ile aynı desen).
+  const manualSaveCommandRef = useRef(null);
   const objectClipboardRef = useRef(null);
   const slideClipboardRef = useRef(null);
   // Sayfa yenilemeden sonra nesne panosunu sessionStorage'dan geri yükle.
@@ -1196,6 +1201,13 @@ export default function EIcerikEditor() {
         toggleNativeFullscreen();
         return;
       }
+      if (modKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        // Otomatik kayda ek olarak: anlık yerel kayıt + varsa bekleyen debounce'u
+        // atlayıp uzak (SQL) kaydı hemen tetikler (manualSaveCommandRef.current).
+        manualSaveCommandRef.current?.();
+        return;
+      }
 
       if (!canvasRef.current) return;
 
@@ -1220,15 +1232,23 @@ export default function EIcerikEditor() {
         e.preventDefault();
         // Ctrl+Shift+V: nesneyi kopyalandığı X,Y koordinatına (kaydırmasız) yapıştır.
         const pasteOptions = { exactPosition: e.shiftKey };
-        // En son kopyalanan türe göre yapıştır. Slayt ise slayt önce, nesne ise nesne önce;
-        // her iki durumda da geri-plan olarak diğer kanal denenir.
-        if (clipboardKindRef.current === 'slide') {
-          if (slideClipboardCommandsRef.current.pasteSlide?.()) return;
-          canvasRef.current.pasteClipboard?.(pasteOptions);
-        } else {
-          if (canvasRef.current.pasteClipboard?.(pasteOptions)) return;
-          slideClipboardCommandsRef.current.pasteSlide?.();
-        }
+        // Önce sistem panosunu dene (başka bir sekmede/pencerede kopyalanmış olabilir,
+        // Canva'daki gibi) — bulunursa bu sekmenin nesne panosuna uygulanır, ardından
+        // mevcut yapıştırma akışı (slayt/nesne kanal seçimi) değişmeden çalışır.
+        readObjectClipboardFromSystem().then((systemPayload) => {
+          if (systemPayload && canvasRef.current?.applySystemClipboard?.(systemPayload)) {
+            clipboardKindRef.current = 'objects';
+          }
+          // En son kopyalanan türe göre yapıştır. Slayt ise slayt önce, nesne ise nesne önce;
+          // her iki durumda da geri-plan olarak diğer kanal denenir.
+          if (clipboardKindRef.current === 'slide') {
+            if (slideClipboardCommandsRef.current.pasteSlide?.()) return;
+            canvasRef.current.pasteClipboard?.(pasteOptions);
+          } else {
+            if (canvasRef.current.pasteClipboard?.(pasteOptions)) return;
+            slideClipboardCommandsRef.current.pasteSlide?.();
+          }
+        });
       } else if (modKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         canvasRef.current.duplicateSelected();
@@ -1655,6 +1675,113 @@ export default function EIcerikEditor() {
     offlineDraftPendingRef,
   });
 
+  // Uzak (SQL) kaydı gerçekleştiren fonksiyon — hem debounce'lu otomatik kayıt
+  // efekti hem de Ctrl+S ile tetiklenen anlık kayıt tarafından paylaşılır.
+  const performRemoteSave = useCallback(() => {
+    // Kayıt zaten uçuştaysa yeni istek başlatma; .then()/.catch() içinden
+    // isDirtyRef ile yeniden tetiklenecek → kapatma-temizleme yarışı yok.
+    if (remoteSavePendingRef.current) return;
+    isDirtyRef.current = false;
+    remoteSavePendingRef.current = true;
+    // Her zaman en güncel durumu kaydet (kapatma‐değişken staleness'ı önler).
+    const snapshot = presentRef.current;
+    apiRequest(`/projects/${currentProjectId}/draft`, {
+      method: 'PUT',
+      timeoutMs: REMOTE_SAVE_REQUEST_TIMEOUT_MS,
+      body: JSON.stringify({
+        state: createSafeStateForStorage(snapshot),
+        name: projectNameDraft,
+        setCurrent: true,
+        lockBookId: snapshot.selBookId || '',
+      }),
+    })
+      .then((r) => {
+        remoteSavePendingRef.current = false;
+        const hadOfflineDraft = offlineDraftPendingRef.current;
+        offlineDraftPendingRef.current = false;
+        saveFailCountRef.current = 0;
+        if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
+        mergeWorkspaceProjectData({ currentProject: r?.project });
+        setLastSaved(new Date());
+        // Önbelleği her zaman en güncel durum ile güncelle.
+        if (lastWorkspaceRef.current) {
+          lastWorkspaceRef.current = {
+            ...lastWorkspaceRef.current,
+            state: createSafeStateForStorage(presentRef.current),
+            updatedAt: r?.updatedAt || lastWorkspaceRef.current.updatedAt,
+            currentProject: r?.project || lastWorkspaceRef.current.currentProject,
+          };
+          writeWorkspaceCache(activeUserId, lastWorkspaceRef.current);
+        }
+        if (hadOfflineDraft) {
+          showToast('Yerel değişiklikler SQL sunucusuna yüklendi.', 'success');
+        }
+        // Kayıt uçuştayken yeni düzenleme geldiyse hemen tekrar kaydet.
+        if (isDirtyRef.current) setTimeout(performRemoteSave, 350);
+      })
+      .catch((error) => {
+        remoteSavePendingRef.current = false;
+        if (requiresFreshEditorSession(error)) {
+          forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+          return;
+        }
+        if (error?.code === 'BOOK_LOCKED' || error?.code === 'BOOK_LOCK_REQUIRED') {
+          const message = formatBookLockMessage(
+            error.lock,
+            error.message || 'Bu kitap başka bir kullanıcı tarafından kilitlendi.'
+          );
+          setBookLockWarning(message);
+          showToast(message, 'warning');
+          if (currentProjectId && snapshot.selBookId) {
+            releaseBookLock(currentProjectId, snapshot.selBookId);
+          }
+          const fallbackRoute = { pubId: presentRef.current.selPubId || null, bookId: null, actId: null };
+          setNavigationRouteState(fallbackRoute);
+          writeBrowserRoute(fallbackRoute, 'replace');
+          offlineDraftPendingRef.current = false;
+          return;
+        }
+        if (error?.code === 'USER_LOCKED') {
+          forceLogoutToLogin('', {
+            userId: activeUserId,
+            password: loginForm.password,
+            sessionId: activeSessionId,
+            sessionLabel: authState?.sessionLabel || createSessionLabel(),
+            session: error.session || null,
+            message: error.message || 'Bu kullanıcı başka bir cihazda aktif.',
+          });
+          return;
+        }
+        // Geçici hata: 5 ardışık başarısızlıkta çevrimdışı moda geç.
+        saveFailCountRef.current += 1;
+        offlineDraftPendingRef.current = true;
+        if (saveFailCountRef.current >= 5) {
+          remoteReadyRef.current = false;
+          setDbStatus('reconnecting');
+          showToast(
+            'SQL bağlantısı kesildi. Değişiklikler bu cihazda tutuluyor; bağlantı gelince yüklenecek.',
+            'warning'
+          );
+        }
+        // Kirliyse gecikmeli tekrar dene.
+        if (isDirtyRef.current) setTimeout(performRemoteSave, 1200);
+      });
+  }, [
+    activeSessionId,
+    activeUserId,
+    authState?.sessionLabel,
+    currentProjectId,
+    forceLogoutToLogin,
+    loginForm.password,
+    mergeWorkspaceProjectData,
+    projectNameDraft,
+    releaseBookLock,
+    setDbStatus,
+    setNavigationRouteState,
+    showToast,
+    writeBrowserRoute,
+  ]);
+
   useEffect(() => {
     if (!activeUserId || !remoteReadyRef.current || dbStatus !== 'connected' || !currentProjectId)
       return;
@@ -1666,117 +1793,9 @@ export default function EIcerikEditor() {
     // Yeni state → kirli bayrak set et. Kayıt tamamlandıktan sonra hâlâ
     // kirliyse (yani kayıt uçuştayken yeni düzenleme geldi) hemen tekrar kaydet.
     isDirtyRef.current = true;
-    let saveTimer;
-    const runSave = () => {
-      // Kayıt zaten uçuştaysa yeni istek başlatma; .then()/.catch() içinden
-      // isDirtyRef ile yeniden tetiklenecek → kapatma-temizleme yarışı yok.
-      if (remoteSavePendingRef.current) return;
-      isDirtyRef.current = false;
-      remoteSavePendingRef.current = true;
-      // Her zaman en güncel durumu kaydet (kapatma‐değişken staleness'ı önler).
-      const snapshot = presentRef.current;
-      apiRequest(`/projects/${currentProjectId}/draft`, {
-        method: 'PUT',
-        timeoutMs: REMOTE_SAVE_REQUEST_TIMEOUT_MS,
-        body: JSON.stringify({
-          state: createSafeStateForStorage(snapshot),
-          name: projectNameDraft,
-          setCurrent: true,
-          lockBookId: snapshot.selBookId || '',
-        }),
-      })
-        .then((r) => {
-          remoteSavePendingRef.current = false;
-          const hadOfflineDraft = offlineDraftPendingRef.current;
-          offlineDraftPendingRef.current = false;
-          saveFailCountRef.current = 0;
-          if (r?.updatedAt) lastRemoteUpdatedAtRef.current = r.updatedAt;
-          mergeWorkspaceProjectData({ currentProject: r?.project });
-          setLastSaved(new Date());
-          // Önbelleği her zaman en güncel durum ile güncelle.
-          if (lastWorkspaceRef.current) {
-            lastWorkspaceRef.current = {
-              ...lastWorkspaceRef.current,
-              state: createSafeStateForStorage(presentRef.current),
-              updatedAt: r?.updatedAt || lastWorkspaceRef.current.updatedAt,
-              currentProject: r?.project || lastWorkspaceRef.current.currentProject,
-            };
-            writeWorkspaceCache(activeUserId, lastWorkspaceRef.current);
-          }
-          if (hadOfflineDraft) {
-            showToast('Yerel değişiklikler SQL sunucusuna yüklendi.', 'success');
-          }
-          // Kayıt uçuştayken yeni düzenleme geldiyse hemen tekrar kaydet.
-          if (isDirtyRef.current) saveTimer = setTimeout(runSave, 350);
-        })
-        .catch((error) => {
-          remoteSavePendingRef.current = false;
-          if (requiresFreshEditorSession(error)) {
-            forceLogoutToLogin(error.message || 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
-            return;
-          }
-          if (error?.code === 'BOOK_LOCKED' || error?.code === 'BOOK_LOCK_REQUIRED') {
-            const message = formatBookLockMessage(
-              error.lock,
-              error.message || 'Bu kitap başka bir kullanıcı tarafından kilitlendi.'
-            );
-            setBookLockWarning(message);
-            showToast(message, 'warning');
-            if (currentProjectId && snapshot.selBookId) {
-              releaseBookLock(currentProjectId, snapshot.selBookId);
-            }
-            const fallbackRoute = { pubId: presentRef.current.selPubId || null, bookId: null, actId: null };
-            setNavigationRouteState(fallbackRoute);
-            writeBrowserRoute(fallbackRoute, 'replace');
-            offlineDraftPendingRef.current = false;
-            return;
-          }
-          if (error?.code === 'USER_LOCKED') {
-            forceLogoutToLogin('', {
-              userId: activeUserId,
-              password: loginForm.password,
-              sessionId: activeSessionId,
-              sessionLabel: authState?.sessionLabel || createSessionLabel(),
-              session: error.session || null,
-              message: error.message || 'Bu kullanıcı başka bir cihazda aktif.',
-            });
-            return;
-          }
-          // Geçici hata: 5 ardışık başarısızlıkta çevrimdışı moda geç.
-          saveFailCountRef.current += 1;
-          offlineDraftPendingRef.current = true;
-          if (saveFailCountRef.current >= 5) {
-            remoteReadyRef.current = false;
-            setDbStatus('reconnecting');
-            showToast(
-              'SQL bağlantısı kesildi. Değişiklikler bu cihazda tutuluyor; bağlantı gelince yüklenecek.',
-              'warning'
-            );
-          }
-          // Kirliyse gecikmeli tekrar dene.
-          if (isDirtyRef.current) saveTimer = setTimeout(runSave, 1200);
-        });
-    };
-    saveTimer = setTimeout(runSave, 350);
+    const saveTimer = setTimeout(performRemoteSave, 350);
     return () => clearTimeout(saveTimer);
-  }, [
-    activeSessionId,
-    activeUserId,
-    authState?.sessionLabel,
-    currentProjectId,
-    dbStatus,
-    forceLogoutToLogin,
-    loginForm.password,
-    mergeWorkspaceProjectData,
-    pendingResume,
-    present,
-    projectNameDraft,
-    releaseBookLock,
-    setDbStatus,
-    setNavigationRouteState,
-    showToast,
-    writeBrowserRoute,
-  ]);
+  }, [activeUserId, currentProjectId, dbStatus, pendingResume, present, performRemoteSave]);
 
   const selActivity = useMemo(() => {
     const rawActivity = present.activities.find((a) => a.id === present.selActId) || null;
@@ -2892,6 +2911,33 @@ export default function EIcerikEditor() {
       showToast('Kaydetme işlemi tamamlanamadı.', 'error');
     }
   }, [activeUserId, dbStatus, isRemoteMutationLocked, present, showToast]);
+
+  // Ctrl+S: yerel kayıt (yukarıdaki gibi anında geri bildirim) + bekleyen 350ms
+  // debounce'u atlayıp uzak (SQL) kaydı hemen tetikler — otomatik kaydı beklemeden
+  // "şu anki hâlini kaydet" isteğini karşılar.
+  const handleForceSave = useCallback(() => {
+    handleManualSaveProject();
+    if (
+      !isRemoteMutationLocked &&
+      activeUserId &&
+      remoteReadyRef.current &&
+      dbStatus === 'connected' &&
+      currentProjectId
+    ) {
+      performRemoteSave();
+    }
+  }, [
+    activeUserId,
+    currentProjectId,
+    dbStatus,
+    handleManualSaveProject,
+    isRemoteMutationLocked,
+    performRemoteSave,
+  ]);
+
+  useEffect(() => {
+    manualSaveCommandRef.current = handleForceSave;
+  }, [handleForceSave]);
 
   const resetProjectFromRibbon = useCallback(() => {
     if (isRemoteMutationLocked) {

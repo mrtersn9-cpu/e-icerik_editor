@@ -62,6 +62,7 @@ import {
   getSnapshotBounds,
 } from './resizeGeometry';
 import { sanitizeSvgMarkup, uid, clamp } from '../utils/editorHelpers';
+import { writeObjectClipboardToSystem, readObjectClipboardFromSystem } from '../utils/systemClipboard';
 import { resolveCornerRadiusPx } from '../utils/cornerRadius';
 import { uploadMediaFile, fileToDataUrl } from '../api/apiClient';
 import { upgradeDragDropStyle } from './factories';
@@ -230,8 +231,6 @@ const StageCanvas = forwardRef(function StageCanvas(
 
   const canvasActivity = interactionDraft || activity;
   const objects = getCanvasObjects(canvasActivity);
-  const hasSvg = !!canvasActivity.svgMarkup;
-  const hasObjects = objects.length > 0;
   const pdfBackgroundObject = useMemo(
     () =>
       objects.find(
@@ -599,12 +598,29 @@ const StageCanvas = forwardRef(function StageCanvas(
     try {
       sessionStorage.setItem('eicerik_obj_clipboard', JSON.stringify(clipboardRef.current));
     } catch { /* kota aşıldıysa sessizce geç */ }
+    // Farklı sekme/pencerede yapıştırabilmek için sistem panosuna da yaz (Canva'daki
+    // gibi). Başarısız olursa (izin/tarayıcı) aynı-sekme panosu zaten çalışır.
+    writeObjectClipboardToSystem(clipboardRef.current);
     // Ribbon/sağ tık "Yapıştır" disabled durumunun güncellenmesi için pano değişimini duyur.
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('eicerik:clipboard-change'));
     }
     return true;
   }, [clipboardRef]);
+
+  // Sistem panosundan (başka bir sekmede kopyalanmış) gelen nesne verisini bu
+  // sekmenin panosuna uygular — pasteClipboard'dan hemen önce çağrılır.
+  const applySystemClipboard = useCallback(
+    (payload) => {
+      if (!payload?.objects?.length) return false;
+      clipboardRef.current = payload;
+      try {
+        sessionStorage.setItem('eicerik_obj_clipboard', JSON.stringify(payload));
+      } catch { /* kota aşıldıysa sessizce geç */ }
+      return true;
+    },
+    [clipboardRef]
+  );
 
   // options.exactPosition: true ise +24px kaydırma uygulanmaz (aynı X,Y'ye yapıştır).
   const pasteClipboard = useCallback((options = {}) => {
@@ -682,6 +698,18 @@ const StageCanvas = forwardRef(function StageCanvas(
     onSelectionChange(newSelection);
     return true;
   }, [clipboardRef, onSelectionChange, onUpdate]);
+
+  // Sağ tık menüsü gibi tek-adımlı yapıştırma noktaları için: önce sistem
+  // panosunu (başka sekmede kopyalanmış olabilir) dener, sonra normal yapıştırır.
+  const pasteWithSystemClipboard = useCallback(
+    (options) => {
+      readObjectClipboardFromSystem().then((payload) => {
+        if (payload) applySystemClipboard(payload);
+        pasteClipboard(options);
+      });
+    },
+    [applySystemClipboard, pasteClipboard]
+  );
 
   const duplicateSelected = useCallback(() => {
     if (!copySelected()) return;
@@ -851,6 +879,7 @@ const StageCanvas = forwardRef(function StageCanvas(
       deleteSelected,
       copySelected,
       pasteClipboard,
+      applySystemClipboard,
       duplicateSelected,
       bringFront,
       sendBack,
@@ -861,6 +890,7 @@ const StageCanvas = forwardRef(function StageCanvas(
       deleteSelected,
       copySelected,
       pasteClipboard,
+      applySystemClipboard,
       duplicateSelected,
       bringFront,
       sendBack,
@@ -1626,153 +1656,6 @@ const StageCanvas = forwardRef(function StageCanvas(
                 backdropFilter: 'none',
               }}
             />
-          )}
-          {!hasSvg && !hasObjects && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 24,
-                zIndex: 2,
-                background: 'rgba(255,255,255,.92)',
-              }}
-            >
-              <div
-                style={{
-                  width: Math.min(vw - 40, 520),
-                  maxWidth: '100%',
-                  borderRadius: 18,
-                  border: '1px solid rgba(148,163,184,.35)',
-                  background: 'rgba(255,255,255,.98)',
-                  boxShadow: '0 24px 50px rgba(15,23,42,.16)',
-                  padding: 24,
-                  textAlign: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: '#2563eb',
-                    letterSpacing: 0.4,
-                    textTransform: 'uppercase',
-                    marginBottom: 10,
-                  }}
-                >
-                  SVG-first başlangıç
-                </div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 800,
-                    color: '#0f172a',
-                    lineHeight: 1.2,
-                    marginBottom: 10,
-                  }}
-                >
-                  Önce SVG zemin yükle
-                </div>
-                <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, marginBottom: 18 }}>
-                  Bu editörde en rahat akış, önce zemini yükleyip sonra buton, hotspot, video ve
-                  metinleri onun üstüne yerleştirmektir.
-                </div>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3,minmax(0,1fr))',
-                    gap: 8,
-                    marginBottom: 18,
-                    textAlign: 'left',
-                  }}
-                >
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>1.</strong> SVG zemin yükle
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>2.</strong> Nesneleri yerleştir
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 12,
-                      background: 'linear-gradient(180deg,#ffffff,#f8fbff)',
-                      border: '1px solid rgba(148,163,184,.25)',
-                      padding: 10,
-                      fontSize: 11,
-                      color: '#0f172a',
-                    }}
-                  >
-                    <strong>3.</strong> Timeline ve trigger ver
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    style={{
-                      border: 'none',
-                      background: 'linear-gradient(135deg,#0f172a,#1e293b)',
-                      color: '#ffffff',
-                      borderRadius: 12,
-                      padding: '10px 18px',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      boxShadow: '0 12px 24px rgba(15,23,42,.16)',
-                    }}
-                  >
-                    SVG Zemin Yükle
-                  </button>
-                  <button
-                    onClick={() => imgRef.current?.click()}
-                    style={{
-                      border: '1px solid rgba(148,163,184,.45)',
-                      background: '#ffffff',
-                      color: '#0f172a',
-                      borderRadius: 12,
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Resim ile Başla
-                  </button>
-                </div>
-                {!hasObjects && (
-                  <div style={{ marginTop: 12, fontSize: 11, color: '#64748b' }}>
-                    SVG olmadan da devam edebilirsin ama sistemin ana akışı zemin üstünden ilerler.
-                  </div>
-                )}
-              </div>
-            </div>
           )}
           {/* Rubber-band seçim dikdörtgeni */}
           {rubberBand &&
@@ -2857,7 +2740,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               });
               items.push({ label: 'Kopyala', disabled: isLockedTarget, onClick: () => copySelected() });
               items.push({ label: 'Çoğalt', disabled: isLockedTarget, onClick: duplicateSelected });
-              items.push({ label: 'Yapıştır', disabled: !hasClip, onClick: () => pasteClipboard() });
+              items.push({ label: 'Yapıştır', disabled: !hasClip, onClick: () => pasteWithSystemClipboard() });
               items.push({ separator: true });
               // Bağlam duyarlı Grupla/Ayır (dinamik tek madde)
               if (groupState.canGroup || groupState.canUngroup) {
@@ -2958,7 +2841,7 @@ const StageCanvas = forwardRef(function StageCanvas(
               items.push({
                 label: 'Yapıştır',
                 disabled: !hasClip,
-                onClick: () => pasteClipboard(),
+                onClick: () => pasteWithSystemClipboard(),
               });
               const layerObjectIds = (objects || [])
                 .filter((o) => (o.layerId || 'base') === activeLayerId)

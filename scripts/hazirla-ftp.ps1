@@ -66,10 +66,19 @@ try {
     Copy-Item -Path (Join-Path $templateDir "*") -Destination $stagingDir -Recurse -Force
     Copy-Item -Path (Join-Path $buildDir "*") -Destination $stagingDir -Recurse -Force
 
-    $stagingConfig = Join-Path $stagingDir "api\config.php"
-    if (Test-Path $stagingConfig) {
-        Remove-Item -LiteralPath $stagingConfig -Force
-    }
+    # "api/config.php" ARTIK PAKETTEN CIKARILMIYOR: config.php sir icermiyor (tum
+    # gercek degerler ".env"den okunuyor), yalnizca genel okuma/parse mantigini
+    # tasiyor. Eskiden burada siliniyordu (config.php'nin icinde dogrudan sifre
+    # oldugu donemden kalma) - bazi FTP istemcileri "senkronize et/yansit" modunda
+    # yerelde olmayan dosyalari sunucudan SILDIGI icin, bu paketten cikarma sunucuda
+    # config.php'nin tamamen kaybolmasina (ve API'nin her istekte fatal hata vermesine)
+    # yol acabiliyordu. Simdi config.php da .env gibi pakete dahil ediliyor.
+
+    # "ftp-hosting/api/.env" (varsa) bilerek paketten CIKARILMIYOR: dist/ sunucuya
+    # yuklendiginde api/.env de birlikte gitsin diye. Bu dosya sir icerebilir; git'e
+    # zaten eklenmez (.gitignore) ve "dist/" klasoru de tamamen git disi tutulur, ama
+    # yerel "dist/" cikti klasorunu paylasirken/yedeklerken dikkatli olun.
+    $envIncluded = Test-Path (Join-Path $stagingDir "api\.env")
 
     $stagingManifest = Join-Path $stagingDir "asset-manifest.json"
     $stagingMainJs = Get-MainJsFromManifest $stagingManifest
@@ -87,8 +96,10 @@ try {
         "date=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         "mainJs=$stagingMainJs"
         "mainJsSha256=$mainJsHash"
-        "configIncluded=false"
-        "configPolicy=api/config.php deploy paketine yazilmaz; sunucudaki mevcut config korunur."
+        "configIncluded=true"
+        "configPolicy=api/config.php artik pakete dahil (sir icermiyor, .env okuyor)."
+        "envIncluded=$($envIncluded.ToString().ToLower())"
+        "envPolicy=api/.env yerelde varsa deploy paketine dahil edilir (sunucuya yuklendiginde birlikte gider); yoksa sadece secretsiz api/.env.example pakette kalir."
         "uploadCheck=Bu dosya sunucuda gorunmuyorsa yeni deploy yuklenmemistir."
     ) -join "`n"
     Set-Content -LiteralPath (Join-Path $stagingDir "DEPLOY-KONTROL.txt") -Value $buildInfo -Encoding UTF8
@@ -102,7 +113,12 @@ try {
     Write-Host ""
     Write-Host "FTP paketi hazirlandi:" $outputDir
     Write-Host "Main JS:" $stagingMainJs
-    Write-Host "api/config.php deploy paketine yazilmadi; sunucudaki mevcut config korunur."
+    Write-Host "api/config.php pakete dahil (sir icermiyor, .env okuyor)."
+    if ($envIncluded) {
+        Write-Host "api/.env pakete DAHIL EDILDI (sir icerebilir) - dist/ klasorunu paylasirken dikkatli olun." -ForegroundColor Yellow
+    } else {
+        Write-Host "Yerelde api/.env bulunamadi; pakette sadece api/.env.example sablonu var."
+    }
 }
 catch {
     Write-Host "Paket hazirlanirken bir hata olustu: $_" -ForegroundColor Red

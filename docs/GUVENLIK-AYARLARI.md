@@ -4,6 +4,11 @@ Yerel Node.js sunucusu ve FTP/PHP yayını farklı veri katmanları kullanır. C
 
 ## Yerel Node.js + SQLite
 
+`server.mjs` başlarken proje kökündeki `.env` dosyasını (varsa) otomatik okur
+(`process.loadEnvFile`, ek paket gerekmez). Kurulum: `.env.example`'ı `.env` olarak
+kopyalayıp değerleri doldurun (`cp .env.example .env`). `.env` git'e eklenmez
+(`.gitignore`), yalnız `.env.example` (secretsiz şablon) depoda tutulur.
+
 `server.mjs` için zorunlu canlı ortam değişkenleri:
 
 - `EICERIK_USER1_PASSWORD`: İlk editör kullanıcısının şifresi.
@@ -35,15 +40,51 @@ Node admin endpointleri:
 
 ## FTP/PHP + MySQL
 
-Canlı hosting ayarları sunucudaki `api/config.php` dosyasında tutulur:
+Canlı hosting ayarları `api/config.php` üzerinden okunur, ama gerçek değerler artık
+`api/config.php`'nin içine değil, aynı klasördeki `api/.env` dosyasına yazılır
+(`config.php` bu dosyayı otomatik okur, satırları `KEY=VALUE` formatındadır).
+Kurulum: sunucuda `api/.env.example`'ı `api/.env` olarak kopyalayıp değerleri doldurun.
 
-- `db_host`, `db_port`, `db_name`, `db_user`, `db_pass`
-- `admin_token`
-- `users`
-- `allowed_origins`
-- `pdf_analysis_mode`
+`.env` içindeki anahtarlar:
 
-`api/config.php` parola içerebilir. Git'e eklenmez, deploy paketine yazılmaz ve sunucuda ayrıca korunur. FTP/PHP API ile Node API güvenlik özellikleri birebir aynı kabul edilmemelidir; canlıya çıkmadan önce hedef ortamda oturum, origin, admin yedeği ve yetki kontrolleri denenmelidir.
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`, `DB_CHARSET`, `DB_CONNECT_TIMEOUT`
+- `ADMIN_TOKEN`
+- `USER1_NAME`, `USER1_PASSWORD`, `USER2_NAME`, `USER2_PASSWORD`
+- `ALLOWED_ORIGINS` (virgülle ayrılmış), örn. canlı URL: `https://editori.hepsibirdijital.com`
+- `PDF_ANALYSIS_MODE`
+
+**Kullanıcı giriş bilgileri artık veritabanında (`editor_users` tablosu, bcrypt hash) tutulur,
+`.env`/`config.php` yalnızca İLK KURULUM tohumlaması için kaynak.** Site ilk açıldığında
+(`GET /health?requireDatabase=1` — frontend bunu otomatik çağırır, elle bir şey yapmaya gerek
+yok) `editor_users` tablosu yoksa otomatik oluşturulur ve o an `.env`'deki
+`USER1_PASSWORD`/`USER2_PASSWORD` değerleriyle tohumlanır (`ftp-hosting/api/index.php`:
+`ensure_editor_users_schema`). **Bu tohumlama yalnızca tablo BOŞKEN çalışır** — ilk açılıştan
+sonra `.env`'deki şifreyi değiştirmek veritabanındakini GÜNCELLEMEZ. Şifre değiştirmek için:
+```sql
+-- yeni_hash degerini once `php -r "echo password_hash('YeniSifre123', PASSWORD_DEFAULT);"`
+-- ile uretin, sonra asagidaki UPDATE'e yapistirin.
+UPDATE editor_users SET password_hash = '<yeni_hash>' WHERE id = 'kullanici1';
+```
+Bu yüzden ilk deploy'dan ÖNCE `.env`'deki `USER1_PASSWORD`/`USER2_PASSWORD` alanlarının gerçek,
+güçlü değerlerle dolu olduğundan emin olun — boş bırakılırsa placeholder değerler
+(`GUCLU_SIFRE_1`/`GUCLU_SIFRE_2`, bu depoda herkese açık) veritabanına kalıcı olarak yazılır.
+Tüm diğer tablolar (`app_state`, `projects`, `book_locks`, `user_sessions`,
+`project_versions`) da aynı otomatik kontrolle oluşturulur — `ftp-hosting/mysql-schema.sql`'i
+elle çalıştırmaya GEREK YOKTUR, yalnız referans/manuel kurulum tercih edenler içindir.
+
+`api/.env` parola içerir ve Git'e eklenmez (`.gitignore`). `scripts/hazirla-ftp.ps1`/`build.bat`
+ile üretilen deploy paketine (`deploy-ftp/` veya `dist/`) **yerelde `api/.env` varsa dahil edilir**
+(sunucuya yüklendiğinde birlikte gider); yoksa yalnız secretsiz `api/.env.example` şablonu
+pakette kalır. `dist/`/`deploy-ftp/` klasörleri de Git'e eklenmez, ama bu klasörleri elle
+paylaşırken/yedeklerken (ör. e-posta, zip, başka bir depoya kopyalama) içinde gerçek `.env`
+olabileceğini unutmayın. `api/config.php`'nin kendisi (kaynak dosya, sır içermez) artık deploy
+paketine DAHİL edilir (eskiden hariç tutuluyordu; bu, "senkronize et" modunda FTP yükleyen
+istemcilerde sunucudaki `config.php`'nin tamamen silinip API'nin her istekte fatal hata
+vermesine yol açabiliyordu — 2026-07-23'te düzeltildi). `.env` yokken `config.php` eski
+placeholder değerlere (`veritabani_adi` vb.) düşer — bu durumda API veritabanına bağlanmayı
+reddeder (`has_placeholder_database_config` kontrolü). FTP/PHP API ile
+Node API güvenlik özellikleri birebir aynı kabul edilmemelidir; canlıya çıkmadan önce hedef
+ortamda oturum, origin, admin yedeği ve yetki kontrolleri denenmelidir.
 
 ## Öğrenci Çıktıları
 

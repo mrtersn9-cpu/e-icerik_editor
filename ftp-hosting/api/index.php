@@ -94,7 +94,7 @@ if ($path === '/health') {
         }
 
         try {
-            ensure_workspace_schema_if_required($healthPdo);
+            ensure_workspace_schema_if_required($healthPdo, $config);
         } catch (Throwable $error) {
             send_json(503, [
                 'ok' => false,
@@ -484,7 +484,7 @@ try {
                 ->execute([':pid' => $projectId, ':bid' => $bookId]);
         }
 
-        $userName = get_user_display_name($config, $userId);
+        $userName = get_user_display_name($pdo, $config, $userId);
         $now      = date('Y-m-d H:i:s');
 
         $pdo->prepare(
@@ -531,25 +531,18 @@ try {
         $sessionId = trim((string) ($body['sessionId'] ?? ''));
         $sessionLabel = trim((string) ($body['sessionLabel'] ?? ''));
 
-        // Güvenlik: hardcoded varsayilan sifre yok; kullanicilar yalnizca config'ten gelir.
-        $users = is_array($config['users'] ?? null) ? $config['users'] : [];
-
+        // Guvenlik: kullanicilar veritabanindaki editor_users tablosundan okunur
+        // (ilk kurulumda config/.env degerleriyle otomatik tohumlanir, bkz.
+        // ensure_editor_users_schema()). Sifreler DB'de her zaman bcrypt hash
+        // olarak tutulur; password_verify zamanlama sizintisine karsi guvenlidir.
         $matchedUser = null;
-        foreach ($users as $u) {
-            if (($u['id'] ?? null) !== $userId) {
-                continue;
-            }
-            $stored = (string) ($u['password'] ?? '');
-            // bcrypt/argon hash ise password_verify; degilse timing-safe hash_equals
-            // (duz metin sifreler icin bile zamanlama sizintisini engeller).
-            $info = password_get_info($stored);
-            $passwordOk = ($info['algo'] ?? null)
-                ? password_verify($password, $stored)
-                : hash_equals($stored, $password);
-            if ($passwordOk) {
-                $matchedUser = $u;
-            }
-            break;
+        $userStmt = $pdo->prepare(
+            'SELECT id, name, password_hash FROM editor_users WHERE id = :id AND active = 1 LIMIT 1'
+        );
+        $userStmt->execute([':id' => $userId]);
+        $userRow = $userStmt->fetch();
+        if ($userRow && password_verify($password, (string) $userRow['password_hash'])) {
+            $matchedUser = ['id' => $userRow['id'], 'name' => $userRow['name']];
         }
 
         if (!$matchedUser) {
@@ -657,7 +650,7 @@ try {
         foreach ($usrStmt as $r) {
             $presenceUsers[] = [
                 'userId'     => $r['user_id'],
-                'userName'   => get_user_display_name($config, $r['user_id']),
+                'userName'   => get_user_display_name($pdo, $config, $r["user_id"]),
                 'sessionId'  => $r['session_id'],
                 'lastSeenAt' => $r['last_seen_at'],
             ];
@@ -675,7 +668,7 @@ try {
                 'projectId' => $r['project_id'],
                 'bookId'    => $r['book_id'],
                 'userId'    => $r['user_id'],
-                'userName'  => $r['user_name'] ?: get_user_display_name($config, $r['user_id']),
+                'userName'  => $r['user_name'] ?: get_user_display_name($pdo, $config, $r["user_id"]),
                 'sessionId' => $r['session_id'],
             ];
         }
@@ -1109,8 +1102,50 @@ function request_pdf_ai_layout(array $config, array $payload): array
     ];
 }
 
-function ensure_workspace_schema(PDO $pdo): void
+function ensure_editor_users_schema(PDO $pdo, array $config): void
 {
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS editor_users (
+            id            VARCHAR(64)  NOT NULL PRIMARY KEY,
+            name          VARCHAR(255) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            active        TINYINT(1)   NOT NULL DEFAULT 1
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $countStmt = $pdo->query('SELECT COUNT(*) FROM editor_users');
+    $existingCount = (int) $countStmt->fetchColumn();
+    if ($existingCount > 0) {
+        return;
+    }
+
+    // Tablo bos: ilk kurulum tohumlamasi. Kaynak, config.php/.env'deki
+    // USER1_*/USER2_* degerleridir (bkz. .env.example) - yalnizca tablo HIC
+    // BOSSA calisir, sonraki .env degisiklikleri DB'yi otomatik guncellemez
+    // (sifre degistirmek icin dogrudan DB'de UPDATE gerekir).
+    $seedUsers = is_array($config['users'] ?? null) ? $config['users'] : [];
+    $insertStmt = $pdo->prepare(
+        'INSERT INTO editor_users (id, name, password_hash, active) VALUES (:id, :name, :hash, 1)'
+    );
+    foreach ($seedUsers as $u) {
+        $id = trim((string) ($u['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        $name = (string) ($u['name'] ?? $id);
+        $rawPassword = (string) ($u['password'] ?? '');
+        // Config'teki deger zaten bcrypt hash'i ise oldugu gibi kullan;
+        // duz metinse (varsayilan/ .env akisi) burada hash'le.
+        $info = password_get_info($rawPassword);
+        $hash = ($info['algo'] ?? null) ? $rawPassword : password_hash($rawPassword, PASSWORD_DEFAULT);
+        $insertStmt->execute([':id' => $id, ':name' => $name, ':hash' => $hash]);
+    }
+}
+
+function ensure_workspace_schema(PDO $pdo, array $config): void
+{
+    ensure_editor_users_schema($pdo, $config);
+
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS app_state (
             id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -1195,10 +1230,15 @@ function ensure_workspace_schema(PDO $pdo): void
     $pdo->exec('UPDATE projects SET created_at = saved_at WHERE created_at IS NULL OR created_at = ""');
 }
 
-function ensure_workspace_schema_if_required(PDO $pdo): void
+function ensure_workspace_schema_if_required(PDO $pdo, array $config): void
 {
     if (!workspace_schema_is_current($pdo)) {
-        ensure_workspace_schema($pdo);
+        ensure_workspace_schema($pdo, $config);
+    } else {
+        // Tablolar/kolonlar tam ama editor_users hala BOS olabilir (ör. once
+        // olusturulup sonra tum satirlari elle silinmis) - tohumlama yalniz
+        // tablo bosken calisir, bu yuzden ayrica cagirmak guvenlidir/idempotent.
+        ensure_editor_users_schema($pdo, $config);
     }
 }
 
@@ -1210,6 +1250,7 @@ function workspace_schema_is_current(PDO $pdo): bool
         'book_locks' => ['project_id', 'book_id', 'user_id', 'user_name', 'session_id', 'locked_at'],
         'user_sessions' => ['session_id', 'user_id', 'session_label', 'last_seen_at', 'kick_requested_at'],
         'project_versions' => ['id', 'project_id', 'version_no', 'label', 'payload', 'created_at', 'is_published'],
+        'editor_users' => ['id', 'name', 'password_hash', 'active'],
     ];
 
     try {
@@ -1217,7 +1258,7 @@ function workspace_schema_is_current(PDO $pdo): bool
             "SELECT TABLE_NAME, COLUMN_NAME
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME IN ('app_state', 'projects', 'book_locks', 'user_sessions', 'project_versions')"
+               AND TABLE_NAME IN ('app_state', 'projects', 'book_locks', 'user_sessions', 'project_versions', 'editor_users')"
         );
         $foundColumns = [];
         foreach ($stmt as $row) {
@@ -1283,8 +1324,19 @@ function ensure_projects_column(PDO $pdo, string $columnName, string $sql): void
     }
 }
 
-function get_user_display_name(array $config, string $userId): string
+function get_user_display_name(PDO $pdo, array $config, string $userId): string
 {
+    try {
+        $stmt = $pdo->prepare('SELECT name FROM editor_users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $userId]);
+        $name = $stmt->fetchColumn();
+        if ($name !== false && $name !== '') {
+            return (string) $name;
+        }
+    } catch (Throwable $error) {
+        // editor_users henuz yoksa (ör. schema-check tamamlanmadan) config'e dus.
+    }
+
     foreach ($config['users'] ?? [] as $u) {
         if (($u['id'] ?? '') === $userId) {
             return $u['name'] ?? $userId;
@@ -1389,7 +1441,7 @@ function ensure_workspace(PDO $pdo): array
         return build_workspace($pdo, $project['id']);
     }
 
-    $currentProjectId = null;
+    $currentProjectId = '';
     if (is_workspace_meta($payload)) {
         $currentProjectId = trim((string) ($payload['currentProjectId'] ?? ''));
     }

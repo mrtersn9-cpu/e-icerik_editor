@@ -82,5 +82,48 @@ durumda, dokunulmadı.
 `scormTypedActivityPlayer.js` içindeki 3 zayıf shuffle bilinçli olarak dokunulmadı (SCORM'a
 gömülen template-literal script).
 
+**2026-07-21/23: `.env` tabanlı yapılandırma eklendi.** Hem Node hem PHP tarafındaki
+sır/veritabanı bilgileri artık `.env` dosyalarından okunuyor (ikisi de `.gitignore`'da):
+- `server.mjs` başlarken proje kökündeki `.env`'i (varsa) `process.loadEnvFile` ile otomatik
+  yükler; şablon için `.env.example` eklendi.
+- `ftp-hosting/api/config.php` artık aynı klasördeki `.env`'i okuyor (satır-satır parser,
+  dizinin şekli/placeholder varsayılanları birebir korundu, `index.php`'ye dokunulmadı);
+  şablon için `ftp-hosting/api/.env.example` eklendi.
+- `scripts/build.bat` / `hazirla-ftp.ps1`: `ftp-hosting/api/.env` YERELDE varsa artık pakete
+  DAHİL EDİLİYOR (kullanıcı isteğiyle 2026-07-23'te değiştirildi — amaç: `dist/` sunucuya
+  yüklendiğinde `.env` ayrıca elle taşınmasın). `dist/`/`deploy-ftp/` klasörleri git'e
+  girmiyor ama artık gerçek sır içerebilir; bu klasörleri e-posta/zip ile paylaşmamak
+  gerekir (bkz. `docs/FTP-KURULUM.md` § 3 uyarısı).
+- **2026-07-23 (kritik canlı üretim hatası bulundu/düzeltildi):** `api/config.php` de
+  ARTIK pakete dahil ediliyor (eskiden hariç tutuluyordu — o tasarım, config.php'nin
+  içine dogrudan şifre yazıldığı eski modelden kalmaydı, `.env` geçişinden sonra geçersiz
+  kalmıştı). Kullanıcının canlı sitesinde (`editori.hepsibirdijital.com`) tam olarak bu
+  yüzden `api/config.php` sunucudan tamamen kaybolmuş, her API isteği
+  `Fatal error: Failed opening required '.../api/config.php'` ile çöküyordu — canlı `curl`
+  ile doğrudan doğrulandı. Muhtemel neden: FTP istemcisinin "senkronize et/yansıt" modu,
+  yerel pakette hiç bulunmayan `config.php`'yi sunucudan silmiş. Ayrıca aynı oturumda
+  `ftp-hosting/api/index.php`'nin `ensure_workspace()` fonksiyonunda gerçek bir bug bulundu
+  ve düzeltildi: `$currentProjectId = null` başlatılıp hemen altında `!== ''` ile
+  kıyaslanıyordu (PHP'de `null !== ''` `true`'dur) — `app_state` tablosu boşken
+  `project_exists($pdo, null)` çağrılıp `strict_types=1` altında TypeError/500 veriyordu.
+  Yerel XAMPP MySQL+PHP kurulumuyla birebir tekrarlatılıp doğrulandı (bkz. Git geçmişi).
+- Canlı URL `https://editori.hepsibirdijital.com` her iki `.env.example`'da
+  `ALLOWED_ORIGINS`/`EICERIK_ALLOWED_ORIGINS` örneği olarak işlendi; `docs/GUVENLIK-AYARLARI.md`
+  ve `docs/FTP-KURULUM.md` güncellendi. 368/368 test ve `npm run build` yeşil kaldı.
+- **2026-07-24: PHP tarafında kullanıcı girişleri artık veritabanında (`editor_users`
+  tablosu, bcrypt).** Yeni `ensure_editor_users_schema()` (`ftp-hosting/api/index.php`),
+  mevcut `ensure_workspace_schema_if_required()` otomatik-kontrol mekanizmasına eklendi —
+  site ilk açıldığında (`GET /health?requireDatabase=1`, frontend zaten otomatik çağırıyor,
+  `src/index.jsx:113`) tüm 6 tablo (5 eski + `editor_users`) elle işlem gerekmeden
+  oluşuyor/tohumlanıyor. `editor_users` boşsa (ör. satırlar kazayla silinirse) bir sonraki
+  health-check'te otomatik yeniden tohumlanıyor (idempotent, doğrulandı). `/auth/login`
+  artık `$config['users']` dizisini değil doğrudan bu tabloyu okuyor. Tohumlama YALNIZ
+  tablo boşken çalışır — `.env`'deki `USER1_PASSWORD`/`USER2_PASSWORD` yalnızca ilk kurulum
+  değeri; sonradan değiştirmek DB'yi güncellemez (bkz. `docs/GUVENLIK-AYARLARI.md` şifre
+  değiştirme SQL'i). `mysql-schema.sql`'e referans amaçlı `editor_users` tablo tanımı
+  eklendi (seed verisi içermiyor, PHP `password_hash()` gerektirdiği için SQL'de üretilemez).
+  Yerel XAMPP MySQL+PHP ile tamamen boş DB'den başlayarak uçtan uca doğrulandı (otomatik
+  şema kurulumu, doğru/yanlış şifre, idempotency, kaza-sonrası yeniden tohumlama).
+
 Detaylı bulgu listesi için docs/PROJE-DURUM-RAPORU.md'ye bakın (bazı maddeler yukarıdaki
 2026-07-21 düzeltmeleriyle güncelliğini yitirdi, rapor dosyası henüz güncellenmedi).
