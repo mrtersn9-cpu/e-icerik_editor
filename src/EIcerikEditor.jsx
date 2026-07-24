@@ -675,6 +675,9 @@ export default function EIcerikEditor() {
   const setIsSlidePanelCollapsed = useEditorStore((state) => state.setIsSlidePanelCollapsed);
   const canvasTool = useEditorStore((state) => state.canvasTool);
   const setCanvasTool = useEditorStore((state) => state.setCanvasTool);
+  // Space tuşuyla geçici pan (Figma/Photoshop tarzı): basılı tutulduğu sürece
+  // önceki araç saklanıp canvasTool 'pan'a çevrilir, bırakılınca geri döner.
+  const prevCanvasToolRef = useRef('select');
   const timelineVisualization = useEditorStore((state) => state.timelineVisualization);
   const setTimelineVisualization = useEditorStore((state) => state.setTimelineVisualization);
   const timelineDockOpen = useEditorStore((state) => state.timelineDockOpen);
@@ -1163,6 +1166,18 @@ export default function EIcerikEditor() {
         ae?.isContentEditable
       )
         return;
+      // Space: basılı tutulduğu sürece geçici pan aracı (Figma/Photoshop tarzı).
+      // event.repeat: tuş basılı tutulunca tarayıcı keydown'ı tekrar tekrar
+      // gönderir — önceki aracı yalnızca İLK basışta sakla, sayfanın kaymasını
+      // preventDefault ile her zaman engelle.
+      if (e.key === ' ' || e.code === 'Space') {
+        if (!e.repeat) {
+          prevCanvasToolRef.current = useEditorStore.getState().canvasTool;
+          useEditorStore.getState().setCanvasTool('pan');
+        }
+        e.preventDefault();
+        return;
+      }
       const modKey = e.ctrlKey || e.metaKey;
       const currentActivity = history.present.activities.find(
         (activity) => activity.id === history.present.selActId
@@ -1287,6 +1302,27 @@ export default function EIcerikEditor() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [canvasExpanded, history.present, redo, selectedIds, setCanvasExpanded, storyRibbonTab, toggleNativeFullscreen, undo]);
+
+  // Space ile geçici pan: tuş bırakılınca (veya pencere odağı kaybolunca) önceki
+  // araca dön. Yalnızca hâlâ 'pan' ise geri al — arada elle başka araç seçildiyse
+  // (örn. toolbar'dan) onu ezme.
+  useEffect(() => {
+    const restorePrevTool = () => {
+      useEditorStore.getState().setCanvasTool((current) =>
+        current === 'pan' ? prevCanvasToolRef.current || 'select' : current
+      );
+    };
+    const onSpaceKeyUp = (e) => {
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      restorePrevTool();
+    };
+    window.addEventListener('keyup', onSpaceKeyUp);
+    window.addEventListener('blur', restorePrevTool);
+    return () => {
+      window.removeEventListener('keyup', onSpaceKeyUp);
+      window.removeEventListener('blur', restorePrevTool);
+    };
+  }, []);
 
   useEffect(() => {
     const blockBrowserZoomKeys = (e) => {
