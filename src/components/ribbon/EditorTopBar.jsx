@@ -13,6 +13,7 @@ import {
   Redo2,
   Save,
   Undo2,
+  UserPlus,
 } from 'lucide-react';
 
 import PresenceBar from '../../features/presence/PresenceBar';
@@ -85,6 +86,7 @@ export default function EditorTopBar({
   setDesignToolsOpen,
   setShowProjectManager,
   setShowReviewThreads,
+  setShowShareModal,
   setStoryRibbonTab,
   undo,
 }) {
@@ -167,6 +169,9 @@ export default function EditorTopBar({
           <PresenceBar onlineUsers={onlineUsers} currentBookEditor={isEditor ? currentBookEditor : null} />
         )}
         <TextAction icon={Archive} label="Sürümler" onClick={() => setShowProjectManager(true)} />
+        {setShowShareModal && (
+          <TextAction icon={UserPlus} label="Paylaş" onClick={() => setShowShareModal(true)} title="Projeyi baska bir kullaniciyla paylas" />
+        )}
         {isEditor && <TextAction icon={MessageSquareText} label="Yorumlar" onClick={() => setShowReviewThreads(true)} />}
         {isEditor && (
           <TextAction

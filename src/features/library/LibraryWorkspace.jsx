@@ -362,6 +362,7 @@ export default function LibraryWorkspace({
   const [dialog, setDialog] = useState(null);
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [termDraft, setTermDraft] = useState('');
   const [bookStyleId, setBookStyleId] = useState(ANSWER_LAYER_STYLE_PRESETS[0]?.id || '');
   const [activityPresetId, setActivityPresetId] = useState(DEFAULT_ACTIVITY_CREATE_PRESET_ID);
   const [customTemplateId, setCustomTemplateId] = useState(DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID);
@@ -406,6 +407,7 @@ export default function LibraryWorkspace({
   const closeDialog = () => {
     setDialog(null);
     setNameDraft('');
+    setTermDraft('');
     setBookStyleId(ANSWER_LAYER_STYLE_PRESETS[0]?.id || '');
     setActivityPresetId(DEFAULT_ACTIVITY_CREATE_PRESET_ID);
     setCustomTemplateId(DEFAULT_CUSTOM_INTERACTION_TEMPLATE_ID);
@@ -426,10 +428,12 @@ export default function LibraryWorkspace({
   });
   const openCreate = (kind) => {
     setNameDraft('');
+    setTermDraft('');
     setDialog({ kind, mode: 'create' });
   };
   const openEdit = (kind, item) => {
     setNameDraft(item.name || '');
+    setTermDraft(item.term || '');
     setBookStyleId(item.defaultAnswerLayerStylePresetId || ANSWER_LAYER_STYLE_PRESETS[0]?.id || '');
     setDialog({ kind, mode: 'edit', item });
   };
@@ -447,11 +451,16 @@ export default function LibraryWorkspace({
   const savePublisher = () => {
     if (!nameDraft.trim()) return;
     if (dialog.mode === 'create') {
-      onPublishersChange([...publishers, { id: uid(), name: nameDraft.trim(), description: '' }]);
+      onPublishersChange([
+        ...publishers,
+        { id: uid(), name: nameDraft.trim(), description: '', term: termDraft.trim() },
+      ]);
     } else {
       onPublishersChange(
         publishers.map((publisher) =>
-          publisher.id === dialog.item.id ? { ...publisher, name: nameDraft.trim() } : publisher
+          publisher.id === dialog.item.id
+            ? { ...publisher, name: nameDraft.trim(), term: termDraft.trim() }
+            : publisher
         )
       );
     }
@@ -716,7 +725,11 @@ export default function LibraryWorkspace({
               icon={Building2}
               kind="Yayınevi"
               countLabel={`${countPublisherBooks(books, publisher.id)} kitap`}
-              meta={`${countPublisherActivities(books, activities, publisher.id)} etkinlik`}
+              meta={
+                publisher.term
+                  ? `${publisher.term} · ${countPublisherActivities(books, activities, publisher.id)} etkinlik`
+                  : `${countPublisherActivities(books, activities, publisher.id)} etkinlik`
+              }
               selected={publisher.id === selectedPublisherId}
               onSelect={() => selectPublisher(publisher.id)}
               onEdit={(item) => openEdit('publisher', item)}
@@ -863,6 +876,12 @@ export default function LibraryWorkspace({
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
               placeholder="Yayınevi adı..."
+            />
+            <LightField
+              label="Dönem"
+              value={termDraft}
+              onChange={(event) => setTermDraft(event.target.value)}
+              placeholder="Örn. 2025-2026 Ekim"
             />
             <div className={styles.modalActions}>
               <LightButton onClick={closeDialog}>İptal</LightButton>
