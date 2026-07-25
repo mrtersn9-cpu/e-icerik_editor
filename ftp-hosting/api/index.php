@@ -268,7 +268,7 @@ try {
         if (!project_is_owner($pdo, $projectId, $currentUserId)) {
             send_json(403, ['ok' => false, 'error' => 'Sadece proje sahibi silebilir.']);
         }
-        delete_project($pdo, $projectId);
+        delete_project($pdo, $projectId, $currentUserId);
 
         $workspace = ensure_workspace($pdo, $currentUserId);
         send_json(200, ['ok' => true] + $workspace);
@@ -277,9 +277,7 @@ try {
     if (preg_match('#^/projects/([^/]+)/draft$#', $path, $matches) === 1 && $method === 'PUT') {
         $projectId = urldecode($matches[1]);
         $body = read_json_body();
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         $project = save_project_draft(
             $pdo,
             $projectId,
@@ -306,9 +304,7 @@ try {
 
     if (preg_match('#^/projects/([^/]+)/versions$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         $body = read_json_body();
         $label = trim((string) ($body['label'] ?? ''));
         $publish = !empty($body['publish']);
@@ -325,9 +321,7 @@ try {
 
     if (preg_match('#^/projects/([^/]+)/publish$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         $body = read_json_body();
         $versionId = trim((string) ($body['versionId'] ?? ''));
 
@@ -347,9 +341,7 @@ try {
 
     if (preg_match('#^/projects/([^/]+)/restore$#', $path, $matches) === 1 && $method === 'POST') {
         $projectId = urldecode($matches[1]);
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         $body = read_json_body();
         $versionId = trim((string) ($body['versionId'] ?? ''));
 
@@ -365,9 +357,7 @@ try {
     if (preg_match('#^/projects/([^/]+)/versions/([^/]+)$#', $path, $matches) === 1 && $method === 'DELETE') {
         $projectId = urldecode($matches[1]);
         $versionId = urldecode($matches[2]);
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         $pdo->prepare('DELETE FROM project_versions WHERE id = :id AND project_id = :project_id')
             ->execute([':id' => $versionId, ':project_id' => $projectId]);
         $pdo->prepare('UPDATE projects SET published_version_id = NULL WHERE id = :id AND published_version_id = :vid')
@@ -392,9 +382,7 @@ try {
 
     if (preg_match('#^/projects/([^/]+)/shares$#', $path, $matches) === 1 && $method === 'GET') {
         $projectId = urldecode($matches[1]);
-        if (!project_is_accessible($pdo, $projectId, $currentUserId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $currentUserId);
         send_json(200, ['ok' => true, 'shares' => list_project_shares($pdo, $projectId)]);
     }
 
@@ -520,9 +508,7 @@ try {
         if ($userId === '' || $sessionId === '') {
             send_json(401, ['ok' => false, 'error' => 'Oturum bilgisi eksik.']);
         }
-        if (!project_is_accessible($pdo, $projectId, $userId)) {
-            send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
-        }
+        require_project_access($pdo, $projectId, $userId);
 
         // Check if book already locked by another active session
         $stmt = $pdo->prepare(
@@ -907,6 +893,16 @@ function require_active_session(PDO $pdo): void
             'code' => 'SESSION_INVALID',
             'error' => 'Oturum gecersiz veya suresi dolmus.',
         ]);
+    }
+}
+
+// B-360: proje sahibi VEYA paylasilan kullanicilar icin erisim guard'i (route'larda
+// tekrarlanan "if (!project_is_accessible(...)) { send_json(403, ...); }" bloklarinin
+// yerini alir — require_admin_token/require_active_session ile ayni desen).
+function require_project_access(PDO $pdo, string $projectId, string $userId): void
+{
+    if (!project_is_accessible($pdo, $projectId, $userId)) {
+        send_json(403, ['ok' => false, 'error' => 'Bu projeye erisim yetkiniz yok.']);
     }
 }
 
@@ -1981,18 +1977,21 @@ function publish_project_version(PDO $pdo, string $projectId, string $versionId)
     ]);
 }
 
-function delete_project(PDO $pdo, string $projectId): void
+function delete_project(PDO $pdo, string $projectId, string $userId): void
 {
-    // Not: route seviyesinde project_is_owner ile SADECE SAHIP silebilir kontrolu
-    // yapiliyor (bkz. DELETE /projects/:id) — burada tekrar kontrol edilmez.
+    // Route seviyesinde project_is_owner ile de kontrol ediliyor (bkz. DELETE
+    // /projects/:id); burada AYRICA SQL'de "AND user_id = :uid" ile savunma
+    // derinliği sağlanır (Node server.mjs'deki deleteProject ile tutarlı) —
+    // fonksiyon ileride route dışından çağrılırsa da başka kullanıcının
+    // projesi silinemez.
     $deleteShares = $pdo->prepare('DELETE FROM project_shares WHERE project_id = :project_id');
     $deleteShares->execute([':project_id' => $projectId]);
 
     $deleteVersions = $pdo->prepare('DELETE FROM project_versions WHERE project_id = :project_id');
     $deleteVersions->execute([':project_id' => $projectId]);
 
-    $deleteProject = $pdo->prepare('DELETE FROM projects WHERE id = :id');
-    $deleteProject->execute([':id' => $projectId]);
+    $deleteProject = $pdo->prepare('DELETE FROM projects WHERE id = :id AND user_id = :uid');
+    $deleteProject->execute([':id' => $projectId, ':uid' => $userId]);
 }
 
 function prepare_scorm_export(array $project): array

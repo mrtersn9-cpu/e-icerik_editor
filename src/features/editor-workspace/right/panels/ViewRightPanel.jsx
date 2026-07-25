@@ -1,3 +1,5 @@
+import { normalizeSmartGuideSettings } from '../../../../logic/snapGuides';
+
 import {
   ActionButton,
   ButtonGrid,
@@ -8,26 +10,11 @@ import {
   ToggleRow,
 } from './PanelPrimitives';
 
-// Akıllı hizalama ayarları için varsayılanlar — snapGuides.js'teki
-// DEFAULT_SMART_GUIDE_SETTINGS ile birebir aynı tutulmalı.
-const DEFAULT_SMART_GUIDES = {
-  enabled: true,
-  snapEnabled: true,
-  objectGuides: true,
-  centerGuides: true,
-  marginGuides: true,
-  spacingGuides: true,
-  showSafeAreaAlways: false,
-  snapTolerance: 6,
-  spacingTolerance: 6,
-  safeMargin: 40,
-};
-
 export default function ViewRightPanel({ controller }) {
   const commands = controller.commands || {};
   const view = controller.view || {};
   const activity = controller.activity || {};
-  const smartGuides = { ...DEFAULT_SMART_GUIDES, ...(activity.viewOptions?.smartGuides || {}) };
+  const smartGuides = normalizeSmartGuideSettings(activity.viewOptions?.smartGuides);
 
   const patchViewOptions = (patch) => {
     commands.patchActivity?.({

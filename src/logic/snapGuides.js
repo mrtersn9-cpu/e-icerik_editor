@@ -31,20 +31,21 @@ export function normalizeSmartGuideSettings(raw) {
   return { ...DEFAULT_SMART_GUIDE_SETTINGS, ...(raw || {}) };
 }
 
-// Toleransı zoom'a göre normalize eder: ekranda hep ~snapTolerance px görünsün diye
-// sahne biriminde tolerans = snapTolerance / zoom (zoom yoksa/1 ise değişmez).
-function resolveTolerance(cfg) {
-  const base = Number(cfg.snapTolerance);
-  const tolerance = Number.isFinite(base) ? base : DEFAULT_SMART_GUIDE_SETTINGS.snapTolerance;
+// Toleransı zoom'a göre normalize eder: ekranda hep ~tolerance px görünsün diye
+// sahne biriminde tolerans = tolerance / zoom (zoom yoksa/1 ise değişmez).
+function resolveZoomTolerance(cfg, key) {
+  const base = Number(cfg[key]);
+  const tolerance = Number.isFinite(base) ? base : DEFAULT_SMART_GUIDE_SETTINGS[key];
   const zoom = Number(cfg.zoom) > 0 ? Number(cfg.zoom) : 1;
   return tolerance / zoom;
 }
 
+function resolveTolerance(cfg) {
+  return resolveZoomTolerance(cfg, 'snapTolerance');
+}
+
 function resolveSpacingTolerance(cfg) {
-  const base = Number(cfg.spacingTolerance);
-  const tolerance = Number.isFinite(base) ? base : DEFAULT_SMART_GUIDE_SETTINGS.spacingTolerance;
-  const zoom = Number(cfg.zoom) > 0 ? Number(cfg.zoom) : 1;
-  return tolerance / zoom;
+  return resolveZoomTolerance(cfg, 'spacingTolerance');
 }
 
 // Tek bir ögenin sınır kutusu: {left, top, right, bottom, width, height, centerX, centerY}.
